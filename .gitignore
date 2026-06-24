@@ -1,0 +1,39 @@
+# 依赖
+node_modules/
+web/node_modules/
+server/vendor/
+
+# 构建产物
+dist/
+server/rental-server.exe
+server/rental-server
+*.exe
+
+# 环境变量
+.env
+
+# 日志
+*.log
+
+# 上传的媒体文件
+server/storage/media/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 文档资源（设计图、PDF等，不是源码）
+*.vsd?
+*.vsdx
+*.pdf
+*.docx
+*.xlsx
+*.pptx
