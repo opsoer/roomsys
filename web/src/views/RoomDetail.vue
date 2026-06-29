@@ -4,9 +4,11 @@
     <p>加载中...</p>
   </div>
   <div v-else-if="room" class="room-detail-page">
-    <el-button text @click="goBack" class="back-btn">
-      <el-icon><ArrowLeft /></el-icon> 返回
-    </el-button>
+    <div class="detail-back">
+      <el-button text @click="goBack">
+        <el-icon><ArrowLeft /></el-icon> 返回
+      </el-button>
+    </div>
 
     <!-- 房间头图 -->
     <div class="detail-hero" :class="{ 'has-cover': coverImage }">
@@ -22,7 +24,7 @@
         <div class="hero-tags">
           <el-tag :type="statusTag(room.status)" size="large" effect="dark" class="status-badge">{{ statusLabel(room.status) }}</el-tag>
           <el-tag v-if="room.end_date && (room.status === 'rented' || room.status === 'expiring' || room.status === 'expired')" type="info" effect="plain" class="end-date-badge">
-            退租日期：{{ room.end_date }}
+            退租：{{ room.end_date }}
           </el-tag>
         </div>
         <h1 class="detail-title">{{ room.room_number }}</h1>
@@ -33,7 +35,7 @@
         </p>
         <div v-if="isAdmin" class="hero-actions">
           <el-button type="primary" size="small" @click="showEditDialog = true">编辑</el-button>
-          <el-button type="danger" size="small" @click="handleDeleteRoom">删除房间</el-button>
+          <el-button type="danger" size="small" @click="handleDeleteRoom">删除</el-button>
         </div>
       </div>
     </div>
@@ -41,14 +43,17 @@
     <div class="detail-body">
       <div class="detail-main">
         <!-- 描述 -->
-        <div v-if="room.description" class="detail-section">
-          <h3 class="section-title">房间介绍</h3>
-          <p class="section-text">{{ room.description }}</p>
+        <div v-if="room.description" class="detail-card">
+          <h3 class="card-title">房间介绍</h3>
+          <p class="card-text">{{ room.description }}</p>
         </div>
 
-        <!-- 照片墙 -->
-        <div v-if="galleryImages.length > 0" class="detail-section">
-          <h3 class="section-title">照片</h3>
+        <!-- 照片 -->
+        <div v-if="galleryImages.length > 0" class="detail-card">
+          <h3 class="card-title">
+            照片
+            <span class="card-count">{{ galleryImages.length }}张</span>
+          </h3>
           <div class="gallery-grid">
             <div v-for="img in galleryImages" :key="img.id" class="gallery-item" :class="{ 'admin-mode': isAdmin }">
               <img :src="mediaUrl(img.file_path)" class="gallery-img" @click="showFullscreen(mediaUrl(img.file_path))" />
@@ -61,11 +66,14 @@
         </div>
 
         <!-- 视频 -->
-        <div v-if="videos.length > 0" class="detail-section">
-          <h3 class="section-title">视频</h3>
+        <div v-if="videos.length > 0" class="detail-card">
+          <h3 class="card-title">
+            视频
+            <span class="card-count">{{ videos.length }}个</span>
+          </h3>
           <div class="video-list">
             <div v-for="v in videos" :key="v.id" class="video-item" :class="{ 'admin-mode': isAdmin }">
-              <video :src="mediaUrl(v.file_path)" controls class="video-player" />
+              <video :src="mediaUrl(v.file_path)" controls class="video-player" preload="metadata"></video>
               <el-button v-if="isAdmin" size="small" type="danger" circle class="delete-btn"
                 @click.stop="handleDeleteMedia(v.id)">
                 <el-icon><Close /></el-icon>
@@ -75,81 +83,68 @@
         </div>
 
         <!-- 空状态 -->
-        <div v-if="!room.description && galleryImages.length === 0 && videos.length === 0" class="detail-section empty-section">
+        <div v-if="!room.description && galleryImages.length === 0 && videos.length === 0" class="detail-card empty-section">
           <el-empty description="暂无房间介绍" :image-size="80" />
         </div>
       </div>
 
-      <!-- 侧边栏：联系人信息 + 租约（管理员） -->
       <div class="detail-sidebar">
-        <!-- 房东联系信息 -->
-        <div class="sidebar-card">
-          <h4 class="sidebar-card-title">联系房东</h4>
-          <div class="landlord-contact">
-            <div class="contact-row">
-              <span class="contact-label">姓名</span>
-              <span class="contact-value">史生</span>
-            </div>
-            <div class="contact-row">
-              <span class="contact-label">电话</span>
-              <a :href="'tel:19574822006'" class="contact-phone">19574822006</a>
-            </div>
+        <div v-if="landlords.length" class="sidebar-card">
+          <h4 class="sidebar-title">联系房东</h4>
+          <div v-for="l in landlords" :key="l.id" class="sidebar-row">
+            <span class="sidebar-label">{{ l.name }}</span>
+            <a :href="'tel:' + l.phone" class="sidebar-phone">{{ l.phone }}</a>
           </div>
         </div>
 
-        <!-- 当前租约 - 仅管理员可见 -->
         <div v-if="currentContract && isAdmin" class="sidebar-card">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
-            <h4 class="sidebar-card-title" style="margin: 0">当前租约</h4>
+          <div class="sidebar-card-header">
+            <h4 class="sidebar-title" style="margin:0">当前租约</h4>
             <el-button v-if="room.status === 'rented' || room.status === 'expiring'" size="small" text type="primary" @click="openRenewDialog">
-               续租
+              续租
             </el-button>
           </div>
-          <div class="contract-info">
-            <div class="contract-row">
-              <span class="contract-label">租客</span>
-              <span class="contract-value">{{ currentContract.tenant?.name || '-' }}</span>
-            </div>
-            <div class="contract-row">
-              <span class="contract-label">电话</span>
-              <span class="contract-value">{{ currentContract.tenant?.phone || '-' }}</span>
-            </div>
-            <div class="contract-row">
-              <span class="contract-label">起租</span>
-              <span class="contract-value">{{ currentContract.start_date }}</span>
-            </div>
-            <div class="contract-row">
-              <span class="contract-label">退租</span>
-              <span class="contract-value">{{ currentContract.end_date || '未设置' }}</span>
-            </div>
-            <div class="contract-row">
-              <span class="contract-label">租金</span>
-              <span class="contract-value" style="color:#67c23a;font-weight:600">{{ currentContract.rent_price ? currentContract.rent_price.toFixed(2) + ' 元/月' : '-' }}</span>
-            </div>
-            <div class="contract-row">
-              <span class="contract-label">押金</span>
-              <span class="contract-value" style="color:#e6a23c;font-weight:600">{{ currentContract.deposit ? currentContract.deposit.toFixed(2) + ' 元' : '-' }}</span>
-            </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">租客</span>
+            <span class="sidebar-val">{{ currentContract.tenant?.name || '-' }}</span>
+          </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">电话</span>
+            <span class="sidebar-val">{{ currentContract.tenant?.phone || '-' }}</span>
+          </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">起租</span>
+            <span class="sidebar-val">{{ currentContract.start_date }}</span>
+          </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">到期</span>
+            <span class="sidebar-val">{{ currentContract.end_date || '未设置' }}</span>
+          </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">月租金</span>
+            <span class="sidebar-val price-primary">{{ currentContract.rent_price?.toFixed(2) }} 元</span>
+          </div>
+          <div class="sidebar-row">
+            <span class="sidebar-label">押金</span>
+            <span class="sidebar-val price-warn">{{ currentContract.deposit?.toFixed(2) }} 元</span>
           </div>
         </div>
 
-        <!-- 管理员操作区 -->
         <div v-if="isAdmin" class="sidebar-card">
-          <h4 class="sidebar-card-title">状态操作</h4>
-          <div style="display: flex; flex-direction: column; gap: 8px">
-            <el-button v-if="room.status === 'vacant'" type="success" @click="showRentDialog = true" style="width: 100%">
+          <h4 class="sidebar-title">状态操作</h4>
+          <div class="sidebar-actions">
+            <el-button v-if="room.status === 'vacant'" type="success" @click="showRentDialog = true" style="width:100%">
               设为已出租
             </el-button>
-            <el-button v-if="room.status === 'rented' || room.status === 'expiring' || room.status === 'expired'" type="warning" @click="handleVacant" style="width: 100%">
+            <el-button v-if="room.status === 'rented' || room.status === 'expiring' || room.status === 'expired'" type="warning" @click="handleVacant" style="width:100%">
               设为未出租
             </el-button>
           </div>
         </div>
 
-        <!-- 上传媒体 - 仅管理员可见 -->
         <div v-if="isAdmin" class="sidebar-card">
-          <h4 class="sidebar-card-title">上传媒体</h4>
-          <div style="display: flex; flex-direction: column; gap: 10px">
+          <h4 class="sidebar-title">上传媒体</h4>
+          <div class="upload-actions">
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
               :headers="{ Authorization: `Bearer ${token}` }"
@@ -159,7 +154,7 @@
               :show-file-list="false"
               accept="image/jpeg,image/png,image/gif"
             >
-              <el-button type="warning" :icon="Plus" style="width: 100%">上传封面照片</el-button>
+              <el-button type="warning" :icon="Plus" style="width:100%">上传封面</el-button>
             </el-upload>
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
@@ -171,7 +166,7 @@
               accept="image/jpeg,image/png,image/gif"
               multiple
             >
-              <el-button type="primary" :icon="Picture" style="width: 100%">上传照片</el-button>
+              <el-button type="primary" :icon="Picture" style="width:100%">上传照片</el-button>
             </el-upload>
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
@@ -182,14 +177,14 @@
               :show-file-list="false"
               accept="video/mp4,video/quicktime"
             >
-              <el-button type="success" :icon="VideoCamera" style="width: 100%">上传视频</el-button>
+              <el-button type="success" :icon="VideoCamera" style="width:100%">上传视频</el-button>
             </el-upload>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Dialogs -->
+    <!-- Dialogs (unchanged) -->
     <el-dialog v-model="showRentDialog" title="设为已出租" width="500px">
       <el-form ref="rentFormRef" :model="rentForm" label-width="100px">
         <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
@@ -198,17 +193,17 @@
         <el-form-item label="联系电话" prop="tenant_phone">
           <el-input v-model="rentForm.tenant_phone" />
         </el-form-item>
-        <el-form-item label="租金(元/月)" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input-number v-model="rentForm.rent_price" :min="0" :precision="2" style="width: 100%" />
+        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
+          <el-input-number v-model="rentForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
-        <el-form-item label="押金(元)" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input-number v-model="rentForm.deposit" :min="0" :precision="2" style="width: 100%" />
+        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
+          <el-input-number v-model="rentForm.deposit" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
         <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
-          <el-date-picker v-model="rentForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker v-model="rentForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
         <el-form-item label="结束日期" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
-          <el-date-picker v-model="rentForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker v-model="rentForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -220,10 +215,10 @@
     <el-dialog v-model="showEndDateDialog" title="续租" width="420px">
       <el-form ref="endDateFormRef" :model="endDateForm" label-width="90px">
         <el-form-item label="续租租金" prop="rent_price" :rules="[{ required: true, message: '请输入续租租金' }]">
-          <el-input-number v-model="endDateForm.rent_price" :min="0" :precision="2" style="width: 100%" />
+          <el-input-number v-model="endDateForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
         <el-form-item label="续租结束日" prop="end_date" :rules="[{ required: true, message: '请选择续租结束日' }]">
-          <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择续租结束日" style="width: 100%" />
+          <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择续租结束日" style="width:100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -233,23 +228,21 @@
     </el-dialog>
 
     <el-dialog v-model="showVacateDialog" title="设为未出租" width="450px">
-      <div style="margin-bottom: 16px">
-        <div v-if="currentContract?.deposit" style="background: #f5f7fa; padding: 12px; border-radius: 8px; margin-bottom: 16px">
-          <div style="display: flex; justify-content: space-between; align-items: center">
-            <span style="color: #999">原押金金额</span>
-            <span style="font-weight: 600; color: #e6a23c; font-size: 16px">{{ currentContract.deposit.toFixed(2) }} 元</span>
+      <div>
+        <div v-if="currentContract?.deposit" class="vacate-deposit-info">
+          <div class="vacate-row">
+            <span>原押金</span>
+            <span class="vacate-amount">{{ currentContract.deposit.toFixed(2) }} 元</span>
           </div>
-          <div style="font-size: 13px; color: #999; margin-top: 8px">
-            如因卫生或家具损坏需扣除部分押金，请填写实际退还金额
-          </div>
+          <p class="vacate-hint">如因卫生或家具损坏需扣除部分押金，请填写实际退还金额</p>
         </div>
         <el-form ref="vacateFormRef" :model="vacateForm" label-width="100px">
           <el-form-item label="退还押金" prop="refunded_deposit">
-            <el-input-number v-model="vacateForm.refunded_deposit" :min="0" :precision="2" style="width: 100%" />
+            <el-input-number v-model="vacateForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
           </el-form-item>
         </el-form>
-        <div v-if="vacateDeduction > 0" style="background: #fef0f0; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #f56c6c">
-          将自动创建一笔 <strong>{{ vacateDeduction.toFixed(2) }}</strong> 元的押金收入账单
+        <div v-if="vacateDeduction > 0" class="vacate-deduction-note">
+          将自动创建 <strong>{{ vacateDeduction.toFixed(2) }}</strong> 元的押金收入账单
         </div>
       </div>
       <template #footer>
@@ -264,14 +257,14 @@
           <el-input v-model="editForm.room_number" />
         </el-form-item>
         <el-form-item label="楼层" prop="floor">
-          <el-select v-model="editForm.floor" placeholder="选择楼层" style="width: 100%">
+          <el-select v-model="editForm.floor" placeholder="选择楼层" style="width:100%">
             <el-option label="1层" value="1" />
             <el-option label="2层" value="2" />
             <el-option label="3层" value="3" />
           </el-select>
         </el-form-item>
         <el-form-item label="户型" prop="layout">
-          <el-select v-model="editForm.layout" placeholder="选择户型" style="width: 100%">
+          <el-select v-model="editForm.layout" placeholder="选择户型" style="width:100%">
             <el-option label="单间" value="单间" />
             <el-option label="大单间" value="大单间" />
             <el-option label="一室一厅" value="一室一厅" />
@@ -286,11 +279,6 @@
         <el-button type="primary" :loading="editSubmitting" @click="handleEdit">确定</el-button>
       </template>
     </el-dialog>
-
-    <!-- 全屏图片 -->
-    <div v-if="fullscreenImg" class="fullscreen-overlay" @click="fullscreenImg = ''">
-      <img :src="fullscreenImg" class="fullscreen-img" />
-    </div>
   </div>
 </template>
 
@@ -298,8 +286,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Loading, Plus, Picture, VideoCamera, Close } from '@element-plus/icons-vue'
-import { buildingGetRoom, buildingUpdateRoom, buildingUpdateRoomStatus, buildingUpdateContractEndDate, buildingDeleteRoom, buildingDeleteMedia } from '../api'
+import { buildingGetRoom, buildingUpdateRoom, buildingUpdateRoomStatus, buildingRenewContract, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { showImagePreview } from 'vant'
 
 const route = useRoute()
 const router = useRouter()
@@ -308,6 +297,7 @@ const coverImage = ref(null)
 const galleryImages = ref([])
 const videos = ref([])
 const currentContract = ref(null)
+const landlords = ref([])
 const loading = ref(true)
 const token = localStorage.getItem('token')
 const isAdmin = computed(() => {
@@ -341,10 +331,19 @@ const editSubmitting = ref(false)
 const editForm = ref({})
 const editFormRef = ref(null)
 
-const fullscreenImg = ref('')
-
 function showFullscreen(url) {
-  fullscreenImg.value = url
+  const allImages = []
+  if (coverImage.value) allImages.push(mediaUrl(coverImage.value.file_path))
+  for (const img of galleryImages.value) {
+    const u = mediaUrl(img.file_path)
+    if (!allImages.includes(u)) allImages.push(u)
+  }
+  const startIndex = allImages.indexOf(url)
+  showImagePreview({
+    images: allImages,
+    startPosition: Math.max(0, startIndex),
+    closeable: true,
+  })
 }
 
 function goBack() {
@@ -372,7 +371,6 @@ async function fetchRoom() {
     const media = res.data.room.media || []
     coverImage.value = media.find(m => m.type === 'image' && m.category === 'cover') || null
     galleryImages.value = media.filter(m => m.type === 'image' && m.category !== 'cover')
-    // 保证封面照片与照片列表的第一个一致
     if (coverImage.value) {
       galleryImages.value = [coverImage.value, ...galleryImages.value.filter(m => m.id !== coverImage.value.id)]
     }
@@ -465,7 +463,7 @@ async function handleUpdateEndDate() {
   if (!valid) return
   endDateSubmitting.value = true
   try {
-    await buildingUpdateContractEndDate(route.params.id, { end_date: endDateForm.value.end_date, rent_price: endDateForm.value.rent_price })
+    await buildingRenewContract(route.params.id, { end_date: endDateForm.value.end_date, rent_price: endDateForm.value.rent_price })
     ElMessage.success('续租成功')
     showEndDateDialog.value = false
     endDateForm.value = { end_date: '', rent_price: 0 }
@@ -507,7 +505,17 @@ async function handleEdit() {
   }
 }
 
-onMounted(fetchRoom)
+async function fetchBuildingInfo() {
+  try {
+    const res = await getBuildingInfo()
+    landlords.value = res.data.landlords || []
+  } catch {}
+}
+
+onMounted(() => {
+  fetchRoom()
+  fetchBuildingInfo()
+})
 </script>
 
 <style scoped>
@@ -516,17 +524,15 @@ onMounted(fetchRoom)
   padding: 80px 0;
   color: #999;
 }
-
 .room-detail-page {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 24px 40px;
 }
-
-.back-btn {
-  margin-bottom: 16px;
-  font-size: 14px;
+.detail-back {
+  margin-bottom: 12px;
 }
+.detail-back .el-button { font-size: 14px; }
 
 /* Hero */
 .detail-hero {
@@ -539,52 +545,28 @@ onMounted(fetchRoom)
   display: flex;
   align-items: flex-end;
 }
-
-.detail-hero.has-cover {
-  min-height: 340px;
-}
-
-.detail-cover {
-  position: absolute;
-  inset: 0;
-}
-
-.cover-img {
-  width: 100%;
-  height: 100%;
-}
-
+.detail-hero.has-cover { min-height: 340px; }
+.detail-cover { position: absolute; inset: 0; }
+.cover-img { width: 100%; height: 100%; object-fit: cover; }
 .cover-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.1) 100%);
 }
-
 .detail-hero-content {
   position: relative;
   z-index: 1;
   padding: 32px;
   width: 100%;
 }
-
-.hero-tags {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.status-badge {
-  font-size: 14px;
-  letter-spacing: 0.5px;
-}
-
+.hero-tags { display: flex; gap: 8px; margin-bottom: 12px; }
+.status-badge { font-size: 14px; letter-spacing: 0.5px; }
 .end-date-badge {
   font-size: 13px;
   background: rgba(255,255,255,0.12) !important;
   color: rgba(255,255,255,0.8) !important;
   border: 1px solid rgba(255,255,255,0.15) !important;
 }
-
 .detail-title {
   font-size: 36px;
   font-weight: 700;
@@ -592,17 +574,8 @@ onMounted(fetchRoom)
   margin: 0 0 6px;
   text-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
-
-.detail-floor {
-  font-size: 15px;
-  color: rgba(255,255,255,0.7);
-  margin: 0 0 12px;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 8px;
-}
+.detail-floor { font-size: 15px; color: rgba(255,255,255,0.7); margin: 0 0 12px; }
+.hero-actions { display: flex; gap: 8px; }
 
 /* Body */
 .detail-body {
@@ -611,18 +584,10 @@ onMounted(fetchRoom)
   gap: 28px;
   align-items: start;
 }
+.detail-main { min-width: 0; }
 
-@media (max-width: 768px) {
-  .detail-body {
-    grid-template-columns: 1fr;
-  }
-}
-
-.detail-main {
-  min-width: 0;
-}
-
-.detail-section {
+/* Cards */
+.detail-card {
   background: #fff;
   border-radius: 12px;
   padding: 24px;
@@ -630,47 +595,49 @@ onMounted(fetchRoom)
   box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   border: 1px solid #f0f0f0;
 }
-
-.section-title {
+.card-title {
   font-size: 17px;
   font-weight: 600;
   margin: 0 0 16px;
   color: #1a1a2e;
   padding-bottom: 10px;
   border-bottom: 2px solid #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-
-.section-text {
+.card-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: #999;
+}
+.card-text {
   font-size: 15px;
   line-height: 1.8;
   color: #555;
   margin: 0;
   white-space: pre-wrap;
 }
-
-.empty-section {
-  text-align: center;
-  padding: 40px;
-}
+.empty-section { text-align: center; padding: 40px; }
 
 /* Gallery */
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
-
-.gallery-item {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-  transition: transform 0.2s;
+.gallery-item { position: relative; border-radius: 10px; overflow: hidden; }
+.gallery-img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+  transition: transform 0.3s;
 }
+.gallery-img:hover { transform: scale(1.05); }
 
-.gallery-item:hover {
-  transform: translateY(-2px);
-}
-
+/* Delete buttons */
 .gallery-item .delete-btn,
 .video-item .delete-btn,
 .cover-delete-btn {
@@ -685,37 +652,25 @@ onMounted(fetchRoom)
   transition: opacity 0.2s;
   z-index: 2;
 }
-
 .gallery-item.admin-mode:hover .delete-btn,
 .video-item.admin-mode:hover .delete-btn,
-.detail-cover:hover .cover-delete-btn {
-  opacity: 1;
-}
+.detail-cover:hover .cover-delete-btn { opacity: 1; }
 
 /* Video */
 .video-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 12px;
 }
-
-.video-item {
-  position: relative;
-}
-
+.video-item { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
 .video-player {
-  width: 320px;
-  max-height: 200px;
-  border-radius: 10px;
+  width: 100%;
+  max-height: 240px;
+  display: block;
 }
 
 /* Sidebar */
-.detail-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+.detail-sidebar { display: flex; flex-direction: column; gap: 16px; }
 .sidebar-card {
   background: #fff;
   border-radius: 12px;
@@ -723,107 +678,66 @@ onMounted(fetchRoom)
   box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   border: 1px solid #f0f0f0;
 }
-
-.sidebar-card-title {
+.sidebar-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sidebar-title {
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 14px;
   color: #1a1a2e;
 }
-
-.landlord-contact {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.contact-row {
+.sidebar-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 6px 0;
 }
-
-.contact-label {
-  color: #999;
-  font-size: 14px;
-}
-
-.contact-value {
-  font-weight: 500;
-  color: #333;
-}
-
-.contact-phone {
+.sidebar-label { color: #999; font-size: 14px; }
+.sidebar-val { font-weight: 500; color: #333; font-size: 14px; }
+.sidebar-phone {
   font-weight: 600;
   color: #e6a23c;
   text-decoration: none;
   font-size: 16px;
 }
+.sidebar-phone:hover { color: #d4880f; }
+.price-primary { color: #67c23a; font-weight: 600; }
+.price-warn { color: #e6a23c; font-weight: 600; }
+.sidebar-actions { display: flex; flex-direction: column; gap: 8px; }
+.upload-actions { display: flex; flex-direction: column; gap: 8px; }
 
-.contact-phone:hover {
-  color: #d4880f;
+/* Vacate dialog */
+.vacate-deposit-info {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
-
-.contract-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.contract-row {
+.vacate-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
 }
-
-.contract-label {
-  color: #999;
+.vacate-amount {
+  font-weight: 600;
+  color: #e6a23c;
+  font-size: 16px;
+}
+.vacate-hint {
   font-size: 13px;
+  color: #999;
+  margin: 8px 0 0;
 }
-
-.contract-value {
-  font-weight: 500;
-  color: #333;
-  font-size: 14px;
-}
-
-.gallery-img {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-  border-radius: 10px;
-  cursor: pointer;
-  display: block;
-}
-
-.cover-img {
-  cursor: pointer;
-}
-
-/* Fullscreen overlay */
-.fullscreen-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(0,0,0,0.92);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  animation: fadeIn 0.2s ease;
-}
-
-.fullscreen-img {
-  max-width: 90vw;
-  max-height: 90vh;
-  object-fit: contain;
-  border-radius: 4px;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.vacate-deduction-note {
+  background: #fef0f0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #f56c6c;
 }
 
 @media (max-width: 768px) {
@@ -833,13 +747,13 @@ onMounted(fetchRoom)
   .detail-hero-content { padding: 20px; }
   .detail-title { font-size: 24px; }
   .detail-body { grid-template-columns: 1fr; }
-  .detail-section { padding: 16px; }
-  .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-  .gallery-img { height: 140px; }
-  .video-player { width: 100%; max-height: 180px; }
+  .detail-card { padding: 16px; }
+  .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .gallery-img { height: 130px; }
+  .video-list { grid-template-columns: 1fr; gap: 8px; }
+  .video-player { max-height: 200px; }
   .sidebar-card { padding: 16px; }
   .hero-actions { flex-wrap: wrap; }
   .hero-actions .el-button { flex: 1; font-size: 12px; }
-  .contract-row { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
 </style>

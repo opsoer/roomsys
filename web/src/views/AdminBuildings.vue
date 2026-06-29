@@ -23,56 +23,57 @@
       </div>
     </el-card>
 
-    <el-table :data="buildings" stripe v-loading="loading" style="width:100%">
-      <el-table-column prop="name" label="公寓名称" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="district" label="区域" width="90" />
-      <el-table-column label="地址" min-width="150" show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ row.district }} {{ row.street }} {{ row.village }} {{ row.building_no }}
-        </template>
-      </el-table-column>
-      <el-table-column label="房东" min-width="140" show-overflow-tooltip>
-        <template #default="{ row }">
-          <div v-for="l in row.landlords" :key="l.id" style="font-size: 13px;">
-            {{ l.name }} {{ l.phone }}
+    <div v-loading="loading">
+      <div v-if="buildings.length === 0 && !loading" style="text-align:center;padding:60px 0;color:#999;">
+        暂无公寓数据
+      </div>
+      <el-card v-for="b in buildings" :key="b.id" shadow="hover" style="margin-bottom: 12px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;">
+          <div style="flex: 1; min-width: 240px;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <span style="font-size: 18px; font-weight: 600;">{{ b.name }}</span>
+              <el-tag v-if="b.building_status === 'normal'" size="small" type="success">正常</el-tag>
+              <el-tag v-else-if="b.building_status === 'expiring'" size="small" type="warning">即将到期</el-tag>
+              <el-tag v-else size="small" type="danger">已到期</el-tag>
+              <el-tag :type="b.package === 'full' ? 'primary' : 'info'" size="small" effect="plain">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</el-tag>
+            </div>
+            <div style="font-size: 13px; color: #555; line-height: 1.8;">
+              <div v-if="b.district">
+                <span style="color:#999;">📍</span>
+                {{ b.district }} {{ b.street }} {{ b.village }} {{ b.building_no }}
+              </div>
+              <div v-if="b.landlords?.length">
+                <span style="color:#999;">👤</span>
+                <template v-for="(l, i) in b.landlords" :key="l.id">
+                  {{ l.name }} {{ l.phone }}<span v-if="i < b.landlords.length - 1"> / </span>
+                </template>
+              </div>
+              <div>
+                <span style="color:#999;">🚪</span>
+                房间 {{ b.room_count }} 间
+                <el-tag v-if="b.vacant_count > 0" size="small" type="success" style="margin-left:6px;">可租 {{ b.vacant_count }}</el-tag>
+                <span v-else style="margin-left:6px;color:#999;">已满</span>
+              </div>
+              <div v-if="b.contract_date">
+                <span style="color:#999;">📅</span>
+                签约 {{ b.contract_date }} → {{ b.expired_at || '未设置' }}
+              </div>
+            </div>
           </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="房间" width="65" align="center">
-        <template #default="{ row }">{{ row.room_count }}</template>
-      </el-table-column>
-      <el-table-column label="可租" width="65" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="row.vacant_count > 0" size="small" type="success">{{ row.vacant_count }}</el-tag>
-          <span v-else style="color: #999;">0</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="签约日期" width="105" align="center">
-        <template #default="{ row }">{{ row.contract_date || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="到期日期" width="105" align="center">
-        <template #default="{ row }">{{ row.expired_at || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="row.building_status === 'normal'" size="small" type="success">正常</el-tag>
-          <el-tag v-else-if="row.building_status === 'expiring'" size="small" type="warning">即将到期</el-tag>
-          <el-tag v-else size="small" type="danger">已到期</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" @click="editBuilding(row)">编辑</el-button>
-          <el-button size="small" @click="copyLoginLink(row)">复制登录链接</el-button>
-          <el-button size="small" @click="createAdminForBuilding(row)">创建管理员</el-button>
-          <el-popconfirm title="确定删除?" @confirm="handleDelete(row.id)">
-            <template #reference>
-              <el-button size="small" type="danger">删除</el-button>
-            </template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-    </el-table>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;">
+            <el-button size="small" @click="editBuilding(b)">编辑</el-button>
+            <el-button size="small" @click="showUpgradeDialog(b)">升级套餐</el-button>
+            <el-button size="small" @click="copyLoginLink(b)">复制登录链接</el-button>
+            <el-button size="small" @click="createAdminForBuilding(b)">创建管理员</el-button>
+            <el-popconfirm title="确定删除?" @confirm="handleDelete(b.id)">
+              <template #reference>
+                <el-button size="small" type="danger">删除</el-button>
+              </template>
+            </el-popconfirm>
+          </div>
+        </div>
+      </el-card>
+    </div>
 
     <el-card shadow="never" style="margin-top: 20px">
       <h4>测试：系统时间模拟</h4>
@@ -130,6 +131,12 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="套餐" prop="package" :rules="[{required:true,message:'请选择套餐'}]">
+          <el-radio-group v-model="createForm.package">
+            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
+            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="简介" prop="description">
           <el-input v-model="createForm.description" type="textarea" :rows="3" />
         </el-form-item>
@@ -195,6 +202,12 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="套餐" prop="package">
+          <el-radio-group v-model="editForm.package">
+            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
+            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="简介" prop="description">
           <el-input v-model="editForm.description" type="textarea" :rows="3" />
         </el-form-item>
@@ -211,6 +224,23 @@
       <template #footer>
         <el-button @click="showEdit = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleEdit">确定更新</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 升级套餐弹窗 -->
+    <el-dialog v-model="showUpgrade" title="升级套餐" width="420px">
+      <p style="margin-bottom: 16px; color: #666;">为「{{ upgradeBuildingName }}」变更套餐</p>
+      <el-form :model="upgradeForm" label-width="80px">
+        <el-form-item label="目标套餐">
+          <el-radio-group v-model="upgradeForm.package">
+            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
+            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showUpgrade = false">取消</el-button>
+        <el-button type="primary" :loading="upgradeSubmitting" @click="handleUpgrade">确定变更</el-button>
       </template>
     </el-dialog>
 
@@ -237,7 +267,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Plus, Delete, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { adminGetBuildings, adminCreateBuilding, adminUpdateBuilding, adminDeleteBuilding, adminCreateBuildingAdmin, adminGetSystemTime, adminSetSystemTime } from '../api'
+import { adminGetBuildings, adminCreateBuilding, adminUpdateBuilding, adminDeleteBuilding, adminCreateBuildingAdmin, adminGetSystemTime, adminSetSystemTime, adminUpgradePackage } from '../api'
 import shenzhen from '../utils/shenzhen'
 
 const buildings = ref([])
@@ -246,6 +276,11 @@ const submitting = ref(false)
 const showCreate = ref(false)
 const showEdit = ref(false)
 const showCreateAdmin = ref(false)
+const showUpgrade = ref(false)
+const upgradeBuildingName = ref('')
+const upgradeBuildingId = ref(0)
+const upgradeForm = ref({ package: 'full' })
+const upgradeSubmitting = ref(false)
 const selectedBuildingName = ref('')
 const selectedBuildingId = ref(0)
 const adminSubmitting = ref(false)
@@ -259,11 +294,11 @@ const timeLoading = ref(false)
 const offsetDays = ref(0)
 const offsetHours = ref(0)
 const createForm = ref({
-  name: '', contract_date: '', district: '', street: '', village: '', building_no: '', description: '',
+  name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '',
   landlord_name: '', landlord_phones: [''],
   admin_username: '', admin_password: '',
 })
-const editForm = ref({ name: '', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
+const editForm = ref({ name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
 const adminForm = ref({ username: '', password: '' })
 
 const districts = shenzhen
@@ -324,23 +359,20 @@ async function handleCreate() {
     delete data.landlord_phones
     delete data.admin_username
     delete data.admin_password
-    await adminCreateBuilding(data)
-    // 创建管理员
-    if (createForm.value.admin_username) {
-      const buildingRes = await adminGetBuildings()
-      const latest = (buildingRes.data.buildings || [])[0]
-      if (latest) {
-        await adminCreateBuildingAdmin({
-          username: createForm.value.admin_username,
-          password: createForm.value.admin_password,
-          building_id: latest.id,
-        })
-      }
+    const createRes = await adminCreateBuilding(data)
+    const createdId = createRes.data?.building?.id
+    if (createForm.value.admin_username && createdId) {
+      await adminCreateBuildingAdmin({
+        username: createForm.value.admin_username,
+        password: createForm.value.admin_password,
+        building_id: createdId,
+      })
     }
     showCreate.value = false
-    createForm.value = { name: '', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
+    createForm.value = { name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
     await fetchBuildings()
-    const newBuilding = (await adminGetBuildings()).data.buildings?.[0]
+    const newId = createdId || ((await adminGetBuildings()).data.buildings || []).sort((a, b) => b.id - a.id)[0]?.id
+    const newBuilding = newId ? { id: newId } : null
     if (newBuilding) {
       const loginUrl = `${window.location.origin}/landlord/login/${newBuilding.id}`
       ElMessage.success(`公寓创建成功！管理员登录链接：${loginUrl}`)
@@ -357,7 +389,7 @@ function editBuilding(row) {
   const name = landlords.length > 0 ? landlords[0].name : ''
   const phones = landlords.map(l => l.phone)
   editForm.value = {
-    id: row.id, name: row.name, contract_date: row.contract_date || '',
+    id: row.id, name: row.name, package: row.package || 'basic', contract_date: row.contract_date || '',
     district: row.district, street: row.street,
     village: row.village, building_no: row.building_no, description: row.description,
     status: row.status,
@@ -426,6 +458,25 @@ async function handleCreateAdmin() {
   }
 }
 
+function showUpgradeDialog(row) {
+  upgradeBuildingId.value = row.id
+  upgradeBuildingName.value = row.name
+  upgradeForm.value = { package: row.package === 'full' ? 'basic' : 'full' }
+  showUpgrade.value = true
+}
+
+async function handleUpgrade() {
+  upgradeSubmitting.value = true
+  try {
+    await adminUpgradePackage(upgradeBuildingId.value, { package: upgradeForm.value.package })
+    ElMessage.success('套餐变更成功')
+    showUpgrade.value = false
+    await fetchBuildings()
+  } finally {
+    upgradeSubmitting.value = false
+  }
+}
+
 async function refreshTime() {
   try {
     const res = await adminGetSystemTime()
@@ -465,3 +516,10 @@ onMounted(() => {
   refreshTime()
 })
 </script>
+
+<style scoped>
+@media (max-width: 768px) {
+  .el-card { padding: 12px; }
+  [style*="display: flex; justify-content: space-between;"] { flex-wrap: wrap; gap: 8px; }
+}
+</style>

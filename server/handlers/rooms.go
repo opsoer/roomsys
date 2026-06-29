@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
+	"rental-server/config"
+	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/utils"
 
@@ -15,7 +17,18 @@ import (
 )
 
 type RoomHandler struct {
-	DB *gorm.DB
+	DB  *gorm.DB
+	Cfg *config.Config
+}
+
+func (h *RoomHandler) hasAuth(c *gin.Context) bool {
+	tokenStr := c.GetHeader("Authorization")
+	if tokenStr == "" || !strings.HasPrefix(tokenStr, "Bearer ") {
+		return false
+	}
+	tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
+	_, err := utils.ParseToken(tokenStr, h.Cfg.JWTSecret)
+	return err == nil
 }
 
 type CreateRoomReq struct {
@@ -49,65 +62,6 @@ type UpdateContractReq struct {
 	RentPrice float64 `json:"rent_price"`
 }
 
-// 公开：获取公寓下房间列表
-func (h *RoomHandler) ListPublic(c *gin.Context) {
-	buildingID := c.Param("bid")
-	var rooms []models.Room
-	query := h.DB.Preload("Media", func(db *gorm.DB) *gorm.DB {
-		return db.Where("type = ?", "image").Order("FIELD(category,'cover','gallery'), sort_order asc")
-	}).Where("building_id = ?", buildingID)
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if floor := c.Query("floor"); floor != "" {
-		query = query.Where("floor = ?", floor)
-	}
-	if layout := c.Query("layout"); layout != "" {
-		query = query.Where("layout = ?", layout)
-	}
-	if err := query.Find(&rooms).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
-		return
-	}
-	type RoomVO struct {
-		ID          uint   `json:"id"`
-		RoomNumber  string `json:"room_number"`
-		Floor       string `json:"floor"`
-		Layout      string `json:"layout"`
-		Status      string `json:"status"`
-		Description string `json:"description"`
-		Thumbnail   string `json:"thumbnail"`
-		EndDate     string `json:"end_date"`
-	}
-	result := make([]RoomVO, 0)
-	for _, r := range rooms {
-		vo := RoomVO{
-			ID:          r.ID,
-			RoomNumber:  r.RoomNumber,
-			Floor:       r.Floor,
-			Layout:      r.Layout,
-			Status:      r.Status,
-			Description: r.Description,
-		}
-		for _, m := range r.Media {
-			if m.Category == "cover" {
-				vo.Thumbnail = m.FilePath
-				break
-			}
-		}
-		if vo.Thumbnail == "" && len(r.Media) > 0 {
-			vo.Thumbnail = r.Media[0].FilePath
-		}
-		var contract models.RentalContract
-		if r.Status == "rented" || r.Status == "expiring" {
-			h.DB.Where("room_id = ? AND status = ?", r.ID, "active").Select("end_date").First(&contract)
-			vo.EndDate = contract.EndDate
-		}
-		result = append(result, vo)
-	}
-	c.JSON(http.StatusOK, gin.H{"rooms": result})
-}
-
 // 公开：获取房间详情
 func (h *RoomHandler) GetPublic(c *gin.Context) {
 	roomID := c.Param("rid")
@@ -116,7 +70,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	if err := h.DB.Preload("Media", func(db *gorm.DB) *gorm.DB {
 		return db.Order("sort_order asc")
 	}).Where("id = ? AND building_id = ?", roomID, buildingID).First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
 	type RoomDetail struct {
@@ -125,20 +79,22 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 		EndDate         string                  `json:"end_date"`
 	}
 	detail := RoomDetail{Room: room}
-	var contract models.RentalContract
-	if room.Status == "rented" || room.Status == "expiring" {
-		h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
-			Preload("Tenant").
-			First(&contract)
-		if contract.ID != 0 {
-			detail.CurrentContract = &contract
-			detail.EndDate = contract.EndDate
+	if h.hasAuth(c) {
+		var contract models.RentalContract
+		if room.Status == "rented" || room.Status == "expiring" {
+			h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
+				Preload("Tenant").
+				First(&contract)
+			if contract.ID != 0 {
+				detail.CurrentContract = &contract
+				detail.EndDate = contract.EndDate
+			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"room": detail})
+	utils.Success(c, gin.H{"room": detail})
 }
 
-// 公开：获取有效合同
+// 公开：获取有效合同（未登录时隐藏金额字段）
 func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	roomID := c.Param("rid")
 	buildingID := c.Param("id")
@@ -146,19 +102,31 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	if err := h.DB.Where("room_id = ? AND status = ? AND building_id = ?", roomID, "active", buildingID).
 		Preload("Tenant").Preload("Room").
 		First(&contract).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "无有效合同"})
+		utils.Success(c, gin.H{"contract": nil})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"contract": contract})
+	if !h.hasAuth(c) {
+		utils.Success(c, gin.H{"contract": nil})
+		return
+	}
+	utils.Success(c, gin.H{"contract": contract})
 }
 
-// 管理员：创建房间
 func (h *RoomHandler) Create(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	var req CreateRoomReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Uint("building_id", bid).Msg("创建房间请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	room := models.Room{
@@ -170,16 +138,26 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		Status:      "vacant",
 	}
 	if err := h.DB.Create(&room).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "房间号已存在"})
+		logger.Log.Warn().Err(err).Uint("building_id", bid).Str("room_number", req.RoomNumber).Msg("创建房间失败: 房间号重复")
+		utils.Error(c, http.StatusConflict, "房间号已存在")
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"room": room})
+	logger.Log.Info().Uint("room_id", room.ID).Uint("building_id", bid).Str("room_number", room.RoomNumber).Msg("房间创建成功")
+	utils.Created(c, "创建成功", gin.H{"room": room})
 }
 
 // 管理员：获取该楼栋所有房间
 func (h *RoomHandler) List(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	var rooms []models.Room
 	query := h.DB.Preload("Media", func(db *gorm.DB) *gorm.DB {
 		return db.Where("type = ?", "image").Order("FIELD(category,'cover','gallery'), sort_order asc")
@@ -194,7 +172,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 		query = query.Where("layout = ?", layout)
 	}
 	if err := query.Find(&rooms).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
 	type RoomVO struct {
@@ -233,19 +211,27 @@ func (h *RoomHandler) List(c *gin.Context) {
 		}
 		result = append(result, vo)
 	}
-	c.JSON(http.StatusOK, gin.H{"rooms": result})
+	utils.Success(c, gin.H{"rooms": result})
 }
 
 // 管理员：获取房间详情
 func (h *RoomHandler) Get(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var room models.Room
 	if err := h.DB.Preload("Media", func(db *gorm.DB) *gorm.DB {
 		return db.Order("sort_order asc")
 	}).Where("id = ? AND building_id = ?", roomID, bid).First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
 	type RoomDetail struct {
@@ -264,29 +250,39 @@ func (h *RoomHandler) Get(c *gin.Context) {
 			detail.EndDate = contract.EndDate
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"room": detail})
+	utils.Success(c, gin.H{"room": detail})
 }
 
-// 管理员：更新房间信息
 func (h *RoomHandler) Update(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var room models.Room
 	if err := h.DB.Where("id = ? AND building_id = ?", roomID, bid).First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		logger.Log.Warn().Str("id", roomID).Uint("building_id", bid).Msg("更新房间失败: 房间不存在")
+		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
 	var req UpdateRoomReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("更新房间请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	updates := map[string]interface{}{}
 	if req.RoomNumber != "" {
 		var dup models.Room
 		if h.DB.Where("building_id = ? AND room_number = ? AND id != ?", bid, req.RoomNumber, roomID).First(&dup).Error == nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "该公寓房间号已存在"})
+			logger.Log.Warn().Uint("room_id", room.ID).Str("room_number", req.RoomNumber).Msg("更新房间失败: 房间号重复")
+			utils.Error(c, http.StatusConflict, "该公寓房间号已存在")
 			return
 		}
 		updates["room_number"] = req.RoomNumber
@@ -300,71 +296,111 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
-	h.DB.Model(&room).Updates(updates)
-	c.JSON(http.StatusOK, gin.H{"room": room})
+	if err := h.DB.Model(&room).Updates(updates).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间失败")
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	logger.Log.Info().Uint("room_id", room.ID).Uint("building_id", bid).Msg("房间信息更新成功")
+	utils.Success(c, gin.H{"room": room})
 }
 
-// 管理员：删除房间
 func (h *RoomHandler) Delete(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var room models.Room
 	if err := h.DB.Where("id = ? AND building_id = ?", roomID, bid).First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		logger.Log.Warn().Str("id", roomID).Uint("building_id", bid).Msg("删除房间失败: 房间不存在")
+		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
-	if room.Status == "rented" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "房间已出租，无法删除"})
+	if room.Status == "rented" || room.Status == "expiring" {
+		logger.Log.Warn().Uint("room_id", room.ID).Str("status", room.Status).Msg("删除房间失败: 房间有活跃合同")
+		utils.Error(c, http.StatusBadRequest, "房间有活跃合同，无法删除")
 		return
 	}
-	h.DB.Delete(&room)
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	if err := h.DB.Delete(&room).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("删除房间失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	logger.Log.Info().Uint("room_id", room.ID).Str("room_number", room.RoomNumber).Uint("building_id", bid).Msg("房间已删除")
+	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
-// 管理员：修改房间状态
 func (h *RoomHandler) UpdateStatus(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var room models.Room
 	if err := h.DB.Where("id = ? AND building_id = ?", roomID, bid).First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		logger.Log.Warn().Str("id", roomID).Uint("building_id", bid).Msg("修改房间状态失败: 房间不存在")
+		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
 	var req UpdateRoomStatusReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("修改房间状态请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	switch req.Status {
 	case "vacant", "rented":
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "状态值无效"})
+		logger.Log.Warn().Uint("room_id", room.ID).Str("status", req.Status).Msg("修改房间状态失败: 无效的状态值")
+		utils.Error(c, http.StatusBadRequest, "状态值无效")
 		return
 	}
 	if req.Status == "rented" && req.TenantName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "出租需填写租客姓名"})
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 缺少租客姓名")
+		utils.Error(c, http.StatusBadRequest, "出租需填写租客姓名")
 		return
 	}
 	if req.Status == "rented" && room.Status == "expiring" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "即将退租的房间请先修改退租日期，不能直接设为已出租"})
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 即将退租的房间请先修改退租日期")
+		utils.Error(c, http.StatusBadRequest, "即将退租的房间请先修改退租日期，不能直接设为已出租")
 		return
 	}
 	if req.Status == "rented" && req.RentPrice <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写租金金额"})
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 缺少租金金额")
+		utils.Error(c, http.StatusBadRequest, "请填写租金金额")
 		return
 	}
 	if req.Status == "rented" && req.StartDate != "" && req.EndDate != "" {
 		start, err1 := time.Parse("2006-01-02", req.StartDate)
 		end, err2 := time.Parse("2006-01-02", req.EndDate)
 		if err1 == nil && err2 == nil && !end.After(start) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "退租日期必须大于起租日期"})
+			logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 退租日期必须大于起租日期")
+			utils.Error(c, http.StatusBadRequest, "退租日期必须大于起租日期")
 			return
 		}
 	}
 
 	if req.Status == "rented" {
+		var existingContract models.RentalContract
+		if err := h.DB.Where("room_id = ? AND status = ?", room.ID, "active").First(&existingContract).Error; err == nil {
+			logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 已有活跃合同")
+			utils.Error(c, http.StatusBadRequest, "该房间已有活跃合同，请先退租")
+			return
+		}
+
 		var tenant models.Tenant
 		h.DB.Where("name = ? AND phone = ?", req.TenantName, req.TenantPhone).First(&tenant)
 		if tenant.ID == 0 {
@@ -373,6 +409,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 				Phone: req.TenantPhone,
 			}
 			h.DB.Create(&tenant)
+			logger.Log.Info().Uint("tenant_id", tenant.ID).Str("name", tenant.Name).Msg("新租客信息已创建")
 		}
 		startDate := req.StartDate
 		if startDate == "" {
@@ -394,69 +431,194 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			Status:       "active",
 		}
 		h.DB.Create(&contract)
-		userID, _ := c.Get("user_id")
-		createProratedRentBill(h.DB, room, contract, userID.(uint), bid)
+		userID, exists := c.Get("user_id")
+		if !exists {
+			utils.Error(c, http.StatusUnauthorized, "未授权")
+			return
+		}
+		uid, ok := userID.(uint)
+		if !ok {
+			utils.Error(c, http.StatusInternalServerError, "服务器错误")
+			return
+		}
+		createProratedRentBill(h.DB, room, contract, uid, bid)
 		newStatus := "rented"
+		if startParsed, err := time.Parse("2006-01-02", startDate); err == nil && startParsed.After(utils.Now()) {
+			newStatus = "vacant"
+		}
 		if endDateParsed, err := time.Parse("2006-01-02", endDate); err == nil {
 			if utils.Until(endDateParsed) < 30*24*time.Hour {
 				newStatus = "expiring"
 			}
 		}
-		h.DB.Model(&room).Update("status", newStatus)
-		c.JSON(http.StatusOK, gin.H{"message": "出租成功", "status": newStatus})
+		if err := h.DB.Model(&room).Update("status", newStatus).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间状态失败")
+		}
+		logger.Log.Info().
+			Uint("room_id", room.ID).
+			Uint("building_id", bid).
+			Uint("tenant_id", tenant.ID).
+			Str("tenant_name", tenant.Name).
+			Float64("rent_price", req.RentPrice).
+			Float64("deposit", req.Deposit).
+			Str("start_date", startDate).
+			Str("end_date", endDate).
+			Str("new_status", newStatus).
+			Msg("房间出租成功")
+		utils.SuccessWithMsg(c, "出租成功", gin.H{"status": newStatus})
 		return
 	} else if req.Status == "vacant" {
+		tx := h.DB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
 		if req.RefundedDeposit != nil {
-			userID, _ := c.Get("user_id")
-			handleDepositRefund(h.DB, room, *req.RefundedDeposit, userID.(uint), bid)
+			userID, exists := c.Get("user_id")
+			if !exists {
+				tx.Rollback()
+				utils.Error(c, http.StatusUnauthorized, "未授权")
+				return
+			}
+			uid, ok := userID.(uint)
+			if !ok {
+				tx.Rollback()
+				utils.Error(c, http.StatusInternalServerError, "服务器错误")
+				return
+			}
+			handleDepositRefund(tx, room, *req.RefundedDeposit, uid, bid)
 		}
-		h.DB.Model(&models.RentalContract{}).
+		if err := tx.Model(&models.RentalContract{}).
 			Where("room_id = ? AND status = ?", room.ID, "active").
 			Updates(map[string]interface{}{
 				"status":   "ended",
 				"end_date": utils.Now().Format("2006-01-02"),
-			})
-		h.DB.Model(&room).Update("status", "vacant")
+			}).Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新合同状态失败")
+			utils.Error(c, http.StatusInternalServerError, "退租失败")
+			return
+		}
+		if err := tx.Model(&room).Update("status", "vacant").Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间状态失败")
+			utils.Error(c, http.StatusInternalServerError, "退租失败")
+			return
+		}
+		tx.Commit()
+		logger.Log.Info().
+			Uint("room_id", room.ID).
+			Uint("building_id", bid).
+			Str("room_number", room.RoomNumber).
+			Msg("房间退租成功，状态设为 vacant")
+		utils.SuccessWithMsg(c, "退租成功", gin.H{"status": "vacant"})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "状态更新成功", "status": req.Status})
+	utils.SuccessWithMsg(c, "状态更新成功", gin.H{"status": req.Status})
 }
 
-// 管理员：续租
-func (h *RoomHandler) UpdateContractEndDate(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+func (h *RoomHandler) RenewContract(c *gin.Context) {
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var contract models.RentalContract
 	if err := h.DB.Where("room_id = ? AND status = ? AND building_id = ?", roomID, "active", bid).First(&contract).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "无有效合同"})
+		logger.Log.Warn().Str("id", roomID).Uint("building_id", bid).Msg("续租失败: 无有效合同")
+		utils.Error(c, http.StatusNotFound, "无有效合同")
 		return
 	}
 	var req UpdateContractReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Uint("contract_id", contract.ID).Msg("续租请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	endDate, err := time.Parse("2006-01-02", req.EndDate)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误"})
+		logger.Log.Warn().Str("end_date", req.EndDate).Msg("续租失败: 日期格式错误")
+		utils.Error(c, http.StatusBadRequest, "日期格式错误")
 		return
 	}
 	startDate, err := time.Parse("2006-01-02", contract.StartDate)
 	if err == nil && !endDate.After(startDate) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "退租日期必须大于起租日期"})
+		logger.Log.Warn().Uint("contract_id", contract.ID).Msg("续租失败: 结束日期必须大于起租日期")
+		utils.Error(c, http.StatusBadRequest, "续租结束日期必须大于起租日期")
 		return
 	}
-	updates := map[string]interface{}{"end_date": req.EndDate}
+
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	rentPrice := contract.RentPrice
 	if req.RentPrice > 0 {
-		updates["rent_price"] = req.RentPrice
+		rentPrice = req.RentPrice
 	}
-	h.DB.Model(&contract).Updates(updates)
+
+	if err := tx.Model(&contract).Update("status", "ended").Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("contract_id", contract.ID).Msg("续租失败: 结束旧合同失败")
+		utils.Error(c, http.StatusInternalServerError, "续租失败")
+		return
+	}
+
+	newContract := models.RentalContract{
+		RoomID:       contract.RoomID,
+		BuildingID:   contract.BuildingID,
+		TenantID:     contract.TenantID,
+		RentPrice:    rentPrice,
+		Deposit:      contract.Deposit,
+		EarnestMoney: 0,
+		RentDay:      contract.RentDay,
+		PaymentCycle: contract.PaymentCycle,
+		ContractFile: contract.ContractFile,
+		StartDate:    contract.EndDate,
+		EndDate:      req.EndDate,
+		Status:       "active",
+	}
+	if err := tx.Create(&newContract).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("contract_id", contract.ID).Msg("续租失败: 创建新合同失败")
+		utils.Error(c, http.StatusInternalServerError, "续租失败")
+		return
+	}
+
 	if utils.Until(endDate) < 30*24*time.Hour {
-		h.DB.Model(&models.Room{}).Where("id = ?", roomID).Update("status", "expiring")
+		if err := tx.Model(&models.Room{}).Where("id = ?", roomID).Update("status", "expiring").Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", contract.RoomID).Msg("更新房间状态失败")
+		}
 	} else {
-		h.DB.Model(&models.Room{}).Where("id = ? AND status = ?", roomID, "expiring").Update("status", "rented")
+		if err := tx.Model(&models.Room{}).Where("id = ? AND status = ?", roomID, "expiring").Update("status", "rented").Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", contract.RoomID).Msg("更新房间状态失败")
+		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "退租日期更新成功"})
+
+	tx.Commit()
+
+	logger.Log.Info().
+		Uint("old_contract_id", contract.ID).
+		Uint("new_contract_id", newContract.ID).
+		Uint("room_id", contract.RoomID).
+		Uint("building_id", bid).
+		Str("new_end_date", req.EndDate).
+		Float64("rent_price", rentPrice).
+		Msg("合同续租成功")
+	utils.SuccessWithMsg(c, "续租成功", nil)
 }
 
 // 创建按天计算的租金账单
@@ -467,6 +629,9 @@ func createProratedRentBill(db *gorm.DB, room models.Room, contract models.Renta
 	}
 	endDate, err := time.Parse("2006-01-02", contract.EndDate)
 	if err != nil {
+		return
+	}
+	if startDate.After(utils.Now()) {
 		return
 	}
 	year, month, _ := startDate.Date()
@@ -484,10 +649,12 @@ func createProratedRentBill(db *gorm.DB, room models.Room, contract models.Renta
 	amount := contract.RentPrice * float64(days) / float64(daysInMonth)
 	amount = math.Round(amount*100) / 100
 	monthStr := firstDay.Format("2006-01")
-	desc := fmt.Sprintf("房间 %s %s 租金（%s至%s）", room.RoomNumber, monthStr, startDate.Format("2006-01-02"), billEnd.Format("2006-01-02"))
+	desc := fmt.Sprintf("房间 %s %s 租金（%s至%s）合同ID:%d", room.RoomNumber, monthStr, startDate.Format("2006-01-02"), billEnd.Format("2006-01-02"), contract.ID)
 
 	var existing models.Bill
-	result := db.Where("building_id = ? AND room_id = ? AND subtype = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", buildingID, room.ID, "租金", monthStr).First(&existing)
+	result := db.Where("building_id = ? AND room_id = ? AND subtype = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ? AND description LIKE ?",
+		buildingID, room.ID, "租金", monthStr, "%合同ID:"+fmt.Sprintf("%d", contract.ID)+"%").
+		First(&existing)
 	if result.Error == nil {
 		oldAmount := existing.Amount
 		newAmount := oldAmount + amount
@@ -500,7 +667,7 @@ func createProratedRentBill(db *gorm.DB, room models.Room, contract models.Renta
 		return
 	}
 
-	billNo := fmt.Sprintf("B%s%04d", utils.Now().Format("20060102150405"), utils.Now().UnixMilli()%10000)
+	billNo := utils.GenerateBillNo()
 	bill := models.Bill{
 		BillNo:      billNo,
 		Type:        "income",
@@ -513,16 +680,16 @@ func createProratedRentBill(db *gorm.DB, room models.Room, contract models.Renta
 		CreatedBy:   userID,
 	}
 	if err := db.Create(&bill).Error; err != nil {
-		log.Printf("自动创建租金账单失败: %v", err)
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Uint("building_id", buildingID).Msg("自动创建租金账单失败")
 	}
 }
 
 // 处理押金退还
-func handleDepositRefund(db *gorm.DB, room models.Room, refundedDeposit float64, userID uint, buildingID uint) {
+func handleDepositRefund(d *gorm.DB, room models.Room, refundedDeposit float64, userID uint, buildingID uint) {
 	var contract models.RentalContract
-	err := db.Where("room_id = ? AND status = ? AND building_id = ?", room.ID, "active", buildingID).First(&contract).Error
+	err := d.Where("room_id = ? AND status = ? AND building_id = ?", room.ID, "active", buildingID).First(&contract).Error
 	if err != nil {
-		err = db.Where("room_id = ? AND status = ? AND building_id = ?", room.ID, "ended", buildingID).Order("created_at desc").First(&contract).Error
+		err = d.Where("room_id = ? AND status = ? AND building_id = ?", room.ID, "ended", buildingID).Order("created_at desc").First(&contract).Error
 	}
 	if err != nil || contract.Deposit <= 0 {
 		return
@@ -535,7 +702,8 @@ func handleDepositRefund(db *gorm.DB, room models.Room, refundedDeposit float64,
 	}
 	today := utils.Now().Format("2006-01-02")
 	diff := contract.Deposit - refundedDeposit
-	incomeBillNo := fmt.Sprintf("B%s%04d", utils.Now().Format("20060102150405"), utils.Now().UnixMilli()%10000)
+
+	incomeBillNo := utils.GenerateBillNo()
 	incomeBill := models.Bill{
 		BillNo:      incomeBillNo,
 		Type:        "income",
@@ -547,16 +715,37 @@ func handleDepositRefund(db *gorm.DB, room models.Room, refundedDeposit float64,
 		BillDate:    today,
 		CreatedBy:   userID,
 	}
-	if err := db.Create(&incomeBill).Error; err != nil {
-		log.Printf("自动创建押金收入账单失败: %v", err)
+	if err := d.Create(&incomeBill).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Uint("building_id", buildingID).Msg("自动创建押金收入账单失败")
+		return
+	}
+
+	if refundedDeposit > 0 {
+		expenseBillNo := utils.GenerateBillNo()
+		expenseBill := models.Bill{
+			BillNo:      expenseBillNo,
+			Type:        "expense",
+			Subtype:     "押金退还",
+			Amount:      refundedDeposit,
+			BuildingID:  buildingID,
+			RoomID:      &room.ID,
+			Description: fmt.Sprintf("房间 %s %s 退还押金%.2f元", room.RoomNumber, today, refundedDeposit),
+			BillDate:    today,
+			CreatedBy:   userID,
+		}
+		if err := d.Create(&expenseBill).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Uint("building_id", buildingID).Msg("自动创建押金退还支出账单失败")
+			return
+		}
 	}
 }
 
-// 检查所有即将到期的合同
 func AutoCheckExpiringContracts(db *gorm.DB) {
 	var buildings []models.Building
 	db.Where("status = ?", "active").Find(&buildings)
 	now := utils.Now()
+	expiredCount := 0
+	expiringCount := 0
 	for _, building := range buildings {
 		var contracts []models.RentalContract
 		db.Where("status = ? AND building_id = ?", "active", building.ID).Find(&contracts)
@@ -586,26 +775,47 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 						}
 						db.Create(&task)
 					}
+					expiredCount++
+					logger.Log.Info().
+						Uint("contract_id", c.ID).
+						Uint("room_id", c.RoomID).
+						Uint("building_id", building.ID).
+						Str("room_number", room.RoomNumber).
+						Msg("合同到期，房间状态设为 expired")
 				} else if utils.Until(endDate) < 30*24*time.Hour {
 					db.Model(&models.Room{}).Where("id = ?", c.RoomID).Update("status", "expiring")
+					expiringCount++
 				} else {
 					db.Model(&models.Room{}).Where("id = ? AND status = ?", c.RoomID, "expiring").Update("status", "rented")
 				}
 			}
 		}
 	}
+	if expiredCount > 0 || expiringCount > 0 {
+		logger.Log.Info().Int("expired", expiredCount).Int("expiring", expiringCount).Msg("合同到期检查完成")
+	} else {
+		logger.Log.Debug().Msg("合同到期检查完成，无到期合同")
+	}
 }
 
 func (h *RoomHandler) GetActiveContract(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	roomID := c.Param("id")
 	var contract models.RentalContract
 	if err := h.DB.Where("room_id = ? AND status = ? AND building_id = ?", roomID, "active", bid).
 		Preload("Tenant").Preload("Room").
 		First(&contract).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "无有效合同"})
+		utils.Error(c, http.StatusNotFound, "无有效合同")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"contract": contract})
+	utils.Success(c, gin.H{"contract": contract})
 }

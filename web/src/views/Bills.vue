@@ -35,34 +35,58 @@
           <el-button type="primary" @click="showAddDialog = true">新增账单</el-button>
         </div>
 
-        <el-table :data="bills" border stripe style="width: 100%" v-loading="billLoading">
-          <el-table-column prop="bill_no" label="账单编号" width="140" />
-          <el-table-column prop="bill_date" label="日期" width="110" />
-          <el-table-column prop="type" label="类型" width="80">
-            <template #default="{ row }">
-              <el-tag :type="row.type === 'income' ? 'success' : 'danger'" size="small">
+        <div class="desktop-table">
+          <el-table :data="bills" border stripe style="width: 100%" v-loading="billLoading">
+            <el-table-column prop="bill_no" label="账单编号" width="140" />
+            <el-table-column prop="bill_date" label="日期" width="110" />
+            <el-table-column prop="type" label="类型" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.type === 'income' ? 'success' : 'danger'" size="small">
+                  {{ row.type === 'income' ? '收入' : '支出' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="subtype" label="子类型" width="100" />
+            <el-table-column prop="amount" label="金额" width="120">
+              <template #default="{ row }">
+                <span :style="{ color: row.type === 'income' ? '#67c23a' : '#f56c6c', fontWeight: 'bold' }">
+                  {{ row.type === 'income' ? '+' : '-' }}{{ row.amount.toFixed(2) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="room" label="关联房间" width="100">
+              <template #default="{ row }">{{ row.room?.room_number || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="description" label="备注" min-width="150" show-overflow-tooltip />
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" @click="handleEdit(row)">修改</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div class="mobile-cards" v-loading="billLoading">
+          <div v-for="row in bills" :key="row.id" class="bill-card">
+            <div class="bc-head">
+              <span class="bc-no">{{ row.bill_no }}</span>
+              <el-tag :type="row.type === 'income' ? 'success' : 'danger'" size="small" effect="dark" round>
                 {{ row.type === 'income' ? '收入' : '支出' }}
               </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="subtype" label="子类型" width="100" />
-          <el-table-column prop="amount" label="金额" width="120">
-            <template #default="{ row }">
-              <span :style="{ color: row.type === 'income' ? '#67c23a' : '#f56c6c', fontWeight: 'bold' }">
+            </div>
+            <div class="bc-info">
+              <span>{{ row.bill_date }}</span>
+              <span class="bc-subtype">{{ row.subtype }}</span>
+              <span class="bc-room">{{ row.room?.room_number || '-' }}</span>
+            </div>
+            <div class="bc-body">
+              <span :class="['bc-amount', row.type]">
                 {{ row.type === 'income' ? '+' : '-' }}{{ row.amount.toFixed(2) }}
               </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="room" label="关联房间" width="100">
-            <template #default="{ row }">{{ row.room?.room_number || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="description" label="备注" min-width="150" show-overflow-tooltip />
-          <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ row }">
-              <el-button size="small" @click="handleEdit(row)">修改</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+              <el-button size="small" text @click="handleEdit(row)">修改</el-button>
+            </div>
+            <div v-if="row.description" class="bc-desc">{{ row.description }}</div>
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="月度统计" name="monthly">
@@ -163,37 +187,70 @@
         </el-card>
         <el-card v-loading="trendLoading">
           <h4 style="margin-bottom: 16px">增长率分析</h4>
-          <el-table :data="growthData" border stripe size="small" max-height="300">
-            <el-table-column prop="month" label="月份" width="90" />
-            <el-table-column label="收入环比" width="110">
-              <template #default="{ row }">
-                <span :style="{ color: (row.income_mom||0) >= 0 ? '#67c23a' : '#f56c6c' }">
-                  {{ row.income_mom != null ? (row.income_mom >= 0 ? '+' : '') + row.income_mom.toFixed(1) + '%' : '-' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="收入同比" width="110">
-              <template #default="{ row }">
-                <span :style="{ color: (row.income_yoy||0) >= 0 ? '#67c23a' : '#f56c6c' }">
-                  {{ row.income_yoy != null ? (row.income_yoy >= 0 ? '+' : '') + row.income_yoy.toFixed(1) + '%' : '-' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="支出环比" width="110">
-              <template #default="{ row }">
-                <span :style="{ color: (row.expense_mom||0) >= 0 ? '#f56c6c' : '#67c23a' }">
-                  {{ row.expense_mom != null ? (row.expense_mom >= 0 ? '+' : '') + row.expense_mom.toFixed(1) + '%' : '-' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="支出同比" width="110">
-              <template #default="{ row }">
-                <span :style="{ color: (row.expense_yoy||0) >= 0 ? '#f56c6c' : '#67c23a' }">
-                  {{ row.expense_yoy != null ? (row.expense_yoy >= 0 ? '+' : '') + row.expense_yoy.toFixed(1) + '%' : '-' }}
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
+          <div class="desktop-table">
+            <el-table :data="growthData" border stripe size="small" max-height="300">
+              <el-table-column prop="month" label="月份" width="90" />
+              <el-table-column label="收入环比" width="110">
+                <template #default="{ row }">
+                  <span :style="{ color: (row.income_mom||0) >= 0 ? '#67c23a' : '#f56c6c' }">
+                    {{ row.income_mom != null ? (row.income_mom >= 0 ? '+' : '') + row.income_mom.toFixed(1) + '%' : '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="收入同比" width="110">
+                <template #default="{ row }">
+                  <span :style="{ color: (row.income_yoy||0) >= 0 ? '#67c23a' : '#f56c6c' }">
+                    {{ row.income_yoy != null ? (row.income_yoy >= 0 ? '+' : '') + row.income_yoy.toFixed(1) + '%' : '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="支出环比" width="110">
+                <template #default="{ row }">
+                  <span :style="{ color: (row.expense_mom||0) >= 0 ? '#f56c6c' : '#67c23a' }">
+                    {{ row.expense_mom != null ? (row.expense_mom >= 0 ? '+' : '') + row.expense_mom.toFixed(1) + '%' : '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="支出同比" width="110">
+                <template #default="{ row }">
+                  <span :style="{ color: (row.expense_yoy||0) >= 0 ? '#f56c6c' : '#67c23a' }">
+                    {{ row.expense_yoy != null ? (row.expense_yoy >= 0 ? '+' : '') + row.expense_yoy.toFixed(1) + '%' : '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="mobile-cards">
+            <div v-for="g in growthData" :key="g.month" class="growth-card">
+              <div class="gc-month">{{ g.month }}</div>
+              <div class="gc-grid">
+                <div class="gc-item">
+                  <span class="gc-label">收入环比</span>
+                  <span :style="{ color: (g.income_mom||0) >= 0 ? '#67c23a' : '#f56c6c', fontWeight:600 }">
+                    {{ g.income_mom != null ? (g.income_mom >= 0 ? '+' : '') + g.income_mom.toFixed(1) + '%' : '-' }}
+                  </span>
+                </div>
+                <div class="gc-item">
+                  <span class="gc-label">收入同比</span>
+                  <span :style="{ color: (g.income_yoy||0) >= 0 ? '#67c23a' : '#f56c6c', fontWeight:600 }">
+                    {{ g.income_yoy != null ? (g.income_yoy >= 0 ? '+' : '') + g.income_yoy.toFixed(1) + '%' : '-' }}
+                  </span>
+                </div>
+                <div class="gc-item">
+                  <span class="gc-label">支出环比</span>
+                  <span :style="{ color: (g.expense_mom||0) >= 0 ? '#f56c6c' : '#67c23a', fontWeight:600 }">
+                    {{ g.expense_mom != null ? (g.expense_mom >= 0 ? '+' : '') + g.expense_mom.toFixed(1) + '%' : '-' }}
+                  </span>
+                </div>
+                <div class="gc-item">
+                  <span class="gc-label">支出同比</span>
+                  <span :style="{ color: (g.expense_yoy||0) >= 0 ? '#f56c6c' : '#67c23a', fontWeight:600 }">
+                    {{ g.expense_yoy != null ? (g.expense_yoy >= 0 ? '+' : '') + g.expense_yoy.toFixed(1) + '%' : '-' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </el-card>
       </el-tab-pane>
 
@@ -207,18 +264,30 @@
         </div>
         <el-card v-loading="predictLoading">
           <h4 style="margin-bottom: 16px">现金流预测 <span style="font-size:13px;color:#999;font-weight:400">（押金为负债，不参与净利润计算）</span></h4>
-          <el-table :data="predictions" border stripe>
-            <el-table-column prop="month" label="月份" width="100" />
-            <el-table-column prop="rent" label="预计租金收入" width="140">
-              <template #default="{ row }"><span style="color:#67c23a;font-weight:600">{{ row.rent.toFixed(2) }}</span></template>
-            </el-table-column>
-            <el-table-column prop="deposit" label="其中押金(负债)" width="140">
-              <template #default="{ row }"><span style="color:#e6a23c">{{ row.deposit.toFixed(2) }}</span></template>
-            </el-table-column>
-            <el-table-column prop="available" label="可分配净利润" width="140">
-              <template #default="{ row }"><span style="color:#409eff;font-weight:600">{{ row.available.toFixed(2) }}</span></template>
-            </el-table-column>
-          </el-table>
+          <div class="desktop-table">
+            <el-table :data="predictions" border stripe>
+              <el-table-column prop="month" label="月份" width="100" />
+              <el-table-column prop="rent" label="预计租金收入" width="140">
+                <template #default="{ row }"><span style="color:#67c23a;font-weight:600">{{ row.rent.toFixed(2) }}</span></template>
+              </el-table-column>
+              <el-table-column prop="deposit" label="其中押金(负债)" width="140">
+                <template #default="{ row }"><span style="color:#e6a23c">{{ row.deposit.toFixed(2) }}</span></template>
+              </el-table-column>
+              <el-table-column prop="available" label="可分配净利润" width="140">
+                <template #default="{ row }"><span style="color:#409eff;font-weight:600">{{ row.available.toFixed(2) }}</span></template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="mobile-cards">
+            <div v-for="p in predictions" :key="p.month" class="predict-card">
+              <div class="pc-month">{{ p.month }}</div>
+              <div class="pc-rows">
+                <div class="pc-row"><span class="pc-label">预计租金收入</span><span class="pc-val pc-rent">¥{{ p.rent.toFixed(2) }}</span></div>
+                <div class="pc-row"><span class="pc-label">其中押金(负债)</span><span class="pc-val pc-deposit">¥{{ p.deposit.toFixed(2) }}</span></div>
+                <div class="pc-row pc-divider"><span class="pc-label">可分配净利润</span><span class="pc-val pc-avail">¥{{ p.available.toFixed(2) }}</span></div>
+              </div>
+            </div>
+          </div>
           <div v-if="predictions.length" style="margin-top:16px;padding:12px;background:#f5f7fa;border-radius:8px;font-size:14px;color:#666">
             预测期可分配总额：<span style="color:#409eff;font-weight:600;font-size:18px">{{ predictTotal.toFixed(2) }}</span> 元
           </div>
@@ -407,14 +476,22 @@ async function fetchBills() {
 
 async function fetchStats() {
   if (!statsMonth.value) return
-  const res = await buildingGetBillStats(statsMonth.value)
-  stats.value = res.data
+  try {
+    const res = await buildingGetBillStats(statsMonth.value)
+    stats.value = res.data
+  } catch {
+    ElMessage.error('获取月度统计失败')
+  }
 }
 
 async function fetchYearStats() {
   if (!statsYear.value) return
-  const res = await buildingGetBillStats(null, statsYear.value)
-  yearStats.value = res.data
+  try {
+    const res = await buildingGetBillStats(null, statsYear.value)
+    yearStats.value = res.data
+  } catch {
+    ElMessage.error('获取年度统计失败')
+  }
 }
 
 async function fetchTrend() {
@@ -423,6 +500,8 @@ async function fetchTrend() {
     const res = await buildingGetBillTrend({ years: trendRange.value })
     trendData.value = res.data.months || []
     growthData.value = res.data.growth || []
+  } catch {
+    ElMessage.error('获取趋势数据失败')
   } finally {
     trendLoading.value = false
   }
@@ -433,6 +512,8 @@ async function fetchPredict() {
   try {
     const res = await buildingGetDividendPredict({ months: predictMonths.value })
     predictions.value = res.data.predictions || []
+  } catch {
+    ElMessage.error('获取预测数据失败')
   } finally {
     predictLoading.value = false
   }
@@ -481,7 +562,9 @@ async function handleDelete(id) {
     await fetchBills()
     await fetchStats()
     await fetchYearStats()
-  } catch {}
+  } catch {
+    ElMessage.error('删除失败')
+  }
 }
 
 function resetBillForm() {
@@ -510,8 +593,12 @@ function handleTabChange(name) {
 
 onMounted(async () => {
   await fetchBills()
-  const res = await buildingGetRooms()
-  allRooms.value = res.data.rooms
+  try {
+    const res = await buildingGetRooms()
+    allRooms.value = res.data.rooms
+  } catch {
+    ElMessage.error('获取房间列表失败')
+  }
   const now = new Date()
   statsMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   statsYear.value = String(now.getFullYear())
@@ -521,7 +608,120 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.desktop-table { display: block; }
+.mobile-cards { display: none; }
+
+.bill-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid #eee;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.bc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.bc-no {
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+  letter-spacing: 0.3px;
+}
+.bc-info {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+.bc-subtype, .bc-room {
+  color: #666;
+}
+.bc-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.bc-amount {
+  font-size: 18px;
+  font-weight: 700;
+}
+.bc-amount.income { color: #67c23a; }
+.bc-amount.expense { color: #f56c6c; }
+.bc-desc {
+  font-size: 12px;
+  color: #999;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #f5f5f5;
+}
+
+.growth-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid #eee;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.gc-month {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+.gc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.gc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gc-label {
+  font-size: 11px;
+  color: #999;
+}
+
+.predict-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid #eee;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.pc-month {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+.pc-rows { display: flex; flex-direction: column; gap: 6px; }
+.pc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pc-label { font-size: 13px; color: #666; }
+.pc-val { font-size: 14px; font-weight: 600; }
+.pc-rent { color: #67c23a; }
+.pc-deposit { color: #e6a23c; }
+.pc-avail { color: #409eff; }
+.pc-divider {
+  padding-top: 6px;
+  border-top: 1px solid #f5f5f5;
+}
+
 @media (max-width: 768px) {
+  .desktop-table { display: none; }
+  .mobile-cards { display: block; }
   .el-tabs__item { font-size: 13px; padding: 0 12px; }
   .el-table .el-table__cell { font-size: 12px; }
   .el-table-column--fixed { display: none; }

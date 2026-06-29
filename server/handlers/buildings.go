@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/utils"
 
@@ -17,6 +18,7 @@ type BuildingHandler struct {
 
 type CreateBuildingReq struct {
 	Name         string `json:"name" binding:"required"`
+	Package      string `json:"package"`
 	ContractDate string `json:"contract_date"`
 	District     string `json:"district"`
 	Street       string `json:"street"`
@@ -31,6 +33,7 @@ type CreateBuildingReq struct {
 
 type UpdateBuildingReq struct {
 	Name         string `json:"name"`
+	Package      string `json:"package"`
 	ContractDate string `json:"contract_date"`
 	District     string `json:"district"`
 	Street       string `json:"street"`
@@ -48,19 +51,35 @@ type UpdateBuildingReq struct {
 func (h *BuildingHandler) Create(c *gin.Context) {
 	var req CreateBuildingReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Msg("创建公寓请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	uid, ok := userID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 
 	var existing models.Building
 	if h.DB.Where("name = ?", req.Name).First(&existing).Error == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "公寓名称已存在"})
+		logger.Log.Warn().Str("name", req.Name).Msg("创建公寓失败: 名称已存在")
+		utils.Error(c, http.StatusConflict, "公寓名称已存在")
 		return
 	}
 
+	pkg := req.Package
+	if pkg != "basic" && pkg != "full" {
+		pkg = "basic"
+	}
 	building := models.Building{
 		Name:         req.Name,
+		Package:      pkg,
 		ContractDate: req.ContractDate,
 		District:     req.District,
 		Street:       req.Street,
@@ -68,7 +87,7 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		BuildingNo:   req.BuildingNo,
 		Description:  req.Description,
 		Status:       "active",
-		CreatedBy:    userID.(uint),
+		CreatedBy:    uid,
 	}
 	if req.ContractDate != "" {
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
@@ -76,7 +95,8 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		}
 	}
 	if err := h.DB.Create(&building).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建公寓失败"})
+		logger.Log.Error().Err(err).Str("name", req.Name).Msg("创建公寓数据库失败")
+		utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
 		return
 	}
 	for _, l := range req.Landlords {
@@ -85,31 +105,42 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 			Name:       l.Name,
 			Phone:      l.Phone,
 		}
-		h.DB.Create(&ll)
+		if err := h.DB.Create(&ll).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("创建房东信息失败")
+		}
 	}
-	c.JSON(http.StatusCreated, gin.H{"building": building, "message": "公寓创建成功"})
+	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Uint("created_by", uid).Msg("公寓创建成功")
+	utils.Created(c, "公寓创建成功", gin.H{"building": building})
 }
 
 func (h *BuildingHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	var building models.Building
 	if err := h.DB.First(&building, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Warn().Str("id", id).Msg("更新公寓失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
 	var req UpdateBuildingReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		logger.Log.Warn().Uint("building_id", building.ID).Msg("更新公寓请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	updates := map[string]interface{}{}
 	if req.Name != "" {
 		var dup models.Building
 		if h.DB.Where("name = ? AND id != ?", req.Name, id).First(&dup).Error == nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "公寓名称已存在"})
+			logger.Log.Warn().Str("name", req.Name).Msg("更新公寓失败: 名称已存在")
+			utils.Error(c, http.StatusConflict, "公寓名称已存在")
 			return
 		}
 		updates["name"] = req.Name
+	}
+	if req.Package != "" {
+		if req.Package == "basic" || req.Package == "full" {
+			updates["package"] = req.Package
+		}
 	}
 	if req.ContractDate != "" {
 		updates["contract_date"] = req.ContractDate
@@ -129,9 +160,7 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	if req.BuildingNo != "" {
 		updates["building_no"] = req.BuildingNo
 	}
-	if req.CoverImage != "" {
-		updates["cover_image"] = req.CoverImage
-	}
+	updates["cover_image"] = req.CoverImage
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
@@ -140,34 +169,105 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 	if len(updates) > 0 {
 		if err := h.DB.Model(&building).Updates(updates).Error; err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "更新失败，请检查名称是否重复"})
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新公寓数据库失败")
+			utils.Error(c, http.StatusConflict, "更新失败，请检查名称是否重复")
 			return
 		}
 	}
 	if req.Landlords != nil {
-		h.DB.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{})
+		if err := h.DB.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{}).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除旧房东信息失败")
+		}
 		for _, l := range req.Landlords {
 			ll := models.BuildingLandlord{
 				BuildingID: building.ID,
 				Name:       l.Name,
 				Phone:      l.Phone,
 			}
-			h.DB.Create(&ll)
+			if err := h.DB.Create(&ll).Error; err != nil {
+				logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("创建房东信息失败")
+			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Msg("公寓信息更新成功")
+	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
 func (h *BuildingHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	var building models.Building
 	if err := h.DB.First(&building, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
-	h.DB.Delete(&building)
-	h.DB.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{})
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.Dividend{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓分红记录失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.Shareholder{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓股东信息失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.Bill{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓账单失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.Task{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓任务失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	var roomIDs []uint
+	tx.Model(&models.Room{}).Where("building_id = ?", building.ID).Pluck("id", &roomIDs)
+	if len(roomIDs) > 0 {
+		if err := tx.Where("room_id IN ?", roomIDs).Delete(&models.RentalContract{}).Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓合同失败")
+			utils.Error(c, http.StatusInternalServerError, "删除失败")
+			return
+		}
+		if err := tx.Where("room_id IN ?", roomIDs).Delete(&models.RoomMedia{}).Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓房间媒体失败")
+			utils.Error(c, http.StatusInternalServerError, "删除失败")
+			return
+		}
+	}
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.Room{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓房间失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := tx.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{}).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓房东信息失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := tx.Delete(&building).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除公寓失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	tx.Commit()
+	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Msg("公寓已删除")
+	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
 func (h *BuildingHandler) List(c *gin.Context) {
@@ -192,19 +292,25 @@ func (h *BuildingHandler) List(c *gin.Context) {
 		query = query.Where("district = ?", district)
 	}
 
-	query.Find(&buildings)
+	if err := query.Find(&buildings).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
+	}
 
-	// 关键词搜索（按公寓名或房东电话）
 	if keyword != "" {
-		type BidPhone struct {
-			BuildingID uint
-			Phone      string
+		var nameMatchIDs []uint
+		if err := h.DB.Model(&models.Building{}).Select("id").Where("name LIKE ?", "%"+keyword+"%").Find(&nameMatchIDs).Error; err != nil {
+			logger.Log.Error().Err(err).Msg("搜索公寓名称失败")
 		}
-		var matches []BidPhone
-		h.DB.Model(&models.BuildingLandlord{}).Select("building_id, phone").Where("phone LIKE ?", "%"+keyword+"%").Find(&matches)
+		var phoneMatchIDs []uint
+		if err := h.DB.Model(&models.BuildingLandlord{}).Select("building_id").Where("phone LIKE ?", "%"+keyword+"%").Find(&phoneMatchIDs).Error; err != nil {
+			logger.Log.Error().Err(err).Msg("搜索公寓电话失败")
+		}
 		matchIDs := make(map[uint]bool)
-		for _, m := range matches {
-			matchIDs[m.BuildingID] = true
+		for _, id := range nameMatchIDs {
+			matchIDs[id] = true
+		}
+		for _, id := range phoneMatchIDs {
+			matchIDs[id] = true
 		}
 		filtered := make([]models.Building, 0)
 		for _, b := range buildings {
@@ -228,7 +334,9 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	result := make([]BuildingVO, 0)
 	for _, b := range buildings {
 		var landlords []models.BuildingLandlord
-		h.DB.Where("building_id = ?", b.ID).Find(&landlords)
+		if err := h.DB.Where("building_id = ?", b.ID).Find(&landlords).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", b.ID).Msg("查询房东列表失败")
+		}
 		var roomCount, vacantCount, rentedCount, expiringCount int64
 		h.DB.Model(&models.Room{}).Where("building_id = ?", b.ID).Count(&roomCount)
 		h.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", b.ID, "vacant").Count(&vacantCount)
@@ -257,16 +365,20 @@ func (h *BuildingHandler) List(c *gin.Context) {
 			ExpiringCount:  expiringCount,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"buildings": result})
+	logger.Log.Debug().Int("count", len(result)).Str("status", statusFilter).Msg("查询公寓列表")
+	utils.Success(c, gin.H{"buildings": result})
 }
 
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
+	logger.Log.Debug().Str("district", c.Query("district")).Msg("公开查询公寓列表")
 	var buildings []models.Building
 	query := h.DB.Where("status = ?", "active").Order("created_at desc")
 	if district := c.Query("district"); district != "" {
 		query = query.Where("district = ?", district)
 	}
-	query.Find(&buildings)
+	if err := query.Find(&buildings).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("公开查询公寓列表失败")
+	}
 	now := utils.Now()
 	validBuildings := make([]models.Building, 0)
 	for _, b := range buildings {
@@ -296,7 +408,9 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	result := make([]BuildingPublicVO, 0)
 	for _, b := range buildings {
 		var landlords []models.BuildingLandlord
-		h.DB.Where("building_id = ?", b.ID).Find(&landlords)
+		if err := h.DB.Where("building_id = ?", b.ID).Find(&landlords).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", b.ID).Msg("公开查询房东列表失败")
+		}
 		var roomCount, vacantCount, rentedCount, expiringCount int64
 		h.DB.Model(&models.Room{}).Where("building_id = ?", b.ID).Count(&roomCount)
 		h.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", b.ID, "vacant").Count(&vacantCount)
@@ -318,24 +432,28 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 			ExpiringCount: expiringCount,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"buildings": result})
+	utils.Success(c, gin.H{"buildings": result})
 }
 
 func (h *BuildingHandler) GetPublic(c *gin.Context) {
 	id := c.Param("id")
 	var building models.Building
 	if err := h.DB.First(&building, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Warn().Str("id", id).Msg("公开查询公寓详情失败: 不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
+	logger.Log.Debug().Uint("building_id", building.ID).Msg("公开查询公寓详情")
 	var landlords []models.BuildingLandlord
-	h.DB.Where("building_id = ?", building.ID).Find(&landlords)
+	if err := h.DB.Where("building_id = ?", building.ID).Find(&landlords).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("公开查询房东信息失败")
+	}
 	var roomCount, vacantCount, rentedCount, expiringCount int64
 	h.DB.Model(&models.Room{}).Where("building_id = ?", building.ID).Count(&roomCount)
 	h.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", building.ID, "vacant").Count(&vacantCount)
 	h.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", building.ID, "expiring").Count(&expiringCount)
 	h.DB.Model(&models.Room{}).Where("building_id = ? AND status IN ?", building.ID, []string{"rented", "expiring"}).Count(&rentedCount)
-	c.JSON(http.StatusOK, gin.H{
+	utils.Success(c, gin.H{
 		"building": gin.H{
 			"id":             building.ID,
 			"name":           building.Name,
@@ -358,9 +476,11 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	id := c.Param("id")
 	var building models.Building
 	if err := h.DB.First(&building, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Warn().Str("id", id).Msg("公开查询公寓房间失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
+	logger.Log.Debug().Uint("building_id", building.ID).Msg("公开查询公寓房间列表")
 	var rooms []models.Room
 	query := h.DB.Preload("Media", func(db *gorm.DB) *gorm.DB {
 		return db.Where("type = ?", "image").Order("FIELD(category,'cover','gallery'), sort_order asc")
@@ -374,7 +494,9 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	if layout := c.Query("layout"); layout != "" {
 		query = query.Where("layout = ?", layout)
 	}
-	query.Find(&rooms)
+	if err := query.Find(&rooms).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("查询公寓房间失败")
+	}
 	type RoomVO struct {
 		ID          uint   `json:"id"`
 		RoomNumber  string `json:"room_number"`
@@ -406,53 +528,79 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		}
 		var contract models.RentalContract
 		if r.Status == "rented" || r.Status == "expiring" {
-			h.DB.Where("room_id = ? AND status = ?", r.ID, "active").Select("end_date").First(&contract)
+			if err := h.DB.Where("room_id = ? AND status = ?", r.ID, "active").Select("end_date").First(&contract).Error; err != nil {
+				logger.Log.Error().Err(err).Uint("room_id", r.ID).Msg("查询房间合同失败")
+			}
 			vo.EndDate = contract.EndDate
 		}
 		result = append(result, vo)
 	}
-	c.JSON(http.StatusOK, gin.H{"rooms": result})
+	utils.Success(c, gin.H{"rooms": result})
 }
 
-// 房东管理后台 - 获取当前楼栋信息
 func (h *BuildingHandler) MyBuilding(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	var building models.Building
 	if err := h.DB.First(&building, bid).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("获取当前楼栋信息失败")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
 	var landlords []models.BuildingLandlord
-	h.DB.Where("building_id = ?", bid).Find(&landlords)
-	c.JSON(http.StatusOK, gin.H{
+	if err := h.DB.Where("building_id = ?", bid).Find(&landlords).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房东信息失败")
+	}
+	logger.Log.Debug().Uint("building_id", bid).Msg("获取当前楼栋信息")
+	utils.Success(c, gin.H{
 		"building": building,
 		"landlords": landlords,
 	})
 }
 
-// 房东管理后台 - 更新楼栋信息
 func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 	var building models.Building
 	if err := h.DB.First(&building, bid).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "公寓不存在"})
+		logger.Log.Warn().Uint("building_id", bid).Msg("更新楼栋信息失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
 	var req UpdateBuildingReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	updates := map[string]interface{}{}
 	if req.Name != "" {
 		var dup models.Building
 		if h.DB.Where("name = ? AND id != ?", req.Name, bid).First(&dup).Error == nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "公寓名称已存在"})
+			utils.Error(c, http.StatusConflict, "公寓名称已存在")
 			return
 		}
 		updates["name"] = req.Name
+	}
+	if req.Package != "" {
+		if req.Package == "basic" || req.Package == "full" {
+			updates["package"] = req.Package
+		}
 	}
 	if req.ContractDate != "" {
 		updates["contract_date"] = req.ContractDate
@@ -472,30 +620,69 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	if req.BuildingNo != "" {
 		updates["building_no"] = req.BuildingNo
 	}
-	if req.CoverImage != "" {
-		updates["cover_image"] = req.CoverImage
-	}
+	updates["cover_image"] = req.CoverImage
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
 	if len(updates) > 0 {
 		if err := h.DB.Model(&building).Updates(updates).Error; err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "更新失败，请检查名称是否重复"})
+			logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新楼栋信息数据库失败")
+			utils.Error(c, http.StatusConflict, "更新失败，请检查名称是否重复")
 			return
 		}
 	}
 	if req.Landlords != nil {
-		h.DB.Where("building_id = ?", bid).Delete(&models.BuildingLandlord{})
+		if err := h.DB.Where("building_id = ?", bid).Delete(&models.BuildingLandlord{}).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", bid).Msg("删除旧房东信息失败")
+		}
 		for _, l := range req.Landlords {
 			ll := models.BuildingLandlord{
 				BuildingID: bid,
 				Name:       l.Name,
 				Phone:      l.Phone,
 			}
-			h.DB.Create(&ll)
+			if err := h.DB.Create(&ll).Error; err != nil {
+				logger.Log.Error().Err(err).Uint("building_id", bid).Msg("创建房东信息失败")
+			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	logger.Log.Info().Uint("building_id", bid).Msg("楼栋信息更新成功")
+	utils.SuccessWithMsg(c, "更新成功", nil)
+}
+
+type UpgradePackageReq struct {
+	Package string `json:"package" binding:"required"`
+}
+
+func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
+	id := c.Param("id")
+	var building models.Building
+	if err := h.DB.First(&building, id).Error; err != nil {
+		logger.Log.Warn().Str("id", id).Msg("升级套餐失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+	var req UpgradePackageReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Log.Warn().Uint("building_id", building.ID).Msg("升级套餐请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if req.Package != "basic" && req.Package != "full" {
+		utils.Error(c, http.StatusBadRequest, "套餐类型无效")
+		return
+	}
+	if building.Package == req.Package {
+		utils.SuccessWithMsg(c, "套餐未变更", nil)
+		return
+	}
+	if err := h.DB.Model(&building).Update("package", req.Package).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("升级套餐失败")
+		utils.Error(c, http.StatusInternalServerError, "升级失败")
+		return
+	}
+	logger.Log.Info().Uint("building_id", building.ID).Str("old", building.Package).Str("new", req.Package).Msg("套餐变更成功")
+	utils.SuccessWithMsg(c, "套餐变更成功", nil)
 }
 
 // 返回公寓列表中城市区域供筛选
@@ -504,20 +691,29 @@ func (h *BuildingHandler) Districts(c *gin.Context) {
 		District string `json:"district"`
 	}
 	var rows []DistrictRow
-	h.DB.Model(&models.Building{}).Select("DISTINCT district").Where("district != '' AND status = ?", "active").Find(&rows)
+	if err := h.DB.Model(&models.Building{}).Select("DISTINCT district").Where("district != '' AND status = ?", "active").Find(&rows).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("查询区域列表失败")
+	}
 	districts := make([]string, 0)
 	for _, r := range rows {
 		if r.District != "" {
 			districts = append(districts, r.District)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"districts": districts})
+	utils.Success(c, gin.H{"districts": districts})
 }
 
-// 房东后台首页统计
 func (h *BuildingHandler) MyStats(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	bid := buildingID.(uint)
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
 
 	var roomCount, vacantCount, rentedCount, expiringCount int64
 	h.DB.Model(&models.Room{}).Where("building_id = ?", bid).Count(&roomCount)
@@ -538,11 +734,13 @@ func (h *BuildingHandler) MyStats(c *gin.Context) {
 		Total float64
 	}
 	var rows []TotalRow
-	h.DB.Model(&models.Bill{}).
+	if err := h.DB.Model(&models.Bill{}).
 		Select("type, COALESCE(SUM(amount), 0) as total").
 		Where("building_id = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", bid, month).
 		Group("type").
-		Find(&rows)
+		Find(&rows).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询楼栋账单统计失败")
+	}
 	var totalIncome, totalExpense float64
 	for _, r := range rows {
 		if r.Type == "income" {
@@ -552,14 +750,21 @@ func (h *BuildingHandler) MyStats(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"building_id":  bid,
-		"room_count":   roomCount,
-		"vacant_count": vacantCount,
+	logger.Log.Debug().
+		Uint("building_id", bid).
+		Str("month", month).
+		Int64("room_count", roomCount).
+		Float64("income", totalIncome).
+		Float64("expense", totalExpense).
+		Msg("查询楼栋统计")
+	utils.Success(c, gin.H{
+		"building_id":   bid,
+		"room_count":    roomCount,
+		"vacant_count":  vacantCount,
 		"rented_count":  rentedCount,
 		"expiring_count": expiringCount,
-		"task_count":   taskCount,
-		"month":        month,
+		"task_count":    taskCount,
+		"month":         month,
 		"total_income":  totalIncome,
 		"total_expense": totalExpense,
 		"net_profit":    totalIncome - totalExpense,

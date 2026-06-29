@@ -11,15 +11,11 @@
         </el-select>
         <el-select v-model="floorFilter" placeholder="楼层" clearable style="width: 90px" @change="fetchRooms">
           <el-option label="全部楼层" value="" />
-          <el-option label="1层" value="1" />
-          <el-option label="2层" value="2" />
-          <el-option label="3层" value="3" />
+          <el-option v-for="f in floorOptions" :key="f" :label="f + '层'" :value="String(f)" />
         </el-select>
         <el-select v-model="layoutFilter" placeholder="户型" clearable style="width: 120px" @change="fetchRooms">
           <el-option label="全部户型" value="" />
-          <el-option label="单间" value="单间" />
-          <el-option label="大单间" value="大单间" />
-          <el-option label="一室一厅" value="一室一厅" />
+          <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
         </el-select>
         <el-button type="primary" @click="showAddDialog = true">
           <el-icon><Plus /></el-icon> 添加房间
@@ -39,7 +35,7 @@
     <div v-else class="room-grid">
       <div v-for="room in rooms" :key="room.id" class="room-card" @click="$router.push(`/landlord/rooms/${room.id}`)">
         <div class="room-card-image">
-          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" />
+            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => e.target.src = '/default-image.png'" />
           <div v-else class="room-card-placeholder">
             <el-icon :size="48" color="#ccc"><Picture /></el-icon>
           </div>
@@ -64,16 +60,12 @@
         </el-form-item>
         <el-form-item label="楼层" prop="floor" :rules="[{ required: true, message: '请选择楼层' }]">
           <el-select v-model="addForm.floor" placeholder="选择楼层" style="width: 100%">
-            <el-option label="1层" value="1" />
-            <el-option label="2层" value="2" />
-            <el-option label="3层" value="3" />
+            <el-option v-for="f in floorOptions" :key="f" :label="f + '层'" :value="String(f)" />
           </el-select>
         </el-form-item>
         <el-form-item label="户型" prop="layout" :rules="[{ required: true, message: '请选择户型' }]">
           <el-select v-model="addForm.layout" placeholder="选择户型" style="width: 100%">
-            <el-option label="单间" value="单间" />
-            <el-option label="大单间" value="大单间" />
-            <el-option label="一室一厅" value="一室一厅" />
+            <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
           </el-select>
         </el-form-item>
         <el-form-item label="描述" prop="description">
@@ -93,6 +85,9 @@ import { ref, onMounted } from 'vue'
 import { Plus, Loading, Picture } from '@element-plus/icons-vue'
 import { buildingGetRooms, buildingCreateRoom } from '../api'
 import { ElMessage } from 'element-plus'
+
+const floorOptions = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+const layoutOptions = ['单间','大单间','一室一厅','两室一厅','三室一厅','四室及以上']
 
 const rooms = ref([])
 const loading = ref(true)
@@ -122,13 +117,15 @@ async function fetchRooms() {
     if (layoutFilter.value) params.layout = layoutFilter.value
     const res = await buildingGetRooms(params)
     rooms.value = res.data.rooms || []
+  } catch {
+    ElMessage.error('获取房间列表失败')
   } finally {
     loading.value = false
   }
 }
 
 async function handleAdd() {
-  const valid = await addFormRef.value.validate().catch(() => false)
+  const valid = await addFormRef.value.validate()
   if (!valid) return
   submitting.value = true
   try {

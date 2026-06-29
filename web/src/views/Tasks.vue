@@ -10,7 +10,7 @@
         </el-radio-group>
         <span style="color: #999; font-size: 13px">共 {{ tasks.length }} 条</span>
       </div>
-      <div v-if="loading" v-loading="loading" style="height: 120px" />
+      <div v-if="loading" style="text-align: center; padding: 40px; color: #999">加载中...</div>
       <div v-else-if="!tasks.length" style="text-align: center; padding: 40px; color: #999">
         <el-icon :size="48" style="color: #ddd"><List /></el-icon>
         <p style="margin-top: 12px">暂无代办事项</p>
@@ -100,6 +100,8 @@ async function fetchTasks() {
     const status = filterStatus.value || undefined
     const res = await buildingGetTasks(status)
     tasks.value = res.data.tasks
+  } catch {
+    ElMessage.error('获取任务列表失败')
   } finally {
     loading.value = false
   }
@@ -150,5 +152,8 @@ onMounted(fetchTasks)
 .task-card.completed:hover {
   border-color: #ddd;
   background: #f5f5f5;
+}
+@media (max-width: 768px) {
+  .task-card { padding: 10px 12px; }
 }
 </style>

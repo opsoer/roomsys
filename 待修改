@@ -1,0 +1,380 @@
+═══════════════════════════════════════════════════════════════
+  全量代码扫描问题汇总 — 按优先级分类
+═══════════════════════════════════════════════════════════════
+
+标注说明：
+  [P0] 严重安全/数据完整性，必须修复
+  [P1] 功能缺陷/业务逻辑错误
+  [P2] 代码质量/架构优化
+  [P3] 体验优化/建议
+
+
+==============================================================================
+一、安全漏洞  ok
+==============================================================================
+
+  [P0] JWT 签名算法未校验
+       文件: server/utils/jwt.go:33-35, server/middleware/auth.go:25
+       说明: jwt.ParseWithClaims 未限制 signing method，攻击者可构造
+             alg:"none" 的 token 绕过认证。需添加 WithValidMethods 校验。
+
+  [P0] JWT secret 硬编码在源码并公开在文档
+       文件: server/config/config.go:28, 项目文档.md:49
+       说明: 默认密钥 rental-system-secret-key-2026 任何人可读，部署不改
+             即可伪造任意 token。
+
+  [P0] JWT 有效期 365 天
+       文件: server/utils/jwt.go:24
+       说明: token 泄露后攻击窗口过长，建议缩短至 24-72h + refresh token。
+
+  [P0] 默认数据库密码 root/root
+       文件: server/config/config.go:22-28
+       说明: 默认密码硬编码在源码，部署风险高。
+
+  [P0] 文件服务路径穿越漏洞（Windows）
+       文件: server/handlers/media.go:154-162
+       说明: path.Clean (Unix) 与 filepath.Join (Windows) 混用，Windows
+             下可用反斜杠绕过目录限制。
+
+  [P0] 公开接口暴露租约金额
+       文件: server/routes/routes.go:40, server/handlers/rooms.go:83-93
+       路线: GET /api/buildings/:bid/rooms/:rid/contract
+       说明: 无需登录即可查看租金、押金等财务数据，违反设计文档"金额信息
+             一律不展示在公开页面"的要求。
+
+  [P0] 登录无频率限制
+       文件: server/handlers/auth.go:32-86
+       说明: 可暴力破解任意账号密码。
+
+  [P0] 公开注册未做限制
+       文件: server/handlers/auth.go:88-113
+       路线: POST /api/auth/register
+       说明: 任何人可注册 admin 角色账号，应移除或改为仅 super_admin 可创建。
+
+  [P0] 登录可枚举用户名
+       文件: server/handlers/auth.go:41-47
+       说明: "账号不存在" vs "密码错误" 返回不同错误信息，应统一为
+             "用户名或密码错误"。
+
+  [P0] 文件上传 MIME 检测不严格
+       文件: server/handlers/media.go
+       说明: 仅读取前 512 字节检测 MIME type，可绕过嵌入恶意代码。
+
+
+==============================================================================
+二、数据完整性与业务逻辑缺陷
+==============================================================================
+
+  [P0] 账单无 paid_status 字段
+       文件: server/models/models.go Bill struct
+       说明: 核心功能缺失，无法区分"已开票"和"已收款"。没有这个字段整个
+             系统不知道哪些钱实际到账了。
+
+  [P0] 账单无软删除
+       文件: server/models/models.go Bill struct（无 DeletedAt 字段）
+       说明: 所有其他模型都有 gorm.DeletedAt，唯独账单硬删除。
+             财务数据永久删除存在合规风险。
+
+  [P0] 账单编辑/删除不检查是否已结算
+       文件: server/handlers/bills.go:112-154, 156-169
+       说明: 编辑或删除已结算月份的账单，分红记录不会同步更新，
+             导致股东分红数据错误。
+
+  [P0] 结算分红无唯一约束
+       文件: server/models/models.go Dividend struct
+       说明: (building_id, settle_month, shareholder_id) 无 unique index，
+             同一个月份可重复结算。
+
+  [P0] 结算时分批 insert 无事务
+       文件: server/handlers/dividends.go:136-160
+       说明: 多个股东在 for 循环中逐一 Create，部分成功部分失败时数据库
+             状态不一致。
+
+  [P0] 押金退还不记录支出
+       文件: server/handlers/rooms.go:502-534 handleDepositRefund
+       说明: 退押金时只生成收入账单（扣除部分），退还的金额不产生任何
+             支出记录，现金流出完全从财务账上消失。
+
+  [P1] 同房间可同时存在多个活跃合同
+       文件: server/handlers/rooms.go:340-351
+       说明: 设为已出租时，不检查该房间是否有其他未结束的活跃合同。
+
+  [P1] 删除公寓时关联数据成孤儿
+       文件: server/handlers/buildings.go:183-195
+       说明: 只删了 building 和 landlord，rooms/contracts/bills/tasks
+             等关联数据全部残留。
+
+  [P1] 分红月结束日期计算错误（off-by-one）
+       文件: server/handlers/dividends.go:274-275
+       说明: now.AddDate(0, i+1, -0) 实际取的是下个月第一天而非当月
+             最后一天，导致月末到期的合同被遗漏。
+
+  [P1] 分红预测中将押金视为扣减项
+       文件: server/handlers/dividends.go:285-296 Predict
+       说明: 押金是负债，在预测可用资金时不应从租金中扣除。逻辑是
+             available = totalRent - newDeposits，会导致预测值偏低。
+
+  [P1] 月租金自动生成时 sub type="租金" 的匹配条件太宽泛
+       文件: server/handlers/bills.go:367-369
+       说明: 同房间同月若先后有两位租客（月中换租），第二段租约的租金
+             会被追加到第一段租约的账单上，两个租客的租金混在同一笔账单里。
+
+  [P1] 续租在原合同上直接修改，无历史追溯
+       文件: server/handlers/rooms.go RenewContract
+       说明: 修改 end_date 和 rent_price 后原数据丢失，无法查看租金
+             变更历史。
+
+  [P1] 账单修改时 description 无限增长
+       文件: server/handlers/bills.go:144
+       说明: 每次编辑在原 description 后追加修改记录，多次后超字段长度。
+
+  [P1] 未来起租日提前生成租金账单
+       文件: server/handlers/rooms.go:444-499 createProratedRentBill
+       说明: 合同 start_date 在未来时立即生成按天账单，月底自动跑
+             又生成第二笔。
+
+  [P1] BillNo 生成在高并发下可能重复
+       文件: server/handlers/bills.go:84, server/handlers/bills.go:382,
+             server/handlers/rooms.go:484, server/handlers/rooms.go:519
+       说明: 基于时间戳+毫秒取模，1秒内上限1万个，且两次调用 utils.Now()
+             存在竞态。
+
+  [P1] 合同起租日可设为未来日期，但逻辑上视为已生效
+       文件: server/handlers/rooms.go:332-339
+       说明: 未来起租的合同立即创建账单，已租出的房间如果起租日在未来，
+             房间实际上应该仍是待租状态。
+
+  [P2] 账单编辑强制要求 amount（不符合 PATCH 语义）
+       文件: server/handlers/bills.go:128-131
+       说明: 更新时前端必须传 amount，不能只改 description。
+
+  [P2] 删除有 expiring 合同的房间
+       文件: server/handlers/rooms.go:253-271
+       说明: 只阻止删除 rented 状态房间，不阻止删除 expiring 状态的
+             房间（此状态仍可能有活跃合同）。
+
+
+==============================================================================
+三、代码质量问题（后端 Go）  ok
+==============================================================================
+
+  系统性缺陷：
+
+  [P2] 数据库操作错误大面积忽略（~20+处）
+       涉及文件: auth.go/229,238,270,288 / bills.go/60,145,166,197,254
+                dividends.go/23,49,53,179,227,245 / tasks.go/25,72,73,102
+                recruit.go/30,36,47,53 / settings.go/39,42 / buildings.go
+       说明: 大量 .Find()/.Updates()/.Delete() 的 .Error 返回值未被检查，
+             DB 失败时返回 200 OK，前端无感知。
+
+  [P2] 跨表操作无事务
+       涉及: 创建公寓+房东 / 出租房间+创建合同+创建账单+更新状态
+             退租+更新合同+创建押金账单
+       说明: 部分失败时数据状态不一致。
+
+  [P2] 类型断言未做安全检查
+       涉及: 几乎所有 handler 中的 buildingID.(uint) / userID.(uint)
+       说明: 若中间件未正确设置上下文值，会直接 panic。
+
+  [P2] 多处重复的财务汇总逻辑
+       涉及: buildings.go:MyStats / bills.go:Stats,Trend / dividends.go:Calculate,Settle
+       说明: 收入/支出求和 + 遍历分类的逻辑重复 5+ 处，应抽为公共函数。
+
+  [P2] 多处重复的 BillNo 生成
+       涉及: bills.go:84,382 / rooms.go:484,519
+       说明: 4处相同代码，应抽为 utils.GenerateBillNo()。
+
+  [P2] bcrypt 加密失败未处理
+       文件: auth.go:267 hash, _ := bcrypt.GenerateFromPassword(...)
+       说明: 更新密码时若 bcrypt 失败，密码被清空。
+
+  [P2] 时间偏移量无上下限校验
+       文件: handlers/system.go:43
+       说明: 可设偏移 ±∞ 年，影响所有时间相关功能。
+
+  [P2] JWT 生成使用 time.Now() 而非 utils.Now()
+       文件: utils/jwt.go:24-25
+       说明: 与系统时间模拟功能不一致。
+
+  [P2] settings upsert 非原子操作
+       文件: handlers/settings.go:36-42
+       说明: find→create or update 有竞态，并发时可能 duplicate。
+
+  [P2] 批量文件删除无错误处理
+       文件: media.go:146-147
+       说明: os.Remove 失败仍返回"删除成功"。
+
+  [P2] 上传文件先写入磁盘后写 DB
+       文件: media.go:106-118
+       说明: DB insert 失败后文件成孤儿，应先写 DB 再写文件或
+             失败时清理。
+
+  [P3] go.mod 中 Go 版本 1.25.0 与现实版本不符
+       文件: server/go.mod:3
+
+  [P3] config.json 解析错误信息静默忽略
+       文件: server/config/config.go:50-56
+
+  [P3] Settings upsert 无 key 命名校验
+       文件: handlers/settings.go
+
+  [P3] 日志写入失败回退策略不完善
+       文件: logger/logger.go:32-36
+
+
+==============================================================================
+四、代码质量问题（前端 Vue）   ok
+==============================================================================
+
+  [P2] 多处使用 raw fetch() 绕过 axios 拦截器
+       涉及文件:
+         web/src/views/BuildingList.vue:146     （招聘信息获取）
+         web/src/views/AdminLayout.vue:66       （未处理招商数量）
+         web/src/views/LandlordApply.vue:52     （提交入驻申请）
+         web/src/views/RecruitSettings.vue:103,111,127,140
+       说明: 直接调用 fetch() 不会自动带 Authorization header，不会
+             触发 401 跳转，错误也不会显示全局 toast。
+
+  [P2] Dividends.vue 多处 Promise 无 try/catch
+       文件: web/src/views/Dividends.vue:139,148,153
+       说明: handleCalculate / fetchDividends / fetchShareholders 无
+             错误处理，失败时产生 Unhandled Rejection。
+
+  [P2] Element Plus validate() 用法错误
+       文件: web/src/views/RoomList.vue:131-132
+       说明: validate() 返回 Promise<boolean> 不 reject，加 .catch()
+             无效，表单校验形同虚设。
+
+  [P2] role=admin 的用户进入 landlord 路由但看不到导航菜单
+       文件: web/src/views/BuildingLayout.vue:162
+       说明: 路由守卫允许 admin 进入（router/index.js:92），但模板中
+             isBuildingAdmin 不包含 admin，菜单不显示，页面成死胡同。
+
+  [P2] 公共页面 landlord 电话/姓名无保护直接展示
+       文件: web/src/views/BuildingList.vue:67-71
+       说明: 所有访客可见房东真实姓名和电话，隐私泄露。
+
+  [P2] 公共页面"全部"筛选实际过滤掉已出租
+       文件: web/src/views/BuildingPublic.vue:155-158
+       说明: statusFilter 为空时执行 r.status !== 'rented'，标签叫
+             "全部"实际为"待租房源"。
+
+  [P2] 双重 <router-view> 在 DOM 中
+       文件: web/src/views/BuildingLayout.vue:50,73
+       说明: 桌面端和移动端两个 router-view 同时渲染（一个 display:none），
+             子组件被实例化两次。
+
+  [P2] 楼层/户型硬编码
+       文件: web/src/views/RoomList.vue:12-23
+       说明: 楼层只支持 1/2/3，户型只支持 单间/大单间/一室一厅。
+
+  [P2] 混合使用 Element Plus + Vant 的弹窗/通知
+       涉及：多处
+       说明: 有的页面用 ElMessage，有的用 showToast，视觉不统一。
+
+  [P2] 无 404 路由
+       文件: web/src/router/index.js
+       说明: 访问 /foo 等不存在路径渲染空白页面。
+
+  [P3] Login.vue 登录后 setTimeout 0.5s 才跳转
+       文件: web/src/views/Login.vue:62-70
+
+  [P3] App.vue 页面切换动画 class 与 style.css 不一致
+       文件: web/src/App.vue:3 （使用 slide-fade）
+             web/src/style.css:11-17 （定义了 fade-* 但未实际使用）
+
+  [P3] api/index.js 中 localStorage.removeItem('user') 无意义
+       文件: web/src/api/index.js:28
+       说明: 代码从未存过 'user' key，应是遗留代码。
+
+  [P3] Emoji 做图标无 aria-hidden 属性
+       涉及多处: BuildingList.vue, AdminLayout.vue, RecruitSettings.vue
+
+
+==============================================================================
+五、功能缺失（基于需求文档与业务场景）
+==============================================================================
+
+  [P0] 缺少收款跟踪能力（paid_status/paid_at/payment_method）
+       说明: 系统记了账但不知道哪些收了哪些没收，这是最大业务缺失。
+
+  [P1] 缺少财务报表导出（CSV/Excel）
+       说明: 只有 JSON API，无法出报表给股东或会计。
+
+  [P1] 缺少合同附件上传
+       说明: 扫描的租赁合同无法附加到系统中。
+
+  [P1] 缺少月结锁定机制
+       说明: 结账后仍可随意修改该月账单，分红数据随时可能不一致。
+
+  [P1] 合同缺少 rent_day（每月几号交租）/ payment_cycle（月付/季付）
+       文件: server/models/models.go RentalContract
+
+  [P2] 缺少租客自助门户
+       说明: 租客无法查看自己的合同和账单。
+
+  [P2] 缺少通知提醒
+       说明: 租金到期、合同到期、任务分配无任何通知（短信/站内）。
+
+  [P2] 缺少维修/保洁工单系统
+       说明: 有"维修费"子类型但无结构化报修流程。
+
+  [P2] 缺少房间面积/朝向字段
+       文件: server/models/models.go Room
+       说明: 设计文档中提到了面积和朝向，但模型中没有实现。
+
+  [P2] 房间缺少"建议租金"字段
+       文件: server/models/models.go Room
+       说明: 空置房间没有挂牌价，无法在公开页面展示租金。
+
+  [P2] 缺少操作审计日志
+       说明: 谁在什么时间改了哪笔账单/合同，完全不可追溯。
+
+  [P3] 缺少房间内家具/设备清单
+  [P3] 缺少水电表读数录入
+  [P3] 缺少逾期租金自动计算滞纳金
+
+
+==============================================================================
+六、模型/数据层问题  ok
+==============================================================================
+
+  [P1] Dividend 表缺少 (building_id, settle_month, shareholder_id) 唯一索引
+  [P1] Bill 表缺少 paid_status 字段
+  [P1] Bill 表缺少软删除 DeletedAt
+  [P1] Bill 表缺少 paid_at / payment_method 字段
+  [P2] RentalContract 表缺少 rent_day / payment_cycle / contract_file
+  [P2] Room 表缺少 area / orientation / suggested_rent
+  [P2] Tenant 表缺少 email / emergency_contact
+  [P2] Dividend 表缺少 settled_by / paid_status / paid_at
+  [P2] Task 表缺少 assigned_to / priority / due_date
+  [P2] Building 表缺少 total_floors / bank_account
+  [P2] User 表缺少 display_name / phone / email / last_login_at / is_active
+
+
+==============================================================================
+七、路由/API 设计问题   ok
+==============================================================================
+
+  [P2] 账单 API 路由/删除无软删除（硬删除不可恢复）
+  [P2] 分红结算缺少"重新结算"功能（先删除旧记录再结算）
+  [P1] /api/admin/system/time 缺少偏移量上下限校验
+  [P2] 缺少统一的错误码格式（目前全是 gin.H{"error":"xxx"}）
+
+
+==============================================================================
+八、部署/运维问题
+==============================================================================
+
+  [P1] 默认管理员 admin/admin123 写在文档
+  [P2] 数据库连接池未配置（GORM 默认池很小）
+  [P2] 大文件上传全部缓冲在内存（MaxMultipartMemory=20MB 但视频200MB）
+  [P2] server 端口文档写 8080 但 config.json 实际是 8081
+       文件: 项目文档.md:50, server/config.json:8
+  [P3] 生产部署文档中 Nginx 反代路径描述不够精确
+
+
+═══════════════════════════════════════════════════════════════
+说明：以上项目按 P0-P3 优先级排列，你可以删减不需要修改的部分。
+标注 [P0] 为建议优先处理的严重问题。
+═══════════════════════════════════════════════════════════════

@@ -18,6 +18,12 @@ const routes = [
   },
 
   {
+    path: '/apply',
+    name: 'LandlordApply',
+    component: () => import('../views/LandlordApply.vue'),
+  },
+
+  {
     path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue'),
@@ -32,6 +38,11 @@ const routes = [
         path: 'buildings',
         name: 'AdminBuildings',
         component: () => import('../views/AdminBuildings.vue'),
+      },
+      {
+        path: 'recruit',
+        name: 'AdminRecruit',
+        component: () => import('../views/RecruitSettings.vue'),
       },
     ],
   },
@@ -50,6 +61,7 @@ const routes = [
       { path: 'settings', name: 'LandlordSettings', component: () => import('../views/BuildingSettings.vue') },
     ],
   },
+  { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
 const router = createRouter({

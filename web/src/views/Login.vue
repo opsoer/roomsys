@@ -1,44 +1,55 @@
 <template>
-  <div style="display: flex; justify-content: center; align-items: center; height: 100vh; background: #f5f7fa">
-    <el-card style="width: 400px; max-width: 92vw; padding: 20px">
-      <h2 style="text-align: center; margin-bottom: 10px; font-size: 24px">🏠 圳好租</h2>
-      <p style="text-align: center; color: #999; margin-bottom: 30px; font-size: 14px">深圳公寓租赁管理平台</p>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="0">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="用户名" size="large" :prefix-icon="UserIcon" />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="密码" size="large" :prefix-icon="LockIcon" show-password @keyup.enter="handleLogin" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" size="large" style="width: 100%" :loading="loading" @click="handleLogin">
-            登录
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <div class="login-page">
+    <div class="login-bg"></div>
+    <div class="login-content">
+      <div class="login-brand">
+        <div class="login-logo">☀️</div>
+        <h1 class="login-title">圳好租</h1>
+        <p class="login-desc">深圳公寓租赁管理平台</p>
+      </div>
+      <div class="login-card">
+        <van-form @submit="handleLogin">
+          <van-field
+            v-model="form.username"
+            name="username"
+            label="用户名"
+            placeholder="请输入用户名"
+            :rules="[{ required: true, message: '请输入用户名' }]"
+            left-icon="contact"
+            clearable
+          />
+          <van-field
+            v-model="form.password"
+            type="password"
+            name="password"
+            label="密码"
+            placeholder="请输入密码"
+            :rules="[{ required: true, message: '请输入密码' }]"
+            left-icon="lock"
+            clearable
+          />
+          <div style="margin: 28px 16px 16px">
+            <van-button round block type="primary" native-type="submit" :loading="loading">
+              登录
+            </van-button>
+          </div>
+        </van-form>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { User as UserIcon, Lock as LockIcon } from '@element-plus/icons-vue'
+import { showToast } from 'vant'
 import { login } from '../api'
-import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const loading = ref(false)
-const formRef = ref(null)
 const form = reactive({ username: '', password: '' })
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
 
 async function handleLogin() {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
   loading.value = true
   try {
     const res = await login(form.username, form.password)
@@ -48,14 +59,80 @@ async function handleLogin() {
     localStorage.setItem('role', user.role)
     localStorage.setItem('building_id', String(user.building_id || ''))
 
-    if (user.role === 'super_admin') {
-      router.push('/admin/buildings')
+    showToast({ message: '登录成功', icon: 'success', duration: 1500 })
+
+    setTimeout(() => {
+      if (user.role === 'super_admin') {
+        router.push('/admin/buildings')
+      } else {
+        router.push('/landlord/rooms')
+      }
+    }, 500)
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.response?.data?.error
+    if (msg) {
+      showToast(msg)
     } else {
-      router.push('/landlord/rooms')
+      showToast('登录失败，请重试')
     }
-  } catch {
   } finally {
     loading.value = false
   }
 }
 </script>
+
+<style scoped>
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  position: relative;
+  overflow: hidden;
+}
+.login-bg {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(230,162,60,0.1), transparent 70%);
+  top: -200px;
+  right: -100px;
+}
+.login-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 0 24px;
+  max-width: 400px;
+}
+.login-brand {
+  text-align: center;
+  margin-bottom: 36px;
+}
+.login-logo {
+  font-size: 56px;
+  margin-bottom: 12px;
+}
+.login-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 6px;
+  margin-bottom: 8px;
+}
+.login-desc {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+}
+.login-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 0 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+:deep(.van-field) {
+  padding: 12px 16px;
+}
+</style>

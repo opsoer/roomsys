@@ -14,9 +14,10 @@ server/rental-server
 
 # 日志
 *.log
+server/logs/
 
-# 上传的媒体文件
-server/storage/media/
+# 上传的文件
+server/storage/
 
 # IDE
 .vscode/

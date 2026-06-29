@@ -10,6 +10,12 @@ import (
 )
 
 func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
+	r.Static("/assets", "../web/dist/assets")
+	r.StaticFile("/", "../web/dist/index.html")
+	r.NoRoute(func(c *gin.Context) {
+		c.File("../web/dist/index.html")
+	})
+
 	handlers.AutoCheckExpiringContracts(db)
 
 	// ========== 公开接口 ==========
@@ -17,7 +23,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	{
 		auth := &handlers.AuthHandler{DB: db, Cfg: cfg}
 		public.POST("/auth/login", auth.Login)
-		public.POST("/auth/register", auth.Register)
+
 
 		buildingH := &handlers.BuildingHandler{DB: db}
 		public.GET("/buildings", buildingH.ListPublic)
@@ -25,9 +31,15 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 
-		roomH := &handlers.RoomHandler{DB: db}
+		settingsH := &handlers.SettingsHandler{DB: db}
+		public.GET("/settings/recruit", settingsH.GetPublicRecruit)
+
+		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg}
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
 		public.GET("/buildings/:id/rooms/:rid/contract", roomH.GetActiveContractPublic)
+
+		recruitH := &handlers.RecruitHandler{DB: db}
+		public.POST("/recruit/submit", recruitH.Submit)
 
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg}
 		public.GET("/media/*filepath", mediaH.Serve)
@@ -43,6 +55,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.GET("/buildings", buildingH.List)
 		platform.PUT("/buildings/:id", buildingH.Update)
 		platform.DELETE("/buildings/:id", buildingH.Delete)
+		platform.PUT("/buildings/:id/package", buildingH.UpgradePackage)
 
 		authH := &handlers.AuthHandler{DB: db, Cfg: cfg}
 		platform.POST("/auth/create-admin", authH.CreateAdmin)
@@ -54,6 +67,15 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		systemH := &handlers.SystemHandler{DB: db}
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
+
+		recruitH := &handlers.RecruitHandler{DB: db}
+		platform.GET("/recruit/list", recruitH.List)
+		platform.PUT("/recruit/process/:id", recruitH.Process)
+		platform.GET("/recruit/unprocessed-count", recruitH.UnprocessedCount)
+
+		settingsH := &handlers.SettingsHandler{DB: db}
+		platform.GET("/settings/:key", settingsH.Get)
+		platform.PUT("/settings/:key", settingsH.Update)
 	}
 
 	// ========== 公寓管理后台（building_admin + admin）==========
@@ -71,55 +93,55 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.GET("/stats", buildingH.MyStats)
 
 		// 房间管理
-		roomH := &handlers.RoomHandler{DB: db}
+		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg}
 		building.GET("/rooms", roomH.List)
-		building.POST("/rooms", roomH.Create)
 		building.GET("/rooms/:id", roomH.Get)
+		building.POST("/rooms", roomH.Create)
 		building.PUT("/rooms/:id", roomH.Update)
 		building.DELETE("/rooms/:id", roomH.Delete)
 		building.PUT("/rooms/:id/status", roomH.UpdateStatus)
-		building.PUT("/rooms/:id/contract", roomH.UpdateContractEndDate)
 		building.GET("/rooms/:id/contract", roomH.GetActiveContract)
+		building.PUT("/rooms/:id/contract", roomH.RenewContract)
 
 		// 媒体管理
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg}
 		building.POST("/rooms/:id/media", mediaH.Upload)
 		building.DELETE("/rooms/:id/media/:mediaId", mediaH.Delete)
+		building.POST("/cover", mediaH.UploadCover)
 
 		// 管理员管理（building_admin 可创建普通 admin）
 		building.POST("/auth/create-admin", authH.CreateRegularAdmin)
 		building.GET("/auth/users", authH.ListBuildingUsers)
 
-		// 财务管理
-		billH := &handlers.BillHandler{DB: db}
-		building.GET("/bills", billH.List)
-		building.POST("/bills", billH.Create)
-		building.PUT("/bills/:id", billH.Update)
-		building.DELETE("/bills/:id", billH.Delete)
-		building.GET("/bills/stats", billH.Stats)
-		building.GET("/bills/trend", billH.Trend)
+		// 财务管理（全套餐）
+		fullPkg := building.Group("")
+		fullPkg.Use(middleware.FullPackageMiddleware(db))
+		{
+			billH := &handlers.BillHandler{DB: db}
+			fullPkg.GET("/bills", billH.List)
+			fullPkg.POST("/bills", billH.Create)
+			fullPkg.PUT("/bills/:id", billH.Update)
+			fullPkg.DELETE("/bills/:id", billH.Delete)
+			fullPkg.GET("/bills/stats", billH.Stats)
+			fullPkg.GET("/bills/trend", billH.Trend)
 
-		// 分红管理
-		divH := &handlers.DividendHandler{DB: db}
-		building.GET("/dividends", divH.List)
-		building.GET("/dividends/calculate", divH.Calculate)
-		building.POST("/dividends/settle", divH.Settle)
-		building.GET("/dividends/shareholders", divH.GetShareholders)
-		building.POST("/dividends/shareholders", divH.CreateShareholder)
-		building.PUT("/dividends/shareholders/:id", divH.UpdateShareholder)
-		building.DELETE("/dividends/shareholders/:id", divH.DeleteShareholder)
-		building.GET("/dividends/predict", divH.Predict)
+			// 分红管理
+			divH := &handlers.DividendHandler{DB: db}
+			fullPkg.GET("/dividends", divH.List)
+			fullPkg.GET("/dividends/calculate", divH.Calculate)
+			fullPkg.POST("/dividends/settle", divH.Settle)
+			fullPkg.GET("/dividends/shareholders", divH.GetShareholders)
+			fullPkg.POST("/dividends/shareholders", divH.CreateShareholder)
+			fullPkg.PUT("/dividends/shareholders/:id", divH.UpdateShareholder)
+			fullPkg.DELETE("/dividends/shareholders/:id", divH.DeleteShareholder)
+			fullPkg.GET("/dividends/predict", divH.Predict)
 
-		// 待办任务
-		taskH := &handlers.TaskHandler{DB: db}
-		building.GET("/tasks", taskH.List)
-		building.POST("/tasks/:id/process", taskH.Process)
-		building.PUT("/tasks/:id/complete", taskH.Complete)
-		building.DELETE("/tasks/:id", taskH.Delete)
-
-		// 系统时间模拟
-		systemH := &handlers.SystemHandler{DB: db}
-		building.GET("/system/time", systemH.GetTime)
-		building.POST("/system/time", systemH.SetTime)
+			// 待办任务
+			taskH := &handlers.TaskHandler{DB: db}
+			fullPkg.GET("/tasks", taskH.List)
+			fullPkg.POST("/tasks/:id/process", taskH.Process)
+			fullPkg.PUT("/tasks/:id/complete", taskH.Complete)
+			fullPkg.DELETE("/tasks/:id", taskH.Delete)
+		}
 	}
 }

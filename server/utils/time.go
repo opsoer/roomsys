@@ -1,9 +1,23 @@
 package utils
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
+
+var (
+	billNoMu sync.Mutex
+	billNoSeq int64
+)
+
+func GenerateBillNo() string {
+	billNoMu.Lock()
+	defer billNoMu.Unlock()
+	billNoSeq++
+	ts := Now().Format("20060102150405")
+	return fmt.Sprintf("B%s%04d", ts, billNoSeq%10000)
+}
 
 var (
 	timeOffset time.Duration

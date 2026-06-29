@@ -29,6 +29,8 @@ func main() {
 		&models.Shareholder{},
 		&models.Dividend{},
 		&models.Task{},
+		&models.Setting{},
+		&models.RecruitSubmission{},
 	)
 	fmt.Println("All tables dropped successfully")
 }

@@ -4,6 +4,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* 页面切换动画 */
@@ -32,34 +33,93 @@ body {
   opacity: 0;
 }
 
-/* 卡片悬停提升 */
-.el-card {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+/* Element Plus 卡片悬停（桌面端） */
+@media (hover: hover) {
+  .el-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  .el-card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important;
+  }
+  .el-button {
+    transition: all 0.25s ease !important;
+  }
 }
 
-.el-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important;
+/* 滚动条美化 - 仅桌面端 */
+@media (hover: hover) {
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d0d5dd;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #b0b5bd;
+  }
 }
 
-/* 按钮悬停 */
-.el-button {
-  transition: all 0.25s ease !important;
+/* 移动端全局优化 */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* 滚动条美化 */
-::-webkit-scrollbar {
-  width: 6px;
+/* 消除移动端点击高亮 */
+.van-cell,
+.van-button,
+.van-nav-bar,
+[class*="van-"] {
+  -webkit-tap-highlight-color: transparent;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #d0d5dd;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #b0b5bd;
+/* 移动端 Dialog 适配 - 不出现横向滚动 */
+@media (max-width: 768px) {
+  .el-dialog {
+    width: 92% !important;
+    max-width: 92% !important;
+    margin-top: 8vh !important;
+  }
+  .el-dialog__body {
+    padding: 16px !important;
+    overflow-x: auto;
+  }
+  .el-table {
+    overflow-x: auto;
+    display: block;
+  }
+  .el-table__body-wrapper {
+    overflow-x: auto;
+  }
+  .el-form-item {
+    flex-wrap: wrap;
+  }
+  .el-form-item__label {
+    width: auto !important;
+    padding-bottom: 4px;
+  }
+  .el-form-item__content {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+  .el-input-number {
+    width: 100% !important;
+  }
+  .el-select {
+    width: 100% !important;
+  }
+  .el-date-editor {
+    width: 100% !important;
+  }
+  .el-dialog__wrapper .el-dialog__body {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .el-card__body {
+    padding: 14px !important;
+  }
 }
