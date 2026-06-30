@@ -141,18 +141,30 @@ async function handleCalculate() {
     ElMessage.warning('请选择月份')
     return
   }
-  const res = await buildingCalculateDividend(calcMonth.value)
-  preview.value = res.data
+  try {
+    const res = await buildingCalculateDividend(calcMonth.value)
+    preview.value = res.data
+  } catch {
+    ElMessage.error('获取分红预览失败')
+  }
 }
 
 async function fetchDividends() {
-  const res = await buildingGetDividends()
-  dividends.value = res.data.dividends
+  try {
+    const res = await buildingGetDividends()
+    dividends.value = res.data.dividends
+  } catch {
+    ElMessage.error('获取分红记录失败')
+  }
 }
 
 async function fetchShareholders() {
-  const res = await buildingGetShareholders()
-  shareholders.value = res.data.shareholders
+  try {
+    const res = await buildingGetShareholders()
+    shareholders.value = res.data.shareholders
+  } catch {
+    ElMessage.error('获取股东列表失败')
+  }
 }
 
 async function handleAddSH() {

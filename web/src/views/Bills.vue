@@ -357,7 +357,11 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { buildingGetBills, buildingCreateBill, buildingUpdateBill, buildingDeleteBill, buildingGetBillStats, buildingGetBillTrend, buildingGetDividendPredict, buildingGetRooms } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import VChart from 'vue-echarts'
-import 'echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart, PieChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+use([CanvasRenderer, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
 
 const activeTab = ref('list')
 const bills = ref([])
@@ -375,7 +379,7 @@ const filterMonth = ref(now.getMonth() + 1)
 const filterDay = ref('')
 const availableYears = computed(() => {
   const y = now.getFullYear()
-  return [y - 2, y - 1, y, y + 1, y + 2]
+  return [y - 10, y - 9, y - 8, y - 7, y - 6, y - 5, y - 4, y - 3, y - 2, y - 1, y, y + 1]
 })
 const billForm = reactive({
   type: 'income', subtype: '', amount: 0, bill_date: '', room_id: null, description: '', modify_reason: '', _old_amount: 0,
@@ -469,6 +473,8 @@ async function fetchBills() {
     }
     const res = await buildingGetBills(params)
     bills.value = res.data.bills
+  } catch {
+    ElMessage.error('获取账单列表失败')
   } finally {
     billLoading.value = false
   }
@@ -536,6 +542,8 @@ async function handleSaveBill() {
     await fetchBills()
     await fetchStats()
     await fetchYearStats()
+  } catch {
+    ElMessage.error(editingId.value ? '更新失败' : '创建失败')
   } finally {
     billSubmitting.value = false
   }

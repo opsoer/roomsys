@@ -166,11 +166,13 @@ async function handleSave() {
   saving.value = true
   try {
     const data = { ...form.value }
-    data.landlords = data.landlord_phones.filter(p => p.trim()).map(p => ({ name: data.landlord_name, phone: p.trim() }))
+    data.landlords =     data.landlord_phones.filter(p => p.trim()).map(p => ({ name: (data.landlord_name || '').trim() || '未知', phone: p.trim() }))
     delete data.landlord_name
     delete data.landlord_phones
     await updateBuildingInfo(data)
     ElMessage.success('保存成功')
+  } catch {
+    ElMessage.error('保存失败')
   } finally {
     saving.value = false
   }

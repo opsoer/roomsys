@@ -51,7 +51,7 @@ func getZone(name string) *storage.Region {
 	case "na0":
 		return &storage.ZoneBeimei
 	default:
-		return nil
+		return &storage.ZoneHuadong
 	}
 }
 
@@ -69,7 +69,7 @@ func (h *MediaHandler) qiniuMac() *qiniuAuth.Mac {
 }
 
 func (h *MediaHandler) qiniuConfig() storage.Config {
-	return storage.Config{Region: getZone(h.Cfg.QiniuZone), UseHTTPS: true}
+	return storage.Config{Region: getZone(h.Cfg.QiniuZone), UseHTTPS: h.Cfg.QiniuUseHTTPS}
 }
 
 func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) error {
@@ -410,7 +410,7 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 		return
 	}
 
-	absPath := filepath.Join(h.Cfg.UploadDir, safePath)
+	absPath := filepath.Clean(filepath.Join(h.Cfg.UploadDir, safePath))
 	cleanUploadDir := filepath.Clean(h.Cfg.UploadDir)
 	if !strings.HasPrefix(absPath, cleanUploadDir) {
 		logger.Log.Warn().Str("path", filePath).Msg("文件服务: 非法路径请求")

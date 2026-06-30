@@ -95,18 +95,29 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
-	handleDepositRefund(h.DB, room, req.RefundedDeposit, uid, bid)
 
-	if err := h.DB.Model(&room).Where("status != ?", "vacant").Update("status", "vacant").Error; err != nil {
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	handleDepositRefund(tx, room, req.RefundedDeposit, uid, bid)
+
+	if err := tx.Model(&room).Where("status != ?", "vacant").Update("status", "vacant").Error; err != nil {
+		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
 		return
 	}
-	if err := h.DB.Model(&task).Update("status", "completed").Error; err != nil {
+	if err := tx.Model(&task).Update("status", "completed").Error; err != nil {
+		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("更新任务状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败")
 		return
 	}
+	tx.Commit()
 	logger.Log.Info().
 		Uint("task_id", task.ID).
 		Uint("room_id", room.ID).

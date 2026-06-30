@@ -61,13 +61,11 @@ async function handleLogin() {
 
     showToast({ message: '登录成功', icon: 'success', duration: 1500 })
 
-    setTimeout(() => {
-      if (user.role === 'super_admin') {
-        router.push('/admin/buildings')
-      } else {
-        router.push('/landlord/rooms')
-      }
-    }, 500)
+    if (user.role === 'super_admin') {
+      router.push('/admin/buildings')
+    } else {
+      router.push('/landlord/rooms')
+    }
   } catch (e) {
     const msg = e?.response?.data?.message || e?.response?.data?.error
     if (msg) {

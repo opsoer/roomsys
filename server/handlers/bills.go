@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"encoding/csv"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -119,6 +119,11 @@ func (h *BillHandler) Create(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "类型必须为 income 或 expense")
 		return
 	}
+	if isMonthSettled(h.DB, bid, req.BillDate) {
+		logger.Log.Warn().Uint("building_id", bid).Str("bill_date", req.BillDate).Msg("创建账单失败: 该月已结算")
+		utils.Error(c, http.StatusBadRequest, "该月已结算分红，无法创建账单")
+		return
+	}
 	if req.Subtype == "其他" && req.Description == "" {
 		logger.Log.Warn().Uint("building_id", bid).Msg("创建账单失败: 其他类型需备注")
 		utils.Error(c, http.StatusBadRequest, "子类型为其他时，备注不能为空")
@@ -225,6 +230,65 @@ func (h *BillHandler) Update(c *gin.Context) {
 	utils.Success(c, gin.H{"bill": bill})
 }
 
+func (h *BillHandler) ExportCSV(c *gin.Context) {
+	buildingID, exists := c.Get("building_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	bid, ok := buildingID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
+
+	var bills []models.Bill
+	query := h.DB.Preload("Room").Where("building_id = ?", bid)
+	if t := c.Query("type"); t != "" {
+		query = query.Where("type = ?", t)
+	}
+	if subtype := c.Query("subtype"); subtype != "" {
+		query = query.Where("subtype = ?", subtype)
+	}
+	if start := c.Query("start_date"); start != "" {
+		query = query.Where("bill_date >= ?", start)
+	}
+	if end := c.Query("end_date"); end != "" {
+		query = query.Where("bill_date <= ?", end)
+	}
+	if err := query.Order("bill_date desc, created_at desc").Find(&bills).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("导出账单失败")
+		utils.Error(c, http.StatusInternalServerError, "导出失败")
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=bills.csv")
+	writer := csv.NewWriter(c.Writer)
+	writer.Write([]string{"账单编号", "类型", "子类型", "金额", "房间号", "日期", "备注", "创建时间"})
+	for _, bill := range bills {
+		roomNo := ""
+		if bill.Room.ID > 0 {
+			roomNo = bill.Room.RoomNumber
+		}
+		typeLabel := "收入"
+		if bill.Type == "expense" {
+			typeLabel = "支出"
+		}
+		writer.Write([]string{
+			bill.BillNo,
+			typeLabel,
+			bill.Subtype,
+			fmt.Sprintf("%.2f", bill.Amount),
+			roomNo,
+			bill.BillDate,
+			bill.Description,
+			bill.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+	writer.Flush()
+}
+
 func (h *BillHandler) Delete(c *gin.Context) {
 	buildingID, exists := c.Get("building_id")
 	if !exists {
@@ -308,10 +372,11 @@ func (h *BillHandler) Stats(c *gin.Context) {
 			expenseDetail = append(expenseDetail, item)
 		}
 	}
+	fs := utils.NewMonthlyFinanceSummary(totalIncome, totalExpense)
 	resp := gin.H{
-		"total_income":   totalIncome,
-		"total_expense":  totalExpense,
-		"net_profit":     totalIncome - totalExpense,
+		"total_income":   fs.TotalIncome,
+		"total_expense":  fs.TotalExpense,
+		"net_profit":     fs.NetProfit,
 		"income_detail":  incomeDetail,
 		"expense_detail": expenseDetail,
 	}
@@ -435,11 +500,10 @@ func (h *BillHandler) Trend(c *gin.Context) {
 }
 
 func AutoCreateMonthlyRentBills(db *gorm.DB) {
-	now := utils.Now()
-	year, month, _ := now.Date()
-	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, now.Location())
-	lastDay := firstDay.AddDate(0, 1, -1)
-	monthStr := firstDay.Format("2006-01")
+	bm := utils.GetMonthBoundary(utils.Now())
+	firstDay := bm.FirstDay
+	lastDay := bm.LastDay
+	monthStr := bm.Month
 
 	var buildings []models.Building
 	db.Where("status = ?", "active").Find(&buildings)
@@ -449,6 +513,8 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 		var contracts []models.RentalContract
 		db.Where("status = ? AND building_id = ?", "active", building.ID).Preload("Room").Find(&contracts)
 
+		tx := db.Begin()
+		buildingCreated := 0
 		for _, contract := range contracts {
 			startDate, err := time.Parse("2006-01-02", contract.StartDate)
 			if err != nil {
@@ -476,7 +542,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 			}
 
 			var count int64
-			db.Model(&models.Bill{}).
+			tx.Model(&models.Bill{}).
 				Where("building_id = ? AND room_id = ? AND subtype = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ? AND description LIKE ?",
 					building.ID, contract.RoomID, "租金", monthStr, "%合同ID:"+fmt.Sprintf("%d", contract.ID)+"%").
 				Count(&count)
@@ -484,10 +550,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 				continue
 			}
 
-			daysInMonth := lastDay.Day()
-			days := int(billEnd.Sub(billStart).Hours()/24) + 1
-			amount := contract.RentPrice * float64(days) / float64(daysInMonth)
-			amount = math.Round(amount*100) / 100
+			amount := utils.CalcProratedAmount(contract.RentPrice, billStart, billEnd, lastDay.Day())
 			if amount <= 0 {
 				continue
 			}
@@ -505,11 +568,17 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 				BillDate:    billStart.Format("2006-01-02"),
 				CreatedBy:   1,
 			}
-			if err := db.Create(&bill).Error; err != nil {
+			if err := tx.Create(&bill).Error; err != nil {
+				tx.Rollback()
 				logger.Log.Error().Err(err).Uint("building_id", building.ID).Uint("room_id", contract.RoomID).Msg("自动创建月度租金账单失败")
-			} else {
-				createdCount++
+				buildingCreated = -1
+				break
 			}
+			buildingCreated++
+		}
+		if buildingCreated >= 0 {
+			tx.Commit()
+			createdCount += buildingCreated
 		}
 	}
 	if createdCount > 0 {

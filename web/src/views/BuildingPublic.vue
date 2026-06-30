@@ -79,7 +79,7 @@
         @click="$router.push(`/building/${id}/room/${room.id}`)"
       >
         <div class="room-card-img">
-          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => e.target.src = '/default-image.png'" />
+          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
           <div v-else class="room-card-img-placeholder">
             <van-icon name="photo-o" size="36" color="#ccc" />
           </div>
@@ -153,7 +153,7 @@ const layoutOptions = computed(() => {
 })
 
 const displayRooms = computed(() => {
-  if (!statusFilter.value || statusFilter.value === '') return rooms.value
+  if (!statusFilter.value) return rooms.value
   return rooms.value.filter(r => r.status === statusFilter.value)
 })
 

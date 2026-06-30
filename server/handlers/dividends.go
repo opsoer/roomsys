@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"rental-server/logger"
 	"rental-server/models"
@@ -60,33 +59,14 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
 	}
-	type TotalRow struct {
-		Type  string
-		Total float64
-	}
-	var rows []TotalRow
-	if err := h.DB.Model(&models.Bill{}).
-		Select("type, SUM(amount) as total").
-		Where("building_id = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", bid, month).
-		Group("type").
-		Find(&rows).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红账单失败")
-	}
-	var totalIncome, totalExpense float64
-	for _, r := range rows {
-		if r.Type == "income" {
-			totalIncome = r.Total
-		} else {
-			totalExpense = r.Total
-		}
-	}
-	netProfit := totalIncome - totalExpense
+	summary := utils.QueryMonthlyFinance(h.DB, bid, month)
+	netProfit := summary.NetProfit
 	if netProfit <= 0 {
 		logger.Log.Info().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Msg("分红计算: 无净利润")
 		utils.SuccessWithMsg(c, fmt.Sprintf("%s 无净利润，不分红", month), gin.H{
 			"month":         month,
-			"total_income":  totalIncome,
-			"total_expense": totalExpense,
+			"total_income":  summary.TotalIncome,
+			"total_expense": summary.TotalExpense,
 			"net_profit":    netProfit,
 			"results":       []gin.H{},
 		})
@@ -107,8 +87,8 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 	logger.Log.Info().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Int("shareholders", len(results)).Msg("分红预览计算完成")
 	utils.Success(c, gin.H{
 		"month":         month,
-		"total_income":  totalIncome,
-		"total_expense": totalExpense,
+		"total_income":  summary.TotalIncome,
+		"total_expense": summary.TotalExpense,
 		"net_profit":    netProfit,
 		"results":       results,
 	})
@@ -142,27 +122,8 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
 	}
-	type TotalRow struct {
-		Type  string
-		Total float64
-	}
-	var rows []TotalRow
-	if err := h.DB.Model(&models.Bill{}).
-		Select("type, SUM(amount) as total").
-		Where("building_id = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", bid, req.Month).
-		Group("type").
-		Find(&rows).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红结算账单失败")
-	}
-	var totalIncome, totalExpense float64
-	for _, r := range rows {
-		if r.Type == "income" {
-			totalIncome = r.Total
-		} else {
-			totalExpense = r.Total
-		}
-	}
-	netProfit := totalIncome - totalExpense
+	summary := utils.QueryMonthlyFinance(h.DB, bid, req.Month)
+	netProfit := summary.NetProfit
 
 	tx := h.DB.Begin()
 	defer func() {
@@ -187,8 +148,8 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		dividend := models.Dividend{
 			BuildingID:     bid,
 			SettleMonth:    req.Month,
-			TotalIncome:    totalIncome,
-			TotalExpense:   totalExpense,
+			TotalIncome:    summary.TotalIncome,
+			TotalExpense:   summary.TotalExpense,
 			NetProfit:      netProfit,
 			ShareholderID:  s.ID,
 			DividendAmount: amount,
@@ -370,10 +331,10 @@ func (h *DividendHandler) Predict(c *gin.Context) {
 	predictions := []Prediction{}
 
 	for i := 0; i < m; i++ {
-		month := now.AddDate(0, i, 0).Format("2006-01")
-		monthStart := now.AddDate(0, i, 0).Format("2006-01-02")
-		firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, i, 0)
-		monthEnd := firstOfMonth.AddDate(0, 1, -1).Format("2006-01-02")
+		bm := utils.GetMonthBoundary(now.AddDate(0, i, 0))
+		month := bm.Month
+		monthStart := bm.FirstDay.Format(utils.DateFormat)
+		monthEnd := bm.LastDay.Format(utils.DateFormat)
 
 		var totalRent float64
 		h.DB.Model(&models.RentalContract{}).

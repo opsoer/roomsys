@@ -36,11 +36,24 @@ func main() {
 	}
 	logger.Log.Info().Msg("数据库连接成功")
 
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Log.Fatal().Err(err).Msg("获取数据库连接实例失败")
+	}
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	logger.Log.Info().Int("max_idle", 10).Int("max_open", 100).Msg("数据库连接池已配置")
+
+	if os.Getenv("GIN_MODE") == "release" {
+		logger.Log.Warn().Msg("生产环境 AutoMigrate 可能修改表结构，建议手动管理迁移")
+	}
 	if err := models.AutoMigrate(db); err != nil {
 		logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
 	}
 	logger.Log.Info().Msg("数据库迁移完成")
 
+	utils.InitBillNo(db)
 	seedAdmin(db)
 
 	// 启动时自动创建当月租金账单
@@ -50,7 +63,11 @@ func main() {
 		for {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
+			dur := next.Sub(now)
+			if dur <= 0 {
+				dur = time.Hour
+			}
+			time.Sleep(dur)
 			handlers.AutoCreateMonthlyRentBills(db)
 		}
 	}()
@@ -74,7 +91,19 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(requestLogger())
-	r.MaxMultipartMemory = 20 << 20 // 20MB
+	r.MaxMultipartMemory = 200 << 20 // 200MB
+
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	r.Use(func(c *gin.Context) {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-Content-Type-Options", "nosniff")
@@ -147,13 +176,20 @@ func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
-		hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		if err != nil {
+			logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
+			return
+		}
 		admin = models.User{
 			Username:     "admin",
 			PasswordHash: string(hash),
 			Role:         "super_admin",
 		}
-		db.Create(&admin)
+		if err := db.Create(&admin).Error; err != nil {
+			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
+			return
+		}
 		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin123")
 	} else {
 		if admin.Role != "super_admin" {

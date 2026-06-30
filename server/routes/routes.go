@@ -23,6 +23,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	{
 		auth := &handlers.AuthHandler{DB: db, Cfg: cfg}
 		public.POST("/auth/login", auth.Login)
+		public.POST("/auth/refresh", auth.RefreshToken)
 
 
 		buildingH := &handlers.BuildingHandler{DB: db}
@@ -124,6 +125,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			fullPkg.DELETE("/bills/:id", billH.Delete)
 			fullPkg.GET("/bills/stats", billH.Stats)
 			fullPkg.GET("/bills/trend", billH.Trend)
+			fullPkg.GET("/bills/export", billH.ExportCSV)
 
 			// 分红管理
 			divH := &handlers.DividendHandler{DB: db}

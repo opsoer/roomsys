@@ -35,7 +35,7 @@
     <div v-else class="room-grid">
       <div v-for="room in rooms" :key="room.id" class="room-card" @click="$router.push(`/landlord/rooms/${room.id}`)">
         <div class="room-card-image">
-            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => e.target.src = '/default-image.png'" />
+            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
           <div v-else class="room-card-placeholder">
             <el-icon :size="48" color="#ccc"><Picture /></el-icon>
           </div>
@@ -125,7 +125,7 @@ async function fetchRooms() {
 }
 
 async function handleAdd() {
-  const valid = await addFormRef.value.validate()
+  const valid = await addFormRef.value.validate().catch(() => false)
   if (!valid) return
   submitting.value = true
   try {
@@ -134,6 +134,8 @@ async function handleAdd() {
     showAddDialog.value = false
     addForm.value = { room_number: '', floor: '', layout: '', description: '' }
     await fetchRooms()
+  } catch {
+    ElMessage.error('添加房间失败')
   } finally {
     submitting.value = false
   }

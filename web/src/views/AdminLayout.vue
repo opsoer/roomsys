@@ -66,8 +66,6 @@ const recruitCount = ref(0)
 let timer = null
 
 async function fetchRecruitCount() {
-  const token = localStorage.getItem('token')
-  if (!token) return
   try {
     const res = await api.get('/admin/recruit/unprocessed-count')
     recruitCount.value = res.data.count || 0
@@ -81,7 +79,6 @@ function logout() {
   localStorage.removeItem('username')
   localStorage.removeItem('role')
   localStorage.removeItem('building_id')
-  localStorage.removeItem('user')
   showToast('已退出')
   router.push('/')
 }
@@ -89,7 +86,9 @@ function logout() {
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   fetchRecruitCount()
-  timer = setInterval(fetchRecruitCount, 30000)
+  timer = setInterval(() => {
+    if (!document.hidden) fetchRecruitCount()
+  }, 30000)
 })
 
 onUnmounted(() => {

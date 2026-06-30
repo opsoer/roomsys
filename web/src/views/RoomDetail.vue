@@ -147,9 +147,10 @@
           <div class="upload-actions">
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
-              :headers="{ Authorization: `Bearer ${token}` }"
+              :http-request="customUpload"
               :data="{ category: 'cover' }"
               :on-success="handleUploadSuccess"
+              :on-error="handleUploadError"
               :before-upload="beforeUploadImage"
               :show-file-list="false"
               accept="image/jpeg,image/png,image/gif"
@@ -158,9 +159,10 @@
             </el-upload>
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
-              :headers="{ Authorization: `Bearer ${token}` }"
+              :http-request="customUpload"
               :data="{ category: 'gallery' }"
               :on-success="handleUploadSuccess"
+              :on-error="handleUploadError"
               :before-upload="beforeUploadImage"
               :show-file-list="false"
               accept="image/jpeg,image/png,image/gif"
@@ -170,9 +172,10 @@
             </el-upload>
             <el-upload
               :action="`/api/building/rooms/${room.id}/media`"
-              :headers="{ Authorization: `Bearer ${token}` }"
+              :http-request="customUpload"
               :data="{ category: 'video' }"
               :on-success="handleUploadSuccess"
+              :on-error="handleUploadError"
               :before-upload="beforeUploadVideo"
               :show-file-list="false"
               accept="video/mp4,video/quicktime"
@@ -258,16 +261,12 @@
         </el-form-item>
         <el-form-item label="楼层" prop="floor">
           <el-select v-model="editForm.floor" placeholder="选择楼层" style="width:100%">
-            <el-option label="1层" value="1" />
-            <el-option label="2层" value="2" />
-            <el-option label="3层" value="3" />
+            <el-option v-for="f in floorOptions" :key="f" :label="f + '层'" :value="String(f)" />
           </el-select>
         </el-form-item>
         <el-form-item label="户型" prop="layout">
           <el-select v-model="editForm.layout" placeholder="选择户型" style="width:100%">
-            <el-option label="单间" value="单间" />
-            <el-option label="大单间" value="大单间" />
-            <el-option label="一室一厅" value="一室一厅" />
+            <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
           </el-select>
         </el-form-item>
         <el-form-item label="描述" prop="description">
@@ -284,9 +283,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+const floorOptions = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+const layoutOptions = ['单间','大单间','一室一厅','两室一厅','三室一厅','四室及以上']
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Loading, Plus, Picture, VideoCamera, Close } from '@element-plus/icons-vue'
-import { buildingGetRoom, buildingUpdateRoom, buildingUpdateRoomStatus, buildingRenewContract, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
+import api, { buildingGetRoom, buildingUpdateRoom, buildingUpdateRoomStatus, buildingRenewContract, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { showImagePreview } from 'vant'
 
@@ -299,7 +300,6 @@ const videos = ref([])
 const currentContract = ref(null)
 const landlords = ref([])
 const loading = ref(true)
-const token = localStorage.getItem('token')
 const isAdmin = computed(() => {
   const role = localStorage.getItem('role')
   return role === 'admin' || role === 'building_admin' || role === 'super_admin'
@@ -372,7 +372,7 @@ async function fetchRoom() {
     coverImage.value = media.find(m => m.type === 'image' && m.category === 'cover') || null
     galleryImages.value = media.filter(m => m.type === 'image' && m.category !== 'cover')
     if (coverImage.value) {
-      galleryImages.value = [coverImage.value, ...galleryImages.value.filter(m => m.id !== coverImage.value.id)]
+      galleryImages.value = [coverImage.value, ...galleryImages.value]
     }
     videos.value = media.filter(m => m.type === 'video')
     currentContract.value = res.data.room.current_contract || null
@@ -382,9 +382,29 @@ async function fetchRoom() {
       layout: room.value.layout,
       description: room.value.description,
     }
+  } catch {
+    ElMessage.error('获取房间信息失败')
   } finally {
     loading.value = false
   }
+}
+
+function handleUploadError() {
+  ElMessage.error('上传失败')
+}
+
+function customUpload(options) {
+  const formData = new FormData()
+  formData.append('file', options.file)
+  for (const key in options.data) {
+    formData.append(key, options.data[key])
+  }
+  const url = options.action.replace(/^\/api/, '')
+  api.post(url, formData).then(res => {
+    options.onSuccess(res.data, options.file, options.fileList)
+  }).catch(err => {
+    options.onError(err, options.file, options.fileList)
+  })
 }
 
 function handleUploadSuccess() {
@@ -513,7 +533,7 @@ async function fetchBuildingInfo() {
 }
 
 onMounted(() => {
-  fetchRoom()
+  fetchRoom().catch(() => {})
   fetchBuildingInfo()
 })
 </script>

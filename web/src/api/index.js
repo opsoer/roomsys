@@ -29,7 +29,6 @@ api.interceptors.response.use(
       if (msg) ElMessage.error(msg)
       if (!isLoginPage) {
         localStorage.removeItem('token')
-        localStorage.removeItem('user')
         localStorage.removeItem('username')
         localStorage.removeItem('role')
         localStorage.removeItem('building_id')
@@ -179,7 +178,10 @@ export function buildingDeleteBill(id) {
 }
 
 export function buildingGetBillStats(month, year) {
-  return api.get('/building/bills/stats', { params: { month, year } })
+  const params = {}
+  if (month != null) params.month = month
+  if (year != null) params.year = year
+  return api.get('/building/bills/stats', { params })
 }
 
 export function buildingGetBillTrend(params) {

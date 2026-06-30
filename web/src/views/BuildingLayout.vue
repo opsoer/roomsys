@@ -169,7 +169,8 @@ const isBuildingAdmin = computed(() => role.value === 'building_admin' || role.v
 function goToBuildingPage() {
   const bid = localStorage.getItem('building_id')
   if (bid) {
-    window.open(`/building/${bid}`, '_blank')
+    const url = router.resolve({ name: 'BuildingPublic', params: { id: bid } }).href
+    window.open(url, '_blank')
   } else {
     router.push('/')
   }
@@ -180,7 +181,6 @@ function logout() {
   localStorage.removeItem('username')
   localStorage.removeItem('role')
   localStorage.removeItem('building_id')
-  localStorage.removeItem('user')
   showToast('已退出')
   router.push('/')
 }

@@ -30,6 +30,26 @@ func GenerateToken(userID uint, username, role, secret string, buildingID uint) 
 	return token.SignedString([]byte(secret))
 }
 
+func GenerateRefreshToken(userID uint, username, role, secret string, buildingID uint) (string, error) {
+	claims := Claims{
+		UserID:     userID,
+		Username:   username,
+		Role:       role,
+		BuildingID: buildingID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(Now().Add(720 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(Now()),
+			ID:        "refresh",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+func IsRefreshTokenFromClaims(claims *Claims) bool {
+	return claims.ID == "refresh"
+}
+
 func ParseToken(tokenStr, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

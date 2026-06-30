@@ -46,12 +46,19 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 func AdminOrBuildingAdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, _ := c.Get("role")
-		userID, _ := c.Get("user_id")
+		roleVal, exists := c.Get("role")
+		userIDVal, _ := c.Get("user_id")
+		role, roleOk := roleVal.(string)
+		userID, userOk := userIDVal.(uint)
+		if !exists || !roleOk || !userOk {
+			utils.Error(c, http.StatusUnauthorized, "未授权")
+			c.Abort()
+			return
+		}
 		if role != "admin" && role != "building_admin" && role != "super_admin" {
 			logger.Log.Warn().
-				Uint("user_id", userID.(uint)).
-				Str("role", role.(string)).
+				Uint("user_id", userID).
+				Str("role", role).
 				Str("path", c.Request.URL.Path).
 				Msg("权限不足: 仅管理员可操作")
 			utils.Error(c, http.StatusForbidden, "无权限，仅管理员可操作")
@@ -64,12 +71,19 @@ func AdminOrBuildingAdminMiddleware() gin.HandlerFunc {
 
 func SuperAdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, _ := c.Get("role")
-		userID, _ := c.Get("user_id")
+		roleVal, exists := c.Get("role")
+		userIDVal, _ := c.Get("user_id")
+		role, roleOk := roleVal.(string)
+		userID, userOk := userIDVal.(uint)
+		if !exists || !roleOk || !userOk {
+			utils.Error(c, http.StatusUnauthorized, "未授权")
+			c.Abort()
+			return
+		}
 		if role != "super_admin" {
 			logger.Log.Warn().
-				Uint("user_id", userID.(uint)).
-				Str("role", role.(string)).
+				Uint("user_id", userID).
+				Str("role", role).
 				Str("path", c.Request.URL.Path).
 				Msg("权限不足: 仅超级管理员可操作")
 			utils.Error(c, http.StatusForbidden, "无权限，仅超级管理员可操作")
@@ -109,17 +123,24 @@ func FullPackageMiddleware(db *gorm.DB) gin.HandlerFunc {
 
 func BuildingScopeMiddleware(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, _ := c.Get("role")
+		roleVal, _ := c.Get("role")
 		buildingID, _ := c.Get("building_id")
-		userID, _ := c.Get("user_id")
+		userIDVal, _ := c.Get("user_id")
+		role, roleOk := roleVal.(string)
+		userID, userOk := userIDVal.(uint)
+		if !roleOk || !userOk {
+			utils.Error(c, http.StatusUnauthorized, "未授权")
+			c.Abort()
+			return
+		}
 		if role == "super_admin" {
 			c.Next()
 			return
 		}
 		if bid, ok := buildingID.(uint); !ok || bid == 0 {
 			logger.Log.Warn().
-				Uint("user_id", userID.(uint)).
-				Str("role", role.(string)).
+				Uint("user_id", userID).
+				Str("role", role).
 				Str("path", c.Request.URL.Path).
 				Msg("用户未关联公寓")
 			utils.Error(c, http.StatusForbidden, "未关联公寓")

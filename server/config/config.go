@@ -67,7 +67,9 @@ func loadFile(path string, cfg *Config) {
 	if err != nil {
 		return
 	}
-	json.Unmarshal(data, cfg)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		panic(fmt.Sprintf("配置解析失败: %v", err))
+	}
 }
 
 func envOverrides(cfg *Config) {

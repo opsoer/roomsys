@@ -175,6 +175,7 @@ type Task struct {
 	Description string         `gorm:"type:text" json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 	Room        Room           `gorm:"foreignKey:RoomID" json:"room,omitempty"`
 }
 
@@ -193,6 +194,19 @@ type RecruitSubmission struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type AuditLog struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"index;not null" json:"user_id"`
+	Username   string    `gorm:"size:50" json:"username"`
+	BuildingID *uint     `gorm:"index" json:"building_id"`
+	Action     string    `gorm:"size:50;not null" json:"action"`
+	Resource   string    `gorm:"size:50" json:"resource"`
+	ResourceID string    `gorm:"size:50" json:"resource_id"`
+	Detail     string    `gorm:"type:text" json:"detail"`
+	IP         string    `gorm:"size:50" json:"ip"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
@@ -208,5 +222,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&Task{},
 		&Setting{},
 		&RecruitSubmission{},
+		&AuditLog{},
 	)
 }

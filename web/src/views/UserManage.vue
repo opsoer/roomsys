@@ -20,8 +20,8 @@
           <el-table-column prop="created_at" label="创建时间" />
           <el-table-column label="操作" width="160">
             <template #default="{ row }">
-              <el-button size="small" type="primary" text @click="openEditDialog(row)">编辑</el-button>
-              <el-button size="small" type="danger" text :disabled="row.role === 'super_admin'" @click="handleDelete(row)">删除</el-button>
+              <el-button v-if="currentUserRole === 'super_admin'" size="small" type="primary" text @click="openEditDialog(row)">编辑</el-button>
+              <el-button v-if="currentUserRole === 'super_admin'" size="small" type="danger" text :disabled="row.role === 'super_admin'" @click="handleDelete(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -43,8 +43,8 @@
             <span class="uc-value">{{ item.created_at }}</span>
           </div>
           <div class="uc-foot">
-            <el-button size="small" type="primary" text @click="openEditDialog(item)">编辑</el-button>
-            <el-button size="small" type="danger" text :disabled="item.role === 'super_admin'" @click="handleDelete(item)">删除</el-button>
+            <el-button v-if="currentUserRole === 'super_admin'" size="small" type="primary" text @click="openEditDialog(item)">编辑</el-button>
+            <el-button v-if="currentUserRole === 'super_admin'" size="small" type="danger" text :disabled="item.role === 'super_admin'" @click="handleDelete(item)">删除</el-button>
           </div>
         </div>
         <div v-if="!loading && users.length === 0" class="empty-text">暂无管理员</div>
@@ -86,6 +86,7 @@ const submitting = ref(false)
 const editingId = ref(null)
 const form = ref({ username: '', password: '', role: 'admin' })
 const formRef = ref(null)
+const currentUserRole = localStorage.getItem('role')
 
 async function fetchUsers() {
   loading.value = true
@@ -125,6 +126,8 @@ async function handleSubmit() {
     }
     showDialog.value = false
     await fetchUsers()
+  } catch {
+    ElMessage.error(editingId.value ? '修改失败' : '创建失败')
   } finally {
     submitting.value = false
   }
@@ -136,8 +139,10 @@ async function handleDelete(row) {
     await adminDeleteUser(row.id)
     ElMessage.success('删除成功')
     await fetchUsers()
-  } catch {
-    ElMessage.error('删除失败')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除失败')
+    }
   }
 }
 

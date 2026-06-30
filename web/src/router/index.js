@@ -79,7 +79,7 @@ router.beforeEach((to, _, next) => {
   const role = localStorage.getItem('role')
 
   // 已登录用户访问登录页 → 直接跳转后台
-  if (to.path === '/login' && token) {
+  if (to.name === 'Login' && token) {
     next(getDashboardPath(role))
     return
   }

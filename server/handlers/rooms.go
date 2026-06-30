@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -82,30 +82,31 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	if h.hasAuth(c) {
 		var contract models.RentalContract
 		if room.Status == "rented" || room.Status == "expiring" {
-			h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
+			if err := h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
 				Preload("Tenant").
-				First(&contract)
-			if contract.ID != 0 {
+				First(&contract).Error; err == nil {
 				detail.CurrentContract = &contract
 				detail.EndDate = contract.EndDate
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("获取房间合同失败")
 			}
 		}
 	}
 	utils.Success(c, gin.H{"room": detail})
 }
 
-// 公开：获取有效合同（未登录时隐藏金额字段）
+// 公开：获取有效合同（仅已登录用户可查看）
 func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
+	if !h.hasAuth(c) {
+		utils.Success(c, gin.H{"contract": nil})
+		return
+	}
 	roomID := c.Param("rid")
 	buildingID := c.Param("id")
 	var contract models.RentalContract
 	if err := h.DB.Where("room_id = ? AND status = ? AND building_id = ?", roomID, "active", buildingID).
 		Preload("Tenant").Preload("Room").
 		First(&contract).Error; err != nil {
-		utils.Success(c, gin.H{"contract": nil})
-		return
-	}
-	if !h.hasAuth(c) {
 		utils.Success(c, gin.H{"contract": nil})
 		return
 	}
@@ -242,12 +243,13 @@ func (h *RoomHandler) Get(c *gin.Context) {
 	detail := RoomDetail{Room: room}
 	var contract models.RentalContract
 	if room.Status == "rented" || room.Status == "expiring" {
-		h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
+		if err := h.DB.Where("room_id = ? AND status = ?", room.ID, "active").
 			Preload("Tenant").
-			First(&contract)
-		if contract.ID != 0 {
+			First(&contract).Error; err == nil {
 			detail.CurrentContract = &contract
 			detail.EndDate = contract.EndDate
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("获取房间合同失败")
 		}
 	}
 	utils.Success(c, gin.H{"room": detail})
@@ -323,8 +325,14 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
-	if room.Status == "rented" || room.Status == "expiring" {
-		logger.Log.Warn().Uint("room_id", room.ID).Str("status", room.Status).Msg("删除房间失败: 房间有活跃合同")
+	var activeContractCount int64
+	if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Count(&activeContractCount).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("删除房间失败: 查询合同失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if activeContractCount > 0 {
+		logger.Log.Warn().Uint("room_id", room.ID).Msg("删除房间失败: 房间有活跃合同")
 		utils.Error(c, http.StatusBadRequest, "房间有活跃合同，无法删除")
 		return
 	}
@@ -395,20 +403,45 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 
 	if req.Status == "rented" {
 		var existingContract models.RentalContract
-		if err := h.DB.Where("room_id = ? AND status = ?", room.ID, "active").First(&existingContract).Error; err == nil {
+		if err := h.DB.Where("room_id = ? AND status = ?", room.ID, "active").First(&existingContract).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("查询活跃合同失败")
+				utils.Error(c, http.StatusInternalServerError, "查询合同失败")
+				return
+			}
+		} else {
 			logger.Log.Warn().Uint("room_id", room.ID).Msg("出租房间失败: 已有活跃合同")
 			utils.Error(c, http.StatusBadRequest, "该房间已有活跃合同，请先退租")
 			return
 		}
 
+		tx := h.DB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
 		var tenant models.Tenant
-		h.DB.Where("name = ? AND phone = ?", req.TenantName, req.TenantPhone).First(&tenant)
-		if tenant.ID == 0 {
+		if err := tx.Where("name = ? AND phone = ?", req.TenantName, req.TenantPhone).First(&tenant).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				tx.Rollback()
+				logger.Log.Error().Err(err).Msg("查询租客失败")
+				utils.Error(c, http.StatusInternalServerError, "出租失败")
+				return
+			}
 			tenant = models.Tenant{
 				Name:  req.TenantName,
 				Phone: req.TenantPhone,
 			}
-			h.DB.Create(&tenant)
+			if err := tx.Create(&tenant).Error; err != nil {
+				if err2 := tx.Where("name = ? AND phone = ?", req.TenantName, req.TenantPhone).First(&tenant).Error; err2 != nil {
+					tx.Rollback()
+					logger.Log.Error().Err(err).Msg("创建租客失败")
+					utils.Error(c, http.StatusInternalServerError, "出租失败")
+					return
+				}
+			}
 			logger.Log.Info().Uint("tenant_id", tenant.ID).Str("name", tenant.Name).Msg("新租客信息已创建")
 		}
 		startDate := req.StartDate
@@ -430,18 +463,25 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			EndDate:      endDate,
 			Status:       "active",
 		}
-		h.DB.Create(&contract)
+		if err := tx.Create(&contract).Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("创建合同失败")
+			utils.Error(c, http.StatusInternalServerError, "出租失败")
+			return
+		}
 		userID, exists := c.Get("user_id")
 		if !exists {
+			tx.Rollback()
 			utils.Error(c, http.StatusUnauthorized, "未授权")
 			return
 		}
 		uid, ok := userID.(uint)
 		if !ok {
+			tx.Rollback()
 			utils.Error(c, http.StatusInternalServerError, "服务器错误")
 			return
 		}
-		createProratedRentBill(h.DB, room, contract, uid, bid)
+		createProratedRentBill(tx, room, contract, uid, bid)
 		newStatus := "rented"
 		if startParsed, err := time.Parse("2006-01-02", startDate); err == nil && startParsed.After(utils.Now()) {
 			newStatus = "vacant"
@@ -451,9 +491,13 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 				newStatus = "expiring"
 			}
 		}
-		if err := h.DB.Model(&room).Update("status", newStatus).Error; err != nil {
+		if err := tx.Model(&room).Update("status", newStatus).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间状态失败")
+			utils.Error(c, http.StatusInternalServerError, "出租失败")
+			return
 		}
+		tx.Commit()
 		logger.Log.Info().
 			Uint("room_id", room.ID).
 			Uint("building_id", bid).
@@ -623,47 +667,35 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 
 // 创建按天计算的租金账单
 func createProratedRentBill(db *gorm.DB, room models.Room, contract models.RentalContract, userID uint, buildingID uint) {
-	startDate, err := time.Parse("2006-01-02", contract.StartDate)
+	startDate, err := utils.ParseDate(contract.StartDate)
 	if err != nil {
 		return
 	}
-	endDate, err := time.Parse("2006-01-02", contract.EndDate)
+	endDate, err := utils.ParseDate(contract.EndDate)
 	if err != nil {
 		return
 	}
 	if startDate.After(utils.Now()) {
 		return
 	}
-	year, month, _ := startDate.Date()
-	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, startDate.Location())
-	lastDay := firstDay.AddDate(0, 1, -1)
+	bm := utils.GetMonthBoundary(startDate)
 	billEnd := endDate
-	if endDate.After(lastDay) {
-		billEnd = lastDay
+	if endDate.After(bm.LastDay) {
+		billEnd = bm.LastDay
 	}
 	if startDate.After(billEnd) {
 		return
 	}
-	daysInMonth := lastDay.Day()
-	days := int(billEnd.Sub(startDate).Hours()/24) + 1
-	amount := contract.RentPrice * float64(days) / float64(daysInMonth)
-	amount = math.Round(amount*100) / 100
-	monthStr := firstDay.Format("2006-01")
+	amount := utils.CalcProratedAmount(contract.RentPrice, startDate, billEnd, bm.LastDay.Day())
+	monthStr := bm.Month
 	desc := fmt.Sprintf("房间 %s %s 租金（%s至%s）合同ID:%d", room.RoomNumber, monthStr, startDate.Format("2006-01-02"), billEnd.Format("2006-01-02"), contract.ID)
 
-	var existing models.Bill
-	result := db.Where("building_id = ? AND room_id = ? AND subtype = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ? AND description LIKE ?",
-		buildingID, room.ID, "租金", monthStr, "%合同ID:"+fmt.Sprintf("%d", contract.ID)+"%").
-		First(&existing)
-	if result.Error == nil {
-		oldAmount := existing.Amount
-		newAmount := oldAmount + amount
-		changeNote := fmt.Sprintf(" | 修改原因 新租约生效日期 %s,金额从 %.2f 变为 %.2f（新增%.2f）", contract.StartDate, oldAmount, newAmount, amount)
-		newDesc := existing.Description + changeNote
-		db.Model(&existing).Updates(map[string]interface{}{
-			"amount":      newAmount,
-			"description": newDesc,
-		})
+	var existingBillCount int64
+	db.Model(&models.Bill{}).
+		Where("building_id = ? AND room_id = ? AND subtype = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ? AND description LIKE ?",
+			buildingID, room.ID, "租金", monthStr, "%合同ID:"+fmt.Sprintf("%d", contract.ID)+"%").
+		Count(&existingBillCount)
+	if existingBillCount > 0 {
 		return
 	}
 
@@ -686,6 +718,9 @@ func createProratedRentBill(db *gorm.DB, room models.Room, contract models.Renta
 
 // 处理押金退还
 func handleDepositRefund(d *gorm.DB, room models.Room, refundedDeposit float64, userID uint, buildingID uint) {
+	if refundedDeposit == 0 {
+		return
+	}
 	var contract models.RentalContract
 	err := d.Where("room_id = ? AND status = ? AND building_id = ?", room.ID, "active", buildingID).First(&contract).Error
 	if err != nil {
@@ -755,14 +790,27 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 			}
 			if endDate, err := time.Parse("2006-01-02", c.EndDate); err == nil {
 				if endDate.Before(now) || endDate.Equal(now) {
+					tx := db.Begin()
 					var room models.Room
-					db.First(&room, c.RoomID)
-					if room.Status != "vacant" && room.Status != "expired" {
-						db.Model(&room).Update("status", "expired")
+					if err := tx.First(&room, c.RoomID).Error; err != nil {
+						tx.Rollback()
+						logger.Log.Error().Err(err).Uint("room_id", c.RoomID).Msg("自动检查到期合同: 查询房间失败")
+						continue
 					}
-					db.Model(&c).Update("status", "ended")
+					if room.Status != "vacant" && room.Status != "expired" {
+						if err := tx.Model(&room).Update("status", "expired").Error; err != nil {
+							tx.Rollback()
+							logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("自动检查到期合同: 更新房间状态失败")
+							continue
+						}
+					}
+					if err := tx.Model(&c).Update("status", "ended").Error; err != nil {
+						tx.Rollback()
+						logger.Log.Error().Err(err).Uint("contract_id", c.ID).Msg("自动检查到期合同: 更新合同状态失败")
+						continue
+					}
 					var exist models.Task
-					result := db.Where("room_id = ? AND type = ? AND status = ? AND building_id = ?", c.RoomID, "expired_room", "pending", building.ID).First(&exist)
+					result := tx.Where("room_id = ? AND type = ? AND status = ? AND building_id = ?", c.RoomID, "expired_room", "pending", building.ID).First(&exist)
 					if result.Error != nil {
 						task := models.Task{
 							BuildingID:  building.ID,
@@ -773,8 +821,13 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 							Deposit:     c.Deposit,
 							Description: "租约已到期，请处理押金退还等事宜",
 						}
-						db.Create(&task)
+						if err := tx.Create(&task).Error; err != nil {
+							tx.Rollback()
+							logger.Log.Error().Err(err).Uint("room_id", c.RoomID).Msg("自动检查到期合同: 创建任务失败")
+							continue
+						}
 					}
+					tx.Commit()
 					expiredCount++
 					logger.Log.Info().
 						Uint("contract_id", c.ID).
@@ -783,10 +836,14 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 						Str("room_number", room.RoomNumber).
 						Msg("合同到期，房间状态设为 expired")
 				} else if utils.Until(endDate) < 30*24*time.Hour {
-					db.Model(&models.Room{}).Where("id = ?", c.RoomID).Update("status", "expiring")
+					if err := db.Model(&models.Room{}).Where("id = ?", c.RoomID).Update("status", "expiring").Error; err != nil {
+						logger.Log.Error().Err(err).Uint("room_id", c.RoomID).Msg("自动检查到期合同: 更新房间为expiring失败")
+					}
 					expiringCount++
 				} else {
-					db.Model(&models.Room{}).Where("id = ? AND status = ?", c.RoomID, "expiring").Update("status", "rented")
+					if err := db.Model(&models.Room{}).Where("id = ? AND status = ?", c.RoomID, "expiring").Update("status", "rented").Error; err != nil {
+						logger.Log.Error().Err(err).Uint("room_id", c.RoomID).Msg("自动检查到期合同: 恢复房间状态失败")
+					}
 				}
 			}
 		}

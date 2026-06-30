@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"rental-server/logger"
@@ -15,6 +16,8 @@ import (
 type BuildingHandler struct {
 	DB *gorm.DB
 }
+
+const defaultContractDurationYears = 1
 
 type CreateBuildingReq struct {
 	Name         string `json:"name" binding:"required"`
@@ -66,13 +69,6 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var existing models.Building
-	if h.DB.Where("name = ?", req.Name).First(&existing).Error == nil {
-		logger.Log.Warn().Str("name", req.Name).Msg("创建公寓失败: 名称已存在")
-		utils.Error(c, http.StatusConflict, "公寓名称已存在")
-		return
-	}
-
 	pkg := req.Package
 	if pkg != "basic" && pkg != "full" {
 		pkg = "basic"
@@ -91,10 +87,23 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	}
 	if req.ContractDate != "" {
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
-			building.ExpiredAt = cd.AddDate(1, 0, 0).Format("2006-01-02")
+			building.ExpiredAt = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}
 	}
-	if err := h.DB.Create(&building).Error; err != nil {
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Create(&building).Error; err != nil {
+		tx.Rollback()
+		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate entry") {
+			logger.Log.Warn().Str("name", req.Name).Msg("创建公寓失败: 名称已存在")
+			utils.Error(c, http.StatusConflict, "公寓名称已存在")
+			return
+		}
 		logger.Log.Error().Err(err).Str("name", req.Name).Msg("创建公寓数据库失败")
 		utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
 		return
@@ -105,10 +114,14 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 			Name:       l.Name,
 			Phone:      l.Phone,
 		}
-		if err := h.DB.Create(&ll).Error; err != nil {
+		if err := tx.Create(&ll).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("创建房东信息失败")
+			utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
+			return
 		}
 	}
+	tx.Commit()
 	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Uint("created_by", uid).Msg("公寓创建成功")
 	utils.Created(c, "公寓创建成功", gin.H{"building": building})
 }
@@ -129,12 +142,6 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 	updates := map[string]interface{}{}
 	if req.Name != "" {
-		var dup models.Building
-		if h.DB.Where("name = ? AND id != ?", req.Name, id).First(&dup).Error == nil {
-			logger.Log.Warn().Str("name", req.Name).Msg("更新公寓失败: 名称已存在")
-			utils.Error(c, http.StatusConflict, "公寓名称已存在")
-			return
-		}
 		updates["name"] = req.Name
 	}
 	if req.Package != "" {
@@ -145,7 +152,7 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	if req.ContractDate != "" {
 		updates["contract_date"] = req.ContractDate
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
-			updates["expired_at"] = cd.AddDate(1, 0, 0).Format("2006-01-02")
+			updates["expired_at"] = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}
 	}
 	if req.District != "" {
@@ -167,16 +174,31 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	if req.Status != "" {
 		updates["status"] = req.Status
 	}
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	if len(updates) > 0 {
-		if err := h.DB.Model(&building).Updates(updates).Error; err != nil {
+		if err := tx.Model(&building).Updates(updates).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新公寓数据库失败")
+			if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") {
+				utils.Error(c, http.StatusConflict, "公寓名称已存在")
+				return
+			}
 			utils.Error(c, http.StatusConflict, "更新失败，请检查名称是否重复")
 			return
 		}
 	}
 	if req.Landlords != nil {
-		if err := h.DB.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{}).Error; err != nil {
+		if err := tx.Where("building_id = ?", building.ID).Delete(&models.BuildingLandlord{}).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("删除旧房东信息失败")
+			utils.Error(c, http.StatusInternalServerError, "更新失败")
+			return
 		}
 		for _, l := range req.Landlords {
 			ll := models.BuildingLandlord{
@@ -184,11 +206,15 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 				Name:       l.Name,
 				Phone:      l.Phone,
 			}
-			if err := h.DB.Create(&ll).Error; err != nil {
+			if err := tx.Create(&ll).Error; err != nil {
+				tx.Rollback()
 				logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("创建房东信息失败")
+				utils.Error(c, http.StatusInternalServerError, "更新失败")
+				return
 			}
 		}
 	}
+	tx.Commit()
 	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Msg("公寓信息更新成功")
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
@@ -590,11 +616,6 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	}
 	updates := map[string]interface{}{}
 	if req.Name != "" {
-		var dup models.Building
-		if h.DB.Where("name = ? AND id != ?", req.Name, bid).First(&dup).Error == nil {
-			utils.Error(c, http.StatusConflict, "公寓名称已存在")
-			return
-		}
 		updates["name"] = req.Name
 	}
 	if req.Package != "" {
@@ -605,7 +626,7 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	if req.ContractDate != "" {
 		updates["contract_date"] = req.ContractDate
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
-			updates["expired_at"] = cd.AddDate(1, 0, 0).Format("2006-01-02")
+			updates["expired_at"] = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}
 	}
 	if req.District != "" {
@@ -624,16 +645,31 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	if len(updates) > 0 {
-		if err := h.DB.Model(&building).Updates(updates).Error; err != nil {
+		if err := tx.Model(&building).Updates(updates).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新楼栋信息数据库失败")
+			if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") {
+				utils.Error(c, http.StatusConflict, "公寓名称已存在")
+				return
+			}
 			utils.Error(c, http.StatusConflict, "更新失败，请检查名称是否重复")
 			return
 		}
 	}
 	if req.Landlords != nil {
-		if err := h.DB.Where("building_id = ?", bid).Delete(&models.BuildingLandlord{}).Error; err != nil {
+		if err := tx.Where("building_id = ?", bid).Delete(&models.BuildingLandlord{}).Error; err != nil {
+			tx.Rollback()
 			logger.Log.Error().Err(err).Uint("building_id", bid).Msg("删除旧房东信息失败")
+			utils.Error(c, http.StatusInternalServerError, "更新失败")
+			return
 		}
 		for _, l := range req.Landlords {
 			ll := models.BuildingLandlord{
@@ -641,11 +677,15 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 				Name:       l.Name,
 				Phone:      l.Phone,
 			}
-			if err := h.DB.Create(&ll).Error; err != nil {
+			if err := tx.Create(&ll).Error; err != nil {
+				tx.Rollback()
 				logger.Log.Error().Err(err).Uint("building_id", bid).Msg("创建房东信息失败")
+				utils.Error(c, http.StatusInternalServerError, "更新失败")
+				return
 			}
 		}
 	}
+	tx.Commit()
 	logger.Log.Info().Uint("building_id", bid).Msg("楼栋信息更新成功")
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
@@ -726,47 +766,28 @@ func (h *BuildingHandler) MyStats(c *gin.Context) {
 
 	month := c.Query("month")
 	if month == "" {
-		month = utils.Now().Format("2006-01")
+		month = utils.MonthStr(utils.Now())
 	}
 
-	type TotalRow struct {
-		Type  string
-		Total float64
-	}
-	var rows []TotalRow
-	if err := h.DB.Model(&models.Bill{}).
-		Select("type, COALESCE(SUM(amount), 0) as total").
-		Where("building_id = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", bid, month).
-		Group("type").
-		Find(&rows).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询楼栋账单统计失败")
-	}
-	var totalIncome, totalExpense float64
-	for _, r := range rows {
-		if r.Type == "income" {
-			totalIncome = r.Total
-		} else {
-			totalExpense = r.Total
-		}
-	}
+	summary := utils.QueryMonthlyFinance(h.DB, bid, month)
 
 	logger.Log.Debug().
 		Uint("building_id", bid).
 		Str("month", month).
 		Int64("room_count", roomCount).
-		Float64("income", totalIncome).
-		Float64("expense", totalExpense).
+		Float64("income", summary.TotalIncome).
+		Float64("expense", summary.TotalExpense).
 		Msg("查询楼栋统计")
 	utils.Success(c, gin.H{
-		"building_id":   bid,
-		"room_count":    roomCount,
-		"vacant_count":  vacantCount,
-		"rented_count":  rentedCount,
+		"building_id":    bid,
+		"room_count":     roomCount,
+		"vacant_count":   vacantCount,
+		"rented_count":   rentedCount,
 		"expiring_count": expiringCount,
-		"task_count":    taskCount,
-		"month":         month,
-		"total_income":  totalIncome,
-		"total_expense": totalExpense,
-		"net_profit":    totalIncome - totalExpense,
+		"task_count":     taskCount,
+		"month":          month,
+		"total_income":   summary.TotalIncome,
+		"total_expense":  summary.TotalExpense,
+		"net_profit":     summary.NetProfit,
 	})
 }

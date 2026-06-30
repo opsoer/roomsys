@@ -110,8 +110,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Uint("building_id", buildingID).
 		Str("ip", c.ClientIP()).
 		Msg("登录成功")
+	refreshToken, err := utils.GenerateRefreshToken(user.ID, user.Username, user.Role, h.Cfg.JWTSecret, buildingID)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("生成刷新令牌失败")
+		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")
+		return
+	}
 	utils.Success(c, gin.H{
-		"token": token,
+		"token":         token,
+		"refresh_token": refreshToken,
 		"user": gin.H{
 			"id":          user.ID,
 			"username":    user.Username,
@@ -231,6 +238,37 @@ func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 	}
 	logger.Log.Info().Uint("user_id", user.ID).Str("username", user.Username).Uint("building_id", bid).Msg("管理员创建成功")
 	utils.Created(c, "管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role}})
+}
+
+type RefreshTokenReq struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	var req RefreshTokenReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "缺少刷新令牌")
+		return
+	}
+	claims, err := utils.ParseToken(req.RefreshToken, h.Cfg.JWTSecret)
+	if err != nil {
+		logger.Log.Warn().Err(err).Msg("刷新令牌解析失败")
+		utils.Error(c, http.StatusUnauthorized, "刷新令牌无效或已过期")
+		return
+	}
+	if !utils.IsRefreshTokenFromClaims(claims) {
+		logger.Log.Warn().Uint("user_id", claims.UserID).Msg("刷新令牌类型不匹配")
+		utils.Error(c, http.StatusUnauthorized, "无效的刷新令牌")
+		return
+	}
+	token, err := utils.GenerateToken(claims.UserID, claims.Username, claims.Role, h.Cfg.JWTSecret, claims.BuildingID)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", claims.UserID).Msg("重新生成令牌失败")
+		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")
+		return
+	}
+	logger.Log.Info().Uint("user_id", claims.UserID).Msg("令牌刷新成功")
+	utils.Success(c, gin.H{"token": token})
 }
 
 func (h *AuthHandler) ListUsers(c *gin.Context) {

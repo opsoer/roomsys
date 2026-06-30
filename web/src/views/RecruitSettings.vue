@@ -101,7 +101,9 @@ async function fetchPhone() {
   try {
     const r = await api.get('/admin/settings/recruit_phone')
     phone.value = r.data?.value || ''
-  } catch {}
+  } catch {
+    ElMessage.error('获取招商电话失败')
+  }
 }
 
 async function handleSavePhone() {
@@ -122,7 +124,9 @@ async function fetchSubmissions() {
     const r = await api.get('/admin/recruit/list')
     submissions.value = r.data.submissions || []
     pendingCount.value = submissions.value.filter(s => s.status === 'pending').length
-  } catch {} finally {
+  } catch {
+    ElMessage.error('获取入驻申请列表失败')
+  } finally {
     loading.value = false
   }
 }

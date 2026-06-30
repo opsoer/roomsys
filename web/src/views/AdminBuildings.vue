@@ -371,8 +371,7 @@ async function handleCreate() {
     showCreate.value = false
     createForm.value = { name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
     await fetchBuildings()
-    const newId = createdId || ((await adminGetBuildings()).data.buildings || []).sort((a, b) => b.id - a.id)[0]?.id
-    const newBuilding = newId ? { id: newId } : null
+    const newBuilding = createdId ? { id: createdId } : null
     if (newBuilding) {
       const loginUrl = `${window.location.origin}/landlord/login/${newBuilding.id}`
       ElMessage.success(`公寓创建成功！管理员登录链接：${loginUrl}`)
@@ -417,9 +416,13 @@ async function handleEdit() {
 }
 
 async function handleDelete(id) {
-  await adminDeleteBuilding(id)
-  ElMessage.success('已删除')
-  await fetchBuildings()
+  try {
+    await adminDeleteBuilding(id)
+    ElMessage.success('已删除')
+    await fetchBuildings()
+  } catch {
+    ElMessage.error('删除失败')
+  }
 }
 
 function copyLoginLink(row) {
