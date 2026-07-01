@@ -149,10 +149,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildingInfo } from '../api'
+import { useAuthStore } from '../stores/auth'
 
 const showMobileMenu = ref(false)
 const showUserMenu = ref(false)
 const router = useRouter()
+const authStore = useAuthStore()
 const buildingName = ref('')
 
 const isMobile = ref(window.innerWidth <= 768)
@@ -160,14 +162,12 @@ function handleResize() {
   isMobile.value = window.innerWidth <= 768
 }
 
-const username = ref(localStorage.getItem('username') || '')
-const token = computed(() => localStorage.getItem('token'))
-const loggedIn = computed(() => !!token.value)
-const role = computed(() => localStorage.getItem('role'))
-const isBuildingAdmin = computed(() => role.value === 'building_admin' || role.value === 'admin' || role.value === 'super_admin')
+const username = ref(authStore.username)
+const loggedIn = computed(() => authStore.isLoggedIn)
+const isBuildingAdmin = computed(() => authStore.isBuildingAdmin)
 
 function goToBuildingPage() {
-  const bid = localStorage.getItem('building_id')
+  const bid = authStore.buildingId
   if (bid) {
     const url = router.resolve({ name: 'BuildingPublic', params: { id: bid } }).href
     window.open(url, '_blank')
@@ -177,10 +177,7 @@ function goToBuildingPage() {
 }
 
 function logout() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('username')
-  localStorage.removeItem('role')
-  localStorage.removeItem('building_id')
+  authStore.logout()
   showToast('已退出')
   router.push('/')
 }

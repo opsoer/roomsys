@@ -10,7 +10,21 @@
         </el-radio-group>
         <span style="color: #999; font-size: 13px">共 {{ tasks.length }} 条</span>
       </div>
-      <div v-if="loading" style="text-align: center; padding: 40px; color: #999">加载中...</div>
+      <div v-if="loading" class="skeleton-list">
+        <div v-for="n in 4" :key="n" class="skeleton-item">
+          <el-skeleton :rows="2" animated>
+            <template #template>
+              <div style="display:flex;gap:12px;align-items:flex-start;">
+                <el-skeleton-item variant="rect" style="width:50px;height:28px;border-radius:14px;" />
+                <div style="flex:1">
+                  <el-skeleton-item variant="h3" style="width:50%;margin-bottom:6px;" />
+                  <el-skeleton-item variant="text" style="width:70%;" />
+                </div>
+              </div>
+            </template>
+          </el-skeleton>
+        </div>
+      </div>
       <div v-else-if="!tasks.length" style="text-align: center; padding: 40px; color: #999">
         <el-icon :size="48" style="color: #ddd"><List /></el-icon>
         <p style="margin-top: 12px">暂无代办事项</p>
@@ -153,6 +167,8 @@ onMounted(fetchTasks)
   border-color: #ddd;
   background: #f5f5f5;
 }
+.skeleton-list { display: flex; flex-direction: column; gap: 12px; }
+.skeleton-item { padding: 14px 16px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
 @media (max-width: 768px) {
   .task-card { padding: 10px 12px; }
 }

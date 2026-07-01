@@ -4,6 +4,7 @@ import (
 	"rental-server/config"
 	"rental-server/handlers"
 	"rental-server/middleware"
+	"rental-server/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,28 +22,34 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	// ========== 公开接口 ==========
 	public := r.Group("/api")
 	{
-		auth := &handlers.AuthHandler{DB: db, Cfg: cfg}
+		buildingSvc := services.NewBuildingService(db)
+		roomSvc := services.NewRoomService(db)
+		settingsSvc := services.NewSettingsService(db)
+		recruitSvc := services.NewRecruitService(db)
+		mediaSvc := services.NewMediaService(db, cfg)
+		authSvc := services.NewAuthService(db, cfg)
+
+		auth := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		public.POST("/auth/login", auth.Login)
 		public.POST("/auth/refresh", auth.RefreshToken)
 
-
-		buildingH := &handlers.BuildingHandler{DB: db}
+		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
 		public.GET("/buildings/districts", buildingH.Districts)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 
-		settingsH := &handlers.SettingsHandler{DB: db}
+		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 		public.GET("/settings/recruit", settingsH.GetPublicRecruit)
 
-		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg}
+		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
 		public.GET("/buildings/:id/rooms/:rid/contract", roomH.GetActiveContractPublic)
 
-		recruitH := &handlers.RecruitHandler{DB: db}
+		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc}
 		public.POST("/recruit/submit", recruitH.Submit)
 
-		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg}
+		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		public.GET("/media/*filepath", mediaH.Serve)
 	}
 
@@ -51,30 +58,38 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	platform.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
-		buildingH := &handlers.BuildingHandler{DB: db}
+		buildingSvc := services.NewBuildingService(db)
+		roomSvc := services.NewRoomService(db)
+		billSvc := services.NewBillService(db)
+		authSvc := services.NewAuthService(db, cfg)
+		systemSvc := services.NewSettingsService(db)
+		recruitSvc := services.NewRecruitService(db)
+		settingsSvc := services.NewSettingsService(db)
+
+		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
 		platform.POST("/buildings", buildingH.Create)
 		platform.GET("/buildings", buildingH.List)
 		platform.PUT("/buildings/:id", buildingH.Update)
 		platform.DELETE("/buildings/:id", buildingH.Delete)
 		platform.PUT("/buildings/:id/package", buildingH.UpgradePackage)
 
-		authH := &handlers.AuthHandler{DB: db, Cfg: cfg}
+		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		platform.POST("/auth/create-admin", authH.CreateAdmin)
 		platform.POST("/auth/create-building-admin", authH.CreateBuildingAdmin)
 		platform.GET("/auth/users", authH.ListUsers)
 		platform.PUT("/auth/users/:id", authH.UpdateUser)
 		platform.DELETE("/auth/users/:id", authH.DeleteUser)
 
-		systemH := &handlers.SystemHandler{DB: db}
+		systemH := &handlers.SystemHandler{DB: db, SettingsService: systemSvc}
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
 
-		recruitH := &handlers.RecruitHandler{DB: db}
+		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc}
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)
 		platform.GET("/recruit/unprocessed-count", recruitH.UnprocessedCount)
 
-		settingsH := &handlers.SettingsHandler{DB: db}
+		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/settings/:key", settingsH.Get)
 		platform.PUT("/settings/:key", settingsH.Update)
 	}
@@ -85,16 +100,24 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	building.Use(middleware.AdminOrBuildingAdminMiddleware())
 	building.Use(middleware.BuildingScopeMiddleware(db))
 	{
-		authH := &handlers.AuthHandler{DB: db, Cfg: cfg}
+		buildingSvc := services.NewBuildingService(db)
+		roomSvc := services.NewRoomService(db)
+		billSvc := services.NewBillService(db)
+		dividendSvc := services.NewDividendService(db)
+		taskSvc := services.NewTaskService(db)
+		mediaSvc := services.NewMediaService(db, cfg)
+		authSvc := services.NewAuthService(db, cfg)
+
+		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 
 		// 楼栋信息
-		buildingH := &handlers.BuildingHandler{DB: db}
+		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
 		building.GET("/info", buildingH.MyBuilding)
 		building.PUT("/info", buildingH.UpdateMyBuilding)
 		building.GET("/stats", buildingH.MyStats)
 
 		// 房间管理
-		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg}
+		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		building.GET("/rooms", roomH.List)
 		building.GET("/rooms/:id", roomH.Get)
 		building.POST("/rooms", roomH.Create)
@@ -105,7 +128,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.PUT("/rooms/:id/contract", roomH.RenewContract)
 
 		// 媒体管理
-		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg}
+		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		building.POST("/rooms/:id/media", mediaH.Upload)
 		building.DELETE("/rooms/:id/media/:mediaId", mediaH.Delete)
 		building.POST("/cover", mediaH.UploadCover)
@@ -118,7 +141,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		fullPkg := building.Group("")
 		fullPkg.Use(middleware.FullPackageMiddleware(db))
 		{
-			billH := &handlers.BillHandler{DB: db}
+			billH := &handlers.BillHandler{DB: db, BillService: billSvc, RoomService: roomSvc}
 			fullPkg.GET("/bills", billH.List)
 			fullPkg.POST("/bills", billH.Create)
 			fullPkg.PUT("/bills/:id", billH.Update)
@@ -128,7 +151,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			fullPkg.GET("/bills/export", billH.ExportCSV)
 
 			// 分红管理
-			divH := &handlers.DividendHandler{DB: db}
+			divH := &handlers.DividendHandler{DB: db, DividendService: dividendSvc}
 			fullPkg.GET("/dividends", divH.List)
 			fullPkg.GET("/dividends/calculate", divH.Calculate)
 			fullPkg.POST("/dividends/settle", divH.Settle)
@@ -139,7 +162,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			fullPkg.GET("/dividends/predict", divH.Predict)
 
 			// 待办任务
-			taskH := &handlers.TaskHandler{DB: db}
+			taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
 			fullPkg.GET("/tasks", taskH.List)
 			fullPkg.POST("/tasks/:id/process", taskH.Process)
 			fullPkg.PUT("/tasks/:id/complete", taskH.Complete)

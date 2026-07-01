@@ -86,8 +86,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
-import api from '../api'
+import dayjs from 'dayjs'
+import { getRecruitSettings, updateRecruitPhone, getRecruitList, processRecruit } from '../api'
 
 const showPhone = ref(false)
 
@@ -99,7 +99,7 @@ const pendingCount = ref(0)
 
 async function fetchPhone() {
   try {
-    const r = await api.get('/admin/settings/recruit_phone')
+    const r = await getRecruitSettings()
     phone.value = r.data?.value || ''
   } catch {
     ElMessage.error('获取招商电话失败')
@@ -109,7 +109,7 @@ async function fetchPhone() {
 async function handleSavePhone() {
   saving.value = true
   try {
-    await api.put('/admin/settings/recruit_phone', { value: phone.value })
+    await updateRecruitPhone(phone.value)
     ElMessage.success('保存成功')
   } catch {
     ElMessage.error('保存失败')
@@ -121,7 +121,7 @@ async function handleSavePhone() {
 async function fetchSubmissions() {
   loading.value = true
   try {
-    const r = await api.get('/admin/recruit/list')
+    const r = await getRecruitList()
     submissions.value = r.data.submissions || []
     pendingCount.value = submissions.value.filter(s => s.status === 'pending').length
   } catch {
@@ -133,7 +133,7 @@ async function fetchSubmissions() {
 
 async function handleProcess(id) {
   try {
-    await api.put(`/admin/recruit/process/${id}`)
+    await processRecruit(id)
     ElMessage.success('已处理')
     await fetchSubmissions()
   } catch {
@@ -143,7 +143,7 @@ async function handleProcess(id) {
 
 function formatTime(t) {
   if (!t) return '-'
-  return new Date(t).toLocaleString('zh-CN', { hour12: false })
+  return dayjs(t).format('YYYY-MM-DD HH:mm:ss')
 }
 
 onMounted(() => {

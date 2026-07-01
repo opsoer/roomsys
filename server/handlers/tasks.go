@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"rental-server/logger"
 	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +14,8 @@ import (
 )
 
 type TaskHandler struct {
-	DB *gorm.DB
+	DB          *gorm.DB
+	TaskService *services.TaskService
 }
 
 type ProcessTaskReq struct {
@@ -30,12 +33,9 @@ func (h *TaskHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
-	var tasks []models.Task
-	query := h.DB.Preload("Room").Where("building_id = ?", bid).Order("created_at desc")
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if err := query.Find(&tasks).Error; err != nil {
+	status := c.Query("status")
+	tasks, err := h.TaskService.List(bid, status)
+	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询任务列表失败")
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(tasks)).Msg("查询任务列表")
@@ -54,8 +54,9 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	var task models.Task
-	if err := h.DB.Where("id = ? AND building_id = ?", id, bid).First(&task).Error; err != nil {
+	taskID, _ := strconv.ParseUint(id, 10, 32)
+	task, err := h.TaskService.GetByID(uint(taskID))
+	if err != nil || task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("处理任务失败: 任务不存在")
 		utils.Error(c, http.StatusNotFound, "任务不存在")
 		return
@@ -78,8 +79,7 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		return
 	}
 
-	var room models.Room
-	if task.RoomID == nil || h.DB.Where("id = ? AND building_id = ?", *task.RoomID, bid).First(&room).Error != nil {
+	if task.RoomID == nil {
 		logger.Log.Warn().Uint("task_id", task.ID).Msg("处理任务失败: 关联房间不存在")
 		utils.Error(c, http.StatusNotFound, "关联房间不存在")
 		return
@@ -100,18 +100,20 @@ func (h *TaskHandler) Process(c *gin.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+		} else if tx.Error != nil {
+			tx.Rollback()
 		}
 	}()
 
-	handleDepositRefund(tx, room, req.RefundedDeposit, uid, bid)
+	handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid)
 
-	if err := tx.Model(&room).Where("status != ?", "vacant").Update("status", "vacant").Error; err != nil {
+	if err := tx.Model(&models.Room{}).Where("id = ? AND status != ?", *task.RoomID, "vacant").Update("status", "vacant").Error; err != nil {
 		tx.Rollback()
-		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("更新房间状态失败")
+		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("更新房间状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
 		return
 	}
-	if err := tx.Model(&task).Update("status", "completed").Error; err != nil {
+	if err := tx.Model(&models.Task{}).Where("id = ?", task.ID).Update("status", "completed").Error; err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("更新任务状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败")
@@ -120,7 +122,7 @@ func (h *TaskHandler) Process(c *gin.Context) {
 	tx.Commit()
 	logger.Log.Info().
 		Uint("task_id", task.ID).
-		Uint("room_id", room.ID).
+		Uint("room_id", *task.RoomID).
 		Uint("building_id", bid).
 		Float64("refunded_deposit", req.RefundedDeposit).
 		Msg("退租任务处理完成")
@@ -139,13 +141,14 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	var task models.Task
-	if err := h.DB.Where("id = ? AND building_id = ?", id, bid).First(&task).Error; err != nil {
+	taskID, _ := strconv.ParseUint(id, 10, 32)
+	task, err := h.TaskService.GetByID(uint(taskID))
+	if err != nil || task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("完成任务失败: 任务不存在")
 		utils.Error(c, http.StatusNotFound, "任务不存在")
 		return
 	}
-	if err := h.DB.Model(&task).Update("status", "completed").Error; err != nil {
+	if err := h.TaskService.Complete(task.ID); err != nil {
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("更新任务状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败")
 		return
@@ -166,7 +169,8 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	if err := h.DB.Where("id = ? AND building_id = ?", id, bid).Delete(&models.Task{}).Error; err != nil {
+	taskID, _ := strconv.ParseUint(id, 10, 32)
+	if err := h.TaskService.Delete(uint(taskID)); err != nil {
 		logger.Log.Error().Err(err).Str("id", id).Uint("building_id", bid).Msg("删除任务失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return

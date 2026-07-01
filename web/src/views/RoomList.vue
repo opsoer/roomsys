@@ -23,9 +23,19 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading-wrap">
-      <el-icon class="is-loading" :size="36"><Loading /></el-icon>
-      <p>加载中...</p>
+    <div v-if="loading" class="skeleton-wrap">
+      <div v-for="n in 6" :key="n" class="skeleton-item">
+        <el-skeleton :rows="3" animated>
+          <template #template>
+            <el-skeleton-item variant="image" style="height: 120px; border-radius: 8px 8px 0 0;" />
+            <div style="padding: 12px;">
+              <el-skeleton-item variant="h3" style="width: 60%; margin-bottom: 8px;" />
+              <el-skeleton-item variant="text" style="width: 40%; margin-bottom: 6px;" />
+              <el-skeleton-item variant="text" style="width: 80%;" />
+            </div>
+          </template>
+        </el-skeleton>
+      </div>
     </div>
 
     <div v-else-if="rooms.length === 0" class="empty-wrap">
@@ -35,7 +45,7 @@
     <div v-else class="room-grid">
       <div v-for="room in rooms" :key="room.id" class="room-card" @click="$router.push(`/landlord/rooms/${room.id}`)">
         <div class="room-card-image">
-            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
+            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
           <div v-else class="room-card-placeholder">
             <el-icon :size="48" color="#ccc"><Picture /></el-icon>
           </div>
@@ -149,8 +159,8 @@ onMounted(fetchRooms)
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .section-header h2 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
 .section-actions { display: flex; gap: 10px; }
-.loading-wrap { text-align: center; padding: 80px 0; color: #999; }
-.loading-wrap p { margin-top: 12px; }
+.skeleton-wrap { display: grid; grid-template-columns: repeat(auto-fill,minmax(270px,1fr)); gap: 24px; padding: 12px 0; }
+.skeleton-item { background: #fff; border-radius: 12px; overflow: hidden; }
 .empty-wrap { padding: 60px 0; }
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(270px,1fr)); gap: 24px; }
 .room-card { background: #fff; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.35s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }

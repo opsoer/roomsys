@@ -41,7 +41,7 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { showToast } from 'vant'
-import api from '../api'
+import { submitRecruit } from '../api'
 
 const form = reactive({ phone: '', address: '' })
 const submitting = ref(false)
@@ -50,7 +50,7 @@ const submitted = ref(false)
 async function handleSubmit() {
   submitting.value = true
   try {
-    await api.post('/recruit/submit', { phone: form.phone, address: form.address })
+    await submitRecruit({ phone: form.phone, address: form.address })
     submitted.value = true
     form.phone = ''
     form.address = ''

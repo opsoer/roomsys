@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"rental-server/logger"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +13,8 @@ import (
 )
 
 type SystemHandler struct {
-	DB *gorm.DB
+	DB              *gorm.DB
+	SettingsService *services.SettingsService
 }
 
 type SetTimeReq struct {

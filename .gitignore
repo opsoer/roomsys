@@ -11,13 +11,32 @@ server/rental-server
 
 # 环境变量
 .env
+.env.*
+!.env.example
+
+# 配置文件（含敏感信息）
+server/config*.json
+server/config*.yaml
+server/config*.yml
+*.local
 
 # 日志
 *.log
 server/logs/
+logs/
 
 # 上传的文件
 server/storage/
+
+# 测试覆盖率
+web/coverage/
+web/test-results/
+*.lcov
+
+# 缓存
+.web/
+.vite/
+*.tsbuildinfo
 
 # IDE
 .vscode/
@@ -25,11 +44,21 @@ server/storage/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # 操作系统
 .DS_Store
 Thumbs.db
 Desktop.ini
+ehthumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
 
 # 文档资源（设计图、PDF等，不是源码）
 *.vsd?

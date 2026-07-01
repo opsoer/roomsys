@@ -94,9 +94,28 @@ func main() {
 	r.MaxMultipartMemory = 200 << 20 // 200MB
 
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		allowedOrigins := []string{
+			"http://localhost:5173",
+			"http://localhost:3000",
+			"http://localhost:8080",
+			"http://127.0.0.1:5173",
+			"http://127.0.0.1:3000",
+			"http://127.0.0.1:8080",
+		}
+		allowed := false
+		for _, o := range allowedOrigins {
+			if origin == o {
+				allowed = true
+				break
+			}
+		}
+		if allowed {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Allow-Credentials", "true")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -109,6 +128,16 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Next()
+	})
+
+	r.Use(func(c *gin.Context) {
+		if c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "DELETE" {
+			if c.GetHeader("X-Requested-With") == "" {
+				c.AbortWithStatusJSON(403, gin.H{"error": "缺少CSRF令牌"})
+				return
+			}
+		}
 		c.Next()
 	})
 	routes.Setup(r, db, cfg)

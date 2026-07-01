@@ -27,6 +27,21 @@
         </el-table>
       </div>
       <div class="mobile-cards" v-loading="loading">
+        <div v-if="loading" class="skeleton-list">
+          <div v-for="n in 3" :key="n" class="skeleton-item">
+            <el-skeleton :rows="2" animated>
+              <template #template>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                  <el-skeleton-item variant="h3" style="width:30%;" />
+                  <el-skeleton-item variant="rect" style="width:80px;height:24px;border-radius:12px;" />
+                </div>
+                <el-skeleton-item variant="text" style="width:50%;margin-bottom:4px;" />
+                <el-skeleton-item variant="text" style="width:40%;" />
+              </template>
+            </el-skeleton>
+          </div>
+        </div>
+        <template v-else>
         <div v-for="item in users" :key="item.id" class="user-card">
           <div class="uc-head">
             <span class="uc-name">{{ item.username }}</span>
@@ -48,6 +63,7 @@
           </div>
         </div>
         <div v-if="!loading && users.length === 0" class="empty-text">暂无管理员</div>
+        </template>
       </div>
     </el-card>
 
@@ -205,6 +221,8 @@ onMounted(() => {
   color: #999;
   font-size: 14px;
 }
+.skeleton-list { padding: 12px 0; }
+.skeleton-item { padding: 14px; margin-bottom: 12px; background: #fff; border-radius: 10px; border: 1px solid #eee; }
 
 @media (max-width: 768px) {
   .desktop-table {

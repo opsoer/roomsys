@@ -12,6 +12,7 @@ api.interceptors.request.use(config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  config.headers['X-Requested-With'] = 'XMLHttpRequest'
   return config
 })
 
@@ -29,6 +30,7 @@ api.interceptors.response.use(
       if (msg) ElMessage.error(msg)
       if (!isLoginPage) {
         localStorage.removeItem('token')
+        localStorage.removeItem('refreshToken')
         localStorage.removeItem('username')
         localStorage.removeItem('role')
         localStorage.removeItem('building_id')
@@ -230,6 +232,41 @@ export function buildingGetUsers() {
 
 export function buildingCreateAdmin(data) {
   return api.post('/building/auth/create-admin', data)
+}
+
+// ===== 招募 =====
+export function getRecruitPhone() {
+  return api.get('/settings/recruit')
+}
+
+export function getRecruitSettings() {
+  return api.get('/admin/settings/recruit_phone')
+}
+
+export function updateRecruitPhone(phone) {
+  return api.put('/admin/settings/recruit_phone', { value: phone })
+}
+
+export function getRecruitList() {
+  return api.get('/admin/recruit/list')
+}
+
+export function processRecruit(id) {
+  return api.put(`/admin/recruit/process/${id}`)
+}
+
+export function submitRecruit(data) {
+  return api.post('/recruit/submit', data)
+}
+
+export function getUnprocessedRecruitCount() {
+  return api.get('/admin/recruit/unprocessed-count')
+}
+
+export function buildingUploadMedia(roomId, formData) {
+  return api.post(`/building/rooms/${roomId}/media`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }
 
 export default api

@@ -61,7 +61,8 @@ const routes = [
       { path: 'settings', name: 'LandlordSettings', component: () => import('../views/BuildingSettings.vue') },
     ],
   },
-  { path: '/:pathMatch(.*)*', redirect: '/' },
+  { path: '/404', name: 'NotFound', component: () => import('../views/NotFound.vue') },
+  { path: '/:pathMatch(.*)*', redirect: '/404' },
 ]
 
 const router = createRouter({
@@ -69,22 +70,15 @@ const router = createRouter({
   routes,
 })
 
-function getDashboardPath(role) {
-  if (role === 'super_admin') return '/admin/buildings'
-  return '/landlord/rooms'
-}
-
 router.beforeEach((to, _, next) => {
   const token = localStorage.getItem('token')
   const role = localStorage.getItem('role')
 
-  // 已登录用户访问登录页 → 直接跳转后台
   if (to.name === 'Login' && token) {
-    next(getDashboardPath(role))
+    next(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')
     return
   }
 
-  // 公寓管理后台需要登录
   if (to.path.startsWith('/landlord')) {
     if (!token) {
       next('/login')
@@ -96,7 +90,6 @@ router.beforeEach((to, _, next) => {
     }
   }
 
-  // 平台管理后台需要 super_admin
   if (to.path.startsWith('/admin')) {
     if (!token) {
       next('/login')

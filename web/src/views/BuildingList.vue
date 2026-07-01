@@ -28,8 +28,10 @@
         <p class="hero-subtitle">直连房东 · 真实房源 · 即租即住</p>
       </div>
 
-      <div v-if="loading" class="loading-wrap">
-        <van-loading size="36" vertical>加载中...</van-loading>
+      <div v-if="loading" class="skeleton-wrap">
+        <div v-for="n in 3" :key="n" class="skeleton-card">
+          <van-skeleton title :row="3" />
+        </div>
       </div>
 
       <template v-else-if="buildings.length === 0">
@@ -44,7 +46,7 @@
           @click="$router.push(`/building/${b.id}`)"
         >
           <div class="card-img">
-            <img v-if="b.cover_image" :src="mediaUrl(b.cover_image)" :alt="b.name" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
+            <img v-if="b.cover_image" :src="mediaUrl(b.cover_image)" :alt="b.name" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
             <div v-else class="card-img-placeholder">
               <van-icon name="home-o" size="48" color="#ccc" />
             </div>
@@ -85,9 +87,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import api, { getBuildings, getDistricts } from '../api'
+import { getBuildings, getDistricts, getRecruitPhone } from '../api'
+import { useAuthStore } from '../stores/auth'
+import { useUtils } from '../composables/useUtils'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()
 const buildings = ref([])
 const districts = ref([])
 const loading = ref(true)
@@ -105,32 +111,6 @@ const districtOptions = computed(() => {
 
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function goToDashboard() {
-  const token = localStorage.getItem('token')
-  const role = localStorage.getItem('role')
-  if (token) {
-    router.push(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')
-  } else {
-    router.push('/login')
-  }
-}
-
-function maskName(name) {
-  if (!name) return ''
-  return name.charAt(0) + '***'
-}
-
-function maskPhone(phone) {
-  if (!phone || phone.length < 7) return phone
-  return phone.slice(0, 3) + '****' + phone.slice(-4)
-}
-
-function mediaUrl(path) {
-  if (!path) return ''
-  if (path.includes('..') || path.includes('\\')) return ''
-  return `/api/media/${path}`
 }
 
 async function fetchBuildings() {
@@ -155,7 +135,7 @@ async function onRefresh() {
 
 async function fetchRecruit() {
   try {
-    const res = await api.get('/settings/recruit')
+    const res = await getRecruitPhone()
     recruitPhone.value = res.data?.phone || ''
   } catch {
     ElMessage.error('获取招商信息失败')
@@ -242,10 +222,16 @@ onMounted(async () => {
   font-size: 13px;
   color: rgba(255,255,255,0.6);
 }
-.loading-wrap {
-  padding: 80px 0;
-  display: flex;
-  justify-content: center;
+.skeleton-wrap {
+  padding: 12px 12px 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.skeleton-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
 }
 .building-list {
   padding: 12px 12px 0;

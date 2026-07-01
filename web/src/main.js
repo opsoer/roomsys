@@ -1,15 +1,23 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
+import { createPinia } from 'pinia'
 import 'element-plus/dist/index.css'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import { ArrowLeft, ArrowDown, Close, Coin, Delete, HomeFilled, List, Loading, Money, Picture, Plus, Search, Setting, User, VideoCamera } from '@element-plus/icons-vue'
-import Vant from 'vant'
 import 'vant/lib/index.css'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft, ArrowDown, Close, Coin, Delete, HomeFilled, List, Loading, Money, Picture, Plus, Search, Setting, User, VideoCamera } from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './style.css'
 
 const app = createApp(App)
+app.use(createPinia())
+
+app.config.errorHandler = (err, instance, info) => {
+  console.error('全局错误:', err, info)
+  if (err.message && !err.message.includes('ResizeObserver')) {
+    ElMessage.error('操作失败，请重试')
+  }
+}
+
 app.component('ArrowLeft', ArrowLeft)
 app.component('ArrowDown', ArrowDown)
 app.component('Close', Close)
@@ -25,7 +33,5 @@ app.component('Search', Search)
 app.component('Setting', Setting)
 app.component('User', User)
 app.component('VideoCamera', VideoCamera)
-app.use(ElementPlus, { locale: zhCn })
-app.use(Vant)
 app.use(router)
 app.mount('#app')

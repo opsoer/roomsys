@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"rental-server/logger"
-	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -12,17 +12,18 @@ import (
 )
 
 type SettingsHandler struct {
-	DB *gorm.DB
+	DB              *gorm.DB
+	SettingsService *services.SettingsService
 }
 
 func (h *SettingsHandler) Get(c *gin.Context) {
 	key := c.Param("key")
-	var s models.Setting
-	if err := h.DB.Where(&models.Setting{Key: key}).First(&s).Error; err != nil {
+	setting, err := h.SettingsService.Get(key)
+	if err != nil {
 		utils.Error(c, http.StatusNotFound, "设置不存在")
 		return
 	}
-	utils.Success(c, gin.H{"key": s.Key, "value": s.Value})
+	utils.Success(c, gin.H{"key": setting.Key, "value": setting.Value})
 }
 
 func (h *SettingsHandler) Update(c *gin.Context) {
@@ -34,8 +35,7 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的请求")
 		return
 	}
-	var s models.Setting
-	if err := h.DB.Where(&models.Setting{Key: key}).Assign(models.Setting{Value: body.Value}).FirstOrCreate(&s).Error; err != nil {
+	if err := h.SettingsService.Update(key, body.Value); err != nil {
 		logger.Log.Error().Err(err).Str("key", key).Msg("更新设置失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
@@ -44,10 +44,9 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 }
 
 func (h *SettingsHandler) GetPublicRecruit(c *gin.Context) {
-	phone := ""
-	var s models.Setting
-	if err := h.DB.Where(&models.Setting{Key: "recruit_phone"}).First(&s).Error; err == nil {
-		phone = s.Value
+	phone, err := h.SettingsService.GetPublicRecruit()
+	if err != nil {
+		phone = ""
 	}
 	utils.Success(c, gin.H{"phone": phone})
 }

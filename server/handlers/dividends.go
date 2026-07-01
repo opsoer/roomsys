@@ -3,9 +3,11 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"rental-server/logger"
 	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +15,8 @@ import (
 )
 
 type DividendHandler struct {
-	DB *gorm.DB
+	DB              *gorm.DB
+	DividendService *services.DividendService
 }
 
 func (h *DividendHandler) List(c *gin.Context) {
@@ -27,11 +30,8 @@ func (h *DividendHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
-	var dividends []models.Dividend
-	if err := h.DB.Where("building_id = ?", bid).
-		Preload("Shareholder").
-		Order("settle_month desc, created_at desc").
-		Find(&dividends).Error; err != nil {
+	dividends, err := h.DividendService.List(bid)
+	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红记录失败")
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(dividends)).Msg("查询分红记录")
@@ -53,8 +53,8 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 	if month == "" {
 		month = utils.Now().AddDate(0, -1, 0).Format("2006-01")
 	}
-	var shareholders []models.Shareholder
-	if err := h.DB.Where("building_id = ?", bid).Find(&shareholders).Error; err != nil || len(shareholders) == 0 {
+	shareholders, err := h.DividendService.GetShareholders(bid)
+	if err != nil || len(shareholders) == 0 {
 		logger.Log.Warn().Uint("building_id", bid).Msg("分红计算失败: 未配置股东")
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
@@ -116,8 +116,8 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请选择结算月份")
 		return
 	}
-	var shareholders []models.Shareholder
-	if err := h.DB.Where("building_id = ?", bid).Find(&shareholders).Error; err != nil || len(shareholders) == 0 {
+	shareholders, err := h.DividendService.GetShareholders(bid)
+	if err != nil || len(shareholders) == 0 {
 		logger.Log.Warn().Uint("building_id", bid).Msg("分红结算失败: 未配置股东")
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
@@ -128,6 +128,8 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 	tx := h.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
+			tx.Rollback()
+		} else if tx.Error != nil {
 			tx.Rollback()
 		}
 	}()
@@ -194,8 +196,8 @@ func (h *DividendHandler) GetShareholders(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
-	var shareholders []models.Shareholder
-	if err := h.DB.Where("building_id = ?", bid).Find(&shareholders).Error; err != nil {
+	shareholders, err := h.DividendService.GetShareholders(bid)
+	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询股东列表失败")
 	}
 	utils.Success(c, gin.H{"shareholders": shareholders})
@@ -228,7 +230,7 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 		Name:       req.Name,
 		ShareRatio: req.ShareRatio,
 	}
-	if err := h.DB.Create(&sh).Error; err != nil {
+	if err := h.DividendService.CreateShareholder(&sh); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("创建股东失败")
 		utils.Error(c, http.StatusInternalServerError, "创建失败")
 		return
@@ -249,28 +251,28 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	var sh models.Shareholder
-	if err := h.DB.Where("id = ? AND building_id = ?", id, bid).First(&sh).Error; err != nil {
-		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("更新股东失败: 不存在")
-		utils.Error(c, http.StatusNotFound, "股东不存在")
-		return
+	shareholderID, _ := strconv.ParseUint(id, 10, 32)
+	var req struct {
+		Name       string  `json:"name"`
+		ShareRatio float64 `json:"share_ratio"`
 	}
-	var req CreateShareholderReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Log.Warn().Uint("shareholder_id", sh.ID).Msg("更新股东请求参数错误")
 		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	if err := h.DB.Model(&sh).Updates(map[string]interface{}{
-		"name":        req.Name,
-		"share_ratio": req.ShareRatio,
-	}).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("shareholder_id", sh.ID).Msg("更新股东失败")
+	updates := map[string]interface{}{}
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.ShareRatio > 0 {
+		updates["share_ratio"] = req.ShareRatio
+	}
+	if err := h.DividendService.UpdateShareholder(uint(shareholderID), updates); err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新股东失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
-	logger.Log.Info().Uint("shareholder_id", sh.ID).Str("name", req.Name).Float64("ratio", req.ShareRatio).Msg("股东信息更新成功")
-	utils.Success(c, gin.H{"shareholder": sh})
+	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
 func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
@@ -285,18 +287,12 @@ func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	var sh models.Shareholder
-	if err := h.DB.Where("id = ? AND building_id = ?", id, bid).First(&sh).Error; err != nil {
-		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("删除股东失败: 不存在")
-		utils.Error(c, http.StatusNotFound, "股东不存在")
-		return
-	}
-	if err := h.DB.Delete(&sh).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("shareholder_id", sh.ID).Msg("删除股东失败")
+	shareholderID, _ := strconv.ParseUint(id, 10, 32)
+	if err := h.DividendService.DeleteShareholder(uint(shareholderID)); err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("删除股东失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
-	logger.Log.Info().Uint("shareholder_id", sh.ID).Str("name", sh.Name).Msg("股东已删除")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
@@ -311,55 +307,17 @@ func (h *DividendHandler) Predict(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
-	monthsStr := c.DefaultQuery("months", "3")
-	m := 3
-	fmt.Sscanf(monthsStr, "%d", &m)
-	if m < 1 {
-		m = 1
+	months := 3
+	if m := c.Query("months"); m != "" {
+		if parsed, err := strconv.Atoi(m); err == nil {
+			months = parsed
+		}
 	}
-	if m > 12 {
-		m = 12
+	predictions, err := h.DividendService.Predict(bid, months)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("获取预测数据失败")
+		utils.Error(c, http.StatusInternalServerError, "获取预测失败")
+		return
 	}
-
-	now := utils.Now()
-	type Prediction struct {
-		Month     string  `json:"month"`
-		Rent      float64 `json:"rent"`
-		Deposit   float64 `json:"deposit"`
-		Available float64 `json:"available"`
-	}
-	predictions := []Prediction{}
-
-	for i := 0; i < m; i++ {
-		bm := utils.GetMonthBoundary(now.AddDate(0, i, 0))
-		month := bm.Month
-		monthStart := bm.FirstDay.Format(utils.DateFormat)
-		monthEnd := bm.LastDay.Format(utils.DateFormat)
-
-		var totalRent float64
-		h.DB.Model(&models.RentalContract{}).
-			Select("COALESCE(SUM(rent_price), 0)").
-			Where("building_id = ? AND status = ?", bid, "active").
-			Where("start_date <= ?", monthEnd).
-			Where("end_date >= ? OR end_date = '' OR end_date IS NULL", monthStart).
-			Scan(&totalRent)
-
-		var newDeposits float64
-		h.DB.Model(&models.RentalContract{}).
-			Select("COALESCE(SUM(deposit), 0)").
-			Where("building_id = ? AND status = ?", bid, "active").
-			Where("start_date >= ?", monthStart).
-			Where("start_date <= ?", monthEnd).
-			Scan(&newDeposits)
-
-		predictions = append(predictions, Prediction{
-			Month:     month,
-			Rent:      totalRent,
-			Deposit:   newDeposits,
-			Available: totalRent,
-		})
-	}
-
-	logger.Log.Debug().Uint("building_id", bid).Int("months", m).Msg("分红预测计算完成")
 	utils.Success(c, gin.H{"predictions": predictions})
 }

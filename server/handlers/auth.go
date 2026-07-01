@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +24,26 @@ var (
 
 const maxLoginAttempts = 10
 const rateLimitWindow = 1 * time.Minute
+const cleanupInterval = 5 * time.Minute
+
+func init() {
+	go cleanupLoginAttempts()
+}
+
+func cleanupLoginAttempts() {
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		loginAttempts.Range(func(key, value interface{}) bool {
+			entry := value.(*rateLimitEntry)
+			if now.Sub(entry.windowStart) > rateLimitWindow*2 {
+				loginAttempts.Delete(key)
+			}
+			return true
+		})
+	}
+}
 
 func checkLoginRateLimit(ip string) bool {
 	rateLimitMu.Lock()
@@ -50,8 +72,9 @@ type rateLimitEntry struct {
 }
 
 type AuthHandler struct {
-	DB  *gorm.DB
-	Cfg *config.Config
+	DB           *gorm.DB
+	Cfg          *config.Config
+	AuthService  *services.AuthService
 }
 
 type LoginReq struct {
@@ -72,13 +95,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请输入用户名和密码")
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
+	user, err := h.AuthService.GetUserByUsername(req.Username)
+	if err != nil {
 		logger.Log.Warn().Str("username", req.Username).Str("ip", ip).Msg("登录失败: 账号不存在")
 		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	if !h.AuthService.CheckPassword(user.PasswordHash, req.Password) {
 		logger.Log.Warn().Str("username", req.Username).Str("ip", ip).Msg("登录失败: 密码错误")
 		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
@@ -86,18 +109,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	buildingID := uint(0)
 	if user.BuildingID != nil {
 		buildingID = *user.BuildingID
-		var building models.Building
-		if h.DB.First(&building, buildingID).Error == nil {
-			if building.ExpiredAt != "" {
-				if expDate, err := time.Parse("2006-01-02", building.ExpiredAt); err == nil && utils.Now().After(expDate) {
-					logger.Log.Warn().Str("username", req.Username).Uint("building_id", buildingID).Msg("登录失败: 公寓已到期")
-					utils.Error(c, http.StatusForbidden, "公寓已到期，请联系主理人续费")
-					return
-				}
-			}
+		building, err := h.AuthService.GetBuildingByID(buildingID)
+		if err == nil && h.AuthService.IsBuildingExpired(building) {
+			logger.Log.Warn().Str("username", req.Username).Uint("building_id", buildingID).Msg("登录失败: 公寓已到期")
+			utils.Error(c, http.StatusForbidden, "公寓已到期，请联系主理人续费")
+			return
 		}
 	}
-	token, err := utils.GenerateToken(user.ID, user.Username, user.Role, h.Cfg.JWTSecret, buildingID)
+	token, err := h.AuthService.GenerateToken(user)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("生成令牌失败")
 		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")
@@ -110,7 +129,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Uint("building_id", buildingID).
 		Str("ip", c.ClientIP()).
 		Msg("登录成功")
-	refreshToken, err := utils.GenerateRefreshToken(user.ID, user.Username, user.Role, h.Cfg.JWTSecret, buildingID)
+	refreshToken, err := h.AuthService.GenerateRefreshToken(user)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("生成刷新令牌失败")
 		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")
@@ -140,18 +159,18 @@ func (h *AuthHandler) CreateAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请输入用户名和密码")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := h.AuthService.HashPassword(req.Password)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("密码加密失败")
 		utils.Error(c, http.StatusInternalServerError, "加密失败")
 		return
 	}
-	user := models.User{
+	user := &models.User{
 		Username:     req.Username,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 		Role:         "building_admin",
 	}
-	if err := h.DB.Create(&user).Error; err != nil {
+	if err := h.AuthService.CreateUser(user); err != nil {
 		logger.Log.Warn().Str("username", req.Username).Msg("创建管理员失败: 用户名已存在")
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
@@ -173,25 +192,25 @@ func (h *AuthHandler) CreateBuildingAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := h.AuthService.HashPassword(req.Password)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("密码加密失败")
 		utils.Error(c, http.StatusInternalServerError, "加密失败")
 		return
 	}
-	var building models.Building
-	if err := h.DB.First(&building, req.BuildingID).Error; err != nil {
+	_, err = h.AuthService.GetBuildingByID(req.BuildingID)
+	if err != nil {
 		logger.Log.Warn().Uint("building_id", req.BuildingID).Msg("创建公寓管理员失败: 公寓不存在")
 		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
-	user := models.User{
+	user := &models.User{
 		Username:     req.Username,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 		Role:         "building_admin",
 		BuildingID:   &req.BuildingID,
 	}
-	if err := h.DB.Create(&user).Error; err != nil {
+	if err := h.AuthService.CreateUser(user); err != nil {
 		logger.Log.Warn().Str("username", req.Username).Msg("创建公寓管理员失败: 用户名已存在")
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
@@ -218,20 +237,20 @@ func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请输入用户名和密码")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := h.AuthService.HashPassword(req.Password)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("密码加密失败")
 		utils.Error(c, http.StatusInternalServerError, "加密失败")
 		return
 	}
 	bid := buildingID.(uint)
-	user := models.User{
+	user := &models.User{
 		Username:     req.Username,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 		Role:         "admin",
 		BuildingID:   &bid,
 	}
-	if err := h.DB.Create(&user).Error; err != nil {
+	if err := h.AuthService.CreateUser(user); err != nil {
 		logger.Log.Warn().Str("username", req.Username).Msg("创建管理员失败: 用户名已存在")
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
@@ -272,8 +291,8 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 }
 
 func (h *AuthHandler) ListUsers(c *gin.Context) {
-	var users []models.User
-	if err := h.DB.Select("id, username, role, building_id, created_at").Find(&users).Error; err != nil {
+	users, err := h.AuthService.ListUsers()
+	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询用户列表失败")
 	}
 	logger.Log.Debug().Int("count", len(users)).Msg("查询用户列表")
@@ -306,8 +325,13 @@ type UpdateUserReq struct {
 
 func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	id := c.Param("id")
-	var user models.User
-	if err := h.DB.First(&user, id).Error; err != nil {
+	userID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+		return
+	}
+	user, err := h.AuthService.GetUserByID(uint(userID))
+	if err != nil {
 		logger.Log.Warn().Str("user_id", id).Msg("更新用户失败: 用户不存在")
 		utils.Error(c, http.StatusNotFound, "用户不存在")
 		return
@@ -323,15 +347,15 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 		updates["role"] = req.Role
 	}
 	if req.Password != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hash, err := h.AuthService.HashPassword(req.Password)
 		if err != nil {
 			logger.Log.Error().Err(err).Msg("密码加密失败")
 			utils.Error(c, http.StatusInternalServerError, "加密失败")
 			return
 		}
-		updates["password_hash"] = string(hash)
+		updates["password_hash"] = hash
 	}
-	if err := h.DB.Model(&user).Updates(updates).Error; err != nil {
+	if err := h.AuthService.UpdateUser(user.ID, updates); err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("更新用户失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
@@ -346,8 +370,13 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 
 func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
-	var user models.User
-	if err := h.DB.First(&user, id).Error; err != nil {
+	userID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+		return
+	}
+	user, err := h.AuthService.GetUserByID(uint(userID))
+	if err != nil {
 		logger.Log.Warn().Str("user_id", id).Msg("删除用户失败: 用户不存在")
 		utils.Error(c, http.StatusNotFound, "用户不存在")
 		return
@@ -357,7 +386,7 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 		utils.Error(c, http.StatusForbidden, "不能删除超级管理员")
 		return
 	}
-	if err := h.DB.Delete(&user).Error; err != nil {
+	if err := h.AuthService.DeleteUser(user.ID); err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("删除用户失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return

@@ -44,8 +44,10 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { login } from '../api'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 
@@ -54,10 +56,7 @@ async function handleLogin() {
   try {
     const res = await login(form.username, form.password)
     const user = res.data.user
-    localStorage.setItem('token', res.data.token)
-    localStorage.setItem('username', user.username)
-    localStorage.setItem('role', user.role)
-    localStorage.setItem('building_id', String(user.building_id || ''))
+    authStore.login(user, res.data.token, res.data.refresh_token)
 
     showToast({ message: '登录成功', icon: 'success', duration: 1500 })
 

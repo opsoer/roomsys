@@ -137,13 +137,30 @@ func BuildingScopeMiddleware(db *gorm.DB) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if bid, ok := buildingID.(uint); !ok || bid == 0 {
+		bid, ok := buildingID.(uint)
+		if !ok || bid == 0 {
 			logger.Log.Warn().
 				Uint("user_id", userID).
 				Str("role", role).
 				Str("path", c.Request.URL.Path).
 				Msg("用户未关联公寓")
 			utils.Error(c, http.StatusForbidden, "未关联公寓")
+			c.Abort()
+			return
+		}
+		var user models.User
+		if err := db.First(&user, userID).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("user_id", userID).Msg("验证用户building归属失败")
+			utils.Error(c, http.StatusInternalServerError, "验证失败")
+			c.Abort()
+			return
+		}
+		if user.BuildingID == nil || *user.BuildingID != bid {
+			logger.Log.Warn().
+				Uint("user_id", userID).
+				Uint("jwt_building_id", bid).
+				Msg("用户building归属验证失败")
+			utils.Error(c, http.StatusForbidden, "无权访问该公寓")
 			c.Abort()
 			return
 		}

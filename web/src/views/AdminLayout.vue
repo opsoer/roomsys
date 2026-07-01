@@ -53,10 +53,12 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import api from '../api'
+import { getUnprocessedRecruitCount } from '../api'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
-const username = ref(localStorage.getItem('username') || '')
+const authStore = useAuthStore()
+const username = ref(authStore.username)
 const showUserMenu = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
 function handleResize() {
@@ -67,7 +69,7 @@ let timer = null
 
 async function fetchRecruitCount() {
   try {
-    const res = await api.get('/admin/recruit/unprocessed-count')
+    const res = await getUnprocessedRecruitCount()
     recruitCount.value = res.data.count || 0
   } catch {
     ElMessage.error('获取招商信息失败')
@@ -75,10 +77,7 @@ async function fetchRecruitCount() {
 }
 
 function logout() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('username')
-  localStorage.removeItem('role')
-  localStorage.removeItem('building_id')
+  authStore.logout()
   showToast('已退出')
   router.push('/')
 }

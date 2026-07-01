@@ -41,7 +41,8 @@ func GenerateBillNo() string {
 	defer billNoMu.Unlock()
 	billNoSeq++
 	ts := Now().Format("20060102150405")
-	return fmt.Sprintf("B%s%04d", ts, billNoSeq%10000)
+	seq := billNoSeq % 100000
+	return fmt.Sprintf("B%s%05d", ts, seq)
 }
 
 var (
