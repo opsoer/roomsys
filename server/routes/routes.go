@@ -59,8 +59,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
 		buildingSvc := services.NewBuildingService(db)
-		roomSvc := services.NewRoomService(db)
-		billSvc := services.NewBillService(db)
 		authSvc := services.NewAuthService(db, cfg)
 		systemSvc := services.NewSettingsService(db)
 		recruitSvc := services.NewRecruitService(db)

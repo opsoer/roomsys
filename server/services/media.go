@@ -33,8 +33,19 @@ func (s *MediaService) Upload(file *multipart.FileHeader, roomID uint, category 
 		return nil, err
 	}
 
-	dst := filepath.Join(uploadDir, filename)
-	if err := c.SaveUploadedFile(file, dst); err != nil {
+	src, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(filepath.Join(uploadDir, filename))
+	if err != nil {
+		return nil, err
+	}
+	defer dst.Close()
+
+	if _, err = dst.ReadFrom(src); err != nil {
 		return nil, err
 	}
 

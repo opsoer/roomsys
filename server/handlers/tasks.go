@@ -178,3 +178,23 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	logger.Log.Info().Str("id", id).Uint("building_id", bid).Msg("任务已删除")
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
+
+func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint) {
+	billNo := utils.GenerateBillNo()
+	billDate := utils.Now().Format("2006-01-02")
+
+	if refundedDeposit > 0 {
+		bill := models.Bill{
+			BuildingID:  buildingID,
+			BillNo:      billNo,
+			Type:        "expense",
+			Subtype:     "押金退还",
+			Amount:      refundedDeposit,
+			RoomID:      &room.ID,
+			Description: "退租押金退还",
+			BillDate:    billDate,
+			CreatedBy:   userID,
+		}
+		tx.Create(&bill)
+	}
+}

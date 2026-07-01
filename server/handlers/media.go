@@ -13,6 +13,7 @@ import (
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -23,8 +24,9 @@ import (
 )
 
 type MediaHandler struct {
-	DB  *gorm.DB
-	Cfg *config.Config
+	DB           *gorm.DB
+	Cfg          *config.Config
+	MediaService *services.MediaService
 }
 
 var allowedMIMEs = map[string]string{
