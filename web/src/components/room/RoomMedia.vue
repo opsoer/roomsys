@@ -48,8 +48,6 @@
 </template>
 
 <script setup>
-import { Close } from '@element-plus/icons-vue'
-
 defineProps({
   room: { type: Object, required: true },
   galleryImages: { type: Array, default: () => [] },

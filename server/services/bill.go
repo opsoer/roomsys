@@ -23,7 +23,7 @@ func (s *BillService) GetByID(id uint) (*models.Bill, error) {
 	return &bill, err
 }
 
-func (s *BillService) List(buildingID uint, params map[string]interface{}) ([]models.Bill, error) {
+func (s *BillService) List(buildingID uint, params map[string]interface{}, page, size int) ([]models.Bill, int64, error) {
 	var bills []models.Bill
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -40,8 +40,13 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}) ([]mo
 		query = query.Where("bill_date <= ?", ed)
 	}
 
-	err := query.Preload("Room").Order("bill_date DESC, id DESC").Find(&bills).Error
-	return bills, err
+	var total int64
+	if err := query.Model(&models.Bill{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Preload("Room").Order("bill_date DESC, id DESC").Offset((page - 1) * size).Limit(size).Find(&bills).Error
+	return bills, total, err
 }
 
 func (s *BillService) Create(bill *models.Bill) error {
@@ -113,36 +118,49 @@ func (s *BillService) GetStats(buildingID uint, month, year string) (map[string]
 
 func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface{}, error) {
 	now := utils.Now()
-	var months []map[string]interface{}
-	var growth []map[string]interface{}
+	startDate := now.AddDate(0, -(years - 1), 0).Format("2006-01-01")
+	endDate := now.Format("2006-12-31")
 
-	for i := years - 1; i >= 0; i-- {
-		t := now.AddDate(0, -i, 0)
-		month := t.Format("2006-01")
+	type monthlySum struct {
+		Month  string
+		Type   string
+		Amount float64
+	}
+	var sums []monthlySum
+	s.DB.Model(&models.Bill{}).
+		Select("DATE_FORMAT(bill_date, '%Y-%m') as month, type, SUM(amount) as amount").
+		Where("building_id = ? AND bill_date >= ? AND bill_date <= ?", buildingID, startDate, endDate).
+		Group("month, type").
+		Order("month").
+		Scan(&sums)
 
-		var incomeTotal, expenseTotal float64
-		startDate := month + "-01"
-		endDate := t.AddDate(0, 1, -1).Format("2006-01-02")
+	monthData := make(map[string]map[string]float64)
+	var months []string
+	for _, s := range sums {
+		if monthData[s.Month] == nil {
+			monthData[s.Month] = make(map[string]float64)
+			months = append(months, s.Month)
+		}
+		monthData[s.Month][s.Type] = s.Amount
+	}
 
-		s.DB.Model(&models.Bill{}).
-			Where("building_id = ? AND type = 'income' AND bill_date >= ? AND bill_date <= ?", buildingID, startDate, endDate).
-			Select("COALESCE(SUM(amount), 0)").Scan(&incomeTotal)
-
-		s.DB.Model(&models.Bill{}).
-			Where("building_id = ? AND type = 'expense' AND bill_date >= ? AND bill_date <= ?", buildingID, startDate, endDate).
-			Select("COALESCE(SUM(amount), 0)").Scan(&expenseTotal)
-
-		months = append(months, map[string]interface{}{
-			"month":   month,
-			"income":  incomeTotal,
-			"expense": expenseTotal,
-			"profit":  incomeTotal - expenseTotal,
+	var resultMonths []map[string]interface{}
+	for _, m := range months {
+		d := monthData[m]
+		income := d["income"]
+		expense := d["expense"]
+		resultMonths = append(resultMonths, map[string]interface{}{
+			"month":   m,
+			"income":  income,
+			"expense": expense,
+			"profit":  income - expense,
 		})
 	}
 
-	for i := 1; i < len(months); i++ {
-		curr := months[i]
-		prev := months[i-1]
+	var growth []map[string]interface{}
+	for i := 1; i < len(resultMonths); i++ {
+		curr := resultMonths[i]
+		prev := resultMonths[i-1]
 
 		incomeMom := 0.0
 		expenseMom := 0.0
@@ -161,7 +179,7 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	}
 
 	return map[string]interface{}{
-		"months": months,
+		"months": resultMonths,
 		"growth": growth,
 	}, nil
 }

@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	loginAttempts = sync.Map{}
 	rateLimitMu   sync.Mutex
+	rateLimitData = make(map[string]*rateLimitEntry)
 )
 
 const maxLoginAttempts = 10
@@ -34,13 +34,13 @@ func cleanupLoginAttempts() {
 	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
-		loginAttempts.Range(func(key, value interface{}) bool {
-			entry := value.(*rateLimitEntry)
+		rateLimitMu.Lock()
+		for ip, entry := range rateLimitData {
 			if now.Sub(entry.windowStart) > rateLimitWindow*2 {
-				loginAttempts.Delete(key)
+				delete(rateLimitData, ip)
 			}
-			return true
-		})
+		}
+		rateLimitMu.Unlock()
 	}
 }
 
@@ -48,8 +48,7 @@ func checkLoginRateLimit(ip string) bool {
 	rateLimitMu.Lock()
 	defer rateLimitMu.Unlock()
 	now := time.Now()
-	if val, ok := loginAttempts.Load(ip); ok {
-		entry := val.(*rateLimitEntry)
+	if entry, ok := rateLimitData[ip]; ok {
 		if now.Sub(entry.windowStart) < rateLimitWindow {
 			if entry.count >= maxLoginAttempts {
 				return false
@@ -61,7 +60,7 @@ func checkLoginRateLimit(ip string) bool {
 		entry.count = 1
 		return true
 	}
-	loginAttempts.Store(ip, &rateLimitEntry{windowStart: now, count: 1})
+	rateLimitData[ip] = &rateLimitEntry{windowStart: now, count: 1}
 	return true
 }
 
@@ -224,8 +223,8 @@ type CreateRegularAdminReq struct {
 }
 
 func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
-	buildingID, _ := c.Get("building_id")
-	if bid, ok := buildingID.(uint); !ok || bid == 0 {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil || bid == 0 {
 		logger.Log.Warn().Msg("创建管理员失败: 未关联公寓")
 		utils.Error(c, http.StatusForbidden, "未关联公寓")
 		return
@@ -242,7 +241,6 @@ func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "加密失败")
 		return
 	}
-	bid := buildingID.(uint)
 	user := &models.User{
 		Username:     req.Username,
 		PasswordHash: hash,
@@ -285,6 +283,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")
 		return
 	}
+	utils.RevokeToken(req.RefreshToken)
 	logger.Log.Info().Uint("user_id", claims.UserID).Msg("令牌刷新成功")
 	utils.Success(c, gin.H{"token": token})
 }
@@ -293,25 +292,24 @@ func (h *AuthHandler) ListUsers(c *gin.Context) {
 	users, err := h.AuthService.ListUsers()
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询用户列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询用户列表失败")
+		return
 	}
 	logger.Log.Debug().Int("count", len(users)).Msg("查询用户列表")
 	utils.Success(c, gin.H{"users": users})
 }
 
 func (h *AuthHandler) ListBuildingUsers(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	var users []models.User
 	if err := h.DB.Select("id, username, role, created_at").Where("building_id = ?", bid).Find(&users).Error; err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询楼栋用户列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询用户列表失败")
+		return
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(users)).Msg("查询楼栋用户列表")
 	utils.Success(c, gin.H{"users": users})

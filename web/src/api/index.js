@@ -1,10 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
+import { useAuthStore } from '../stores/auth'
 
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
+})
+
+const uploadApi = axios.create({
+  baseURL: '/api',
+  timeout: 300000,
 })
 
 api.interceptors.request.use(config => {
@@ -16,9 +22,18 @@ api.interceptors.request.use(config => {
   return config
 })
 
+uploadApi.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  config.headers['X-Requested-With'] = 'XMLHttpRequest'
+  return config
+})
+
 api.interceptors.response.use(
   res => {
-    if (res.data && res.data.code === 0 && res.data.data !== undefined) {
+    if (res.data && res.data.code === 0 && res.data.data !== undefined && res.data.data !== null) {
       res.data = res.data.data
     }
     return res
@@ -29,17 +44,32 @@ api.interceptors.response.use(
       const isLoginPage = window.location.pathname === '/login'
       if (msg) ElMessage.error(msg)
       if (!isLoginPage) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('username')
-        localStorage.removeItem('role')
-        localStorage.removeItem('building_id')
+        const authStore = useAuthStore()
+        authStore.logout()
         router.push('/login')
       }
     } else if (msg) {
       ElMessage.error(msg)
     } else {
       ElMessage.error('请求失败')
+    }
+    return Promise.reject(err)
+  },
+)
+
+uploadApi.interceptors.response.use(
+  res => {
+    if (res.data && res.data.code === 0 && res.data.data !== undefined && res.data.data !== null) {
+      res.data = res.data.data
+    }
+    return res
+  },
+  err => {
+    const msg = err.response?.data?.message || err.response?.data?.error
+    if (msg) {
+      ElMessage.error(msg)
+    } else {
+      ElMessage.error('上传失败')
     }
     return Promise.reject(err)
   },
@@ -158,7 +188,7 @@ export function buildingDeleteMedia(roomId, mediaId) {
 }
 
 export function buildingUploadCover(formData) {
-  return api.post('/building/cover', formData, {
+  return uploadApi.post('/building/cover', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
@@ -264,7 +294,7 @@ export function getUnprocessedRecruitCount() {
 }
 
 export function buildingUploadMedia(roomId, formData) {
-  return api.post(`/building/rooms/${roomId}/media`, formData, {
+  return uploadApi.post(`/building/rooms/${roomId}/media`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }

@@ -18,6 +18,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 	db.Where("status = ? AND end_date != '' AND end_date <= ?",
 		"active", expireThreshold.Format("2006-01-02")).
 		Preload("Room").
+		Limit(100).
 		Find(&contracts)
 
 	for _, contract := range contracts {

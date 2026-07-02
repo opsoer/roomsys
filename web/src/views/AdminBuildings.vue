@@ -34,7 +34,6 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminGetBuildings, adminDeleteBuilding, adminGetSystemTime, adminSetSystemTime } from '../api'
 import AdminBuildingList from '../components/admin/AdminBuildingList.vue'
@@ -91,9 +90,9 @@ async function handleDelete(id) {
 }
 
 function copyLoginLink(row) {
-  const url = `${window.location.origin}/landlord/login/${row.id}`
+  const url = `${window.location.origin}/login`
   navigator.clipboard.writeText(url).then(() => {
-    ElMessage.success('已复制管理员登录链接')
+    ElMessage.success('已复制管理员登录页面链接')
   }, () => {
     ElMessage.error('复制失败，请手动复制')
   })

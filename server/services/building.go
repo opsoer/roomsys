@@ -2,6 +2,7 @@ package services
 
 import (
 	"rental-server/models"
+	"rental-server/utils"
 
 	"gorm.io/gorm"
 )
@@ -40,34 +41,49 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	var landlords []models.BuildingLandlord
 	s.DB.Where("building_id = ?", id).Find(&landlords)
 
-	var roomCount, vacantCount, rentedCount, expiringCount int64
-	s.DB.Model(&models.Room{}).Where("building_id = ?", id).Count(&roomCount)
-	s.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", id, "vacant").Count(&vacantCount)
-	s.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", id, "rented").Count(&rentedCount)
-	s.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", id, "expiring").Count(&expiringCount)
+	type roomStatusCount struct {
+		Status string
+		Count  int64
+	}
+	var statusCounts []roomStatusCount
+	s.DB.Model(&models.Room{}).
+		Select("status, count(*) as count").
+		Where("building_id = ?", id).
+		Group("status").
+		Scan(&statusCounts)
+
+	statusMap := make(map[string]int64)
+	var roomCount int64
+	for _, sc := range statusCounts {
+		statusMap[sc.Status] = sc.Count
+		roomCount += sc.Count
+	}
 
 	return &BuildingWithStats{
 		Building:      building,
 		Landlords:     landlords,
 		RoomCount:     roomCount,
-		VacantCount:   vacantCount,
-		RentedCount:   rentedCount,
-		ExpiringCount: expiringCount,
+		VacantCount:   statusMap["vacant"],
+		RentedCount:   statusMap["rented"],
+		ExpiringCount: statusMap["expiring"],
 	}, nil
 }
 
-func (s *BuildingService) List(status, keyword string) ([]BuildingWithStats, error) {
+func (s *BuildingService) List(status, keyword string, page, size int) ([]BuildingWithStats, int64, error) {
 	var buildings []models.Building
 	query := s.DB
+
+	today := utils.Now().Format("2006-01-02")
+	thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
 
 	if status != "" {
 		switch status {
 		case "normal":
-			query = query.Where("expired_at = '' OR expired_at IS NULL OR expired_at > ?", "2024-01-01")
+			query = query.Where("expired_at = '' OR expired_at IS NULL OR expired_at > ?", thirtyDaysLater)
 		case "expiring":
-			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at <= ? AND expired_at > ?", "2024-12-31", "2024-01-01")
+			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at <= ? AND expired_at >= ?", thirtyDaysLater, today)
 		case "expired":
-			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at <= ?", "2024-01-01")
+			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at < ?", today)
 		}
 	}
 
@@ -76,20 +92,65 @@ func (s *BuildingService) List(status, keyword string) ([]BuildingWithStats, err
 			"%"+keyword+"%", "%"+keyword+"%")
 	}
 
-	if err := query.Find(&buildings).Error; err != nil {
-		return nil, err
+	var total int64
+	if err := query.Model(&models.Building{}).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
-	var result []BuildingWithStats
-	for _, b := range buildings {
-		ws, err := s.GetWithStats(b.ID)
-		if err != nil {
-			continue
+	if err := query.Offset((page - 1) * size).Limit(size).Find(&buildings).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if len(buildings) == 0 {
+		return []BuildingWithStats{}, 0, nil
+	}
+
+	buildingIDs := make([]uint, len(buildings))
+	for i, b := range buildings {
+		buildingIDs[i] = b.ID
+	}
+
+	type roomStatusCount struct {
+		BuildingID uint
+		Status     string
+		Count      int64
+	}
+	var statusCounts []roomStatusCount
+	s.DB.Model(&models.Room{}).
+		Select("building_id, status, count(*) as count").
+		Where("building_id IN ?", buildingIDs).
+		Group("building_id, status").
+		Scan(&statusCounts)
+
+	statusMap := make(map[uint]map[string]int64)
+	for _, sc := range statusCounts {
+		if statusMap[sc.BuildingID] == nil {
+			statusMap[sc.BuildingID] = make(map[string]int64)
 		}
-		result = append(result, *ws)
+		statusMap[sc.BuildingID][sc.Status] = sc.Count
 	}
 
-	return result, nil
+	var allLandlords []models.BuildingLandlord
+	s.DB.Where("building_id IN ?", buildingIDs).Find(&allLandlords)
+	landlordMap := make(map[uint][]models.BuildingLandlord)
+	for _, l := range allLandlords {
+		landlordMap[l.BuildingID] = append(landlordMap[l.BuildingID], l)
+	}
+
+	result := make([]BuildingWithStats, len(buildings))
+	for i, b := range buildings {
+		sc := statusMap[b.ID]
+		result[i] = BuildingWithStats{
+			Building:      b,
+			Landlords:     landlordMap[b.ID],
+			RoomCount:     sc["vacant"] + sc["rented"] + sc["expiring"] + sc["expired"],
+			VacantCount:   sc["vacant"],
+			RentedCount:   sc["rented"],
+			ExpiringCount: sc["expiring"],
+		}
+	}
+
+	return result, total, nil
 }
 
 func (s *BuildingService) Create(building *models.Building) error {
@@ -115,6 +176,21 @@ func (s *BuildingService) Delete(id uint) error {
 			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Tenant{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.RentalContract{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.Shareholder{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.Dividend{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.Task{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.User{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&models.Building{}, id).Error

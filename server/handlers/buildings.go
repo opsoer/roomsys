@@ -247,23 +247,25 @@ func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 func (h *BuildingHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	keyword := c.Query("keyword")
-	buildings, err := h.BuildingService.List(status, keyword)
+	page, size := utils.ParsePage(c)
+	buildings, total, err := h.BuildingService.List(status, keyword, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"buildings": buildings})
+	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
-	buildings, err := h.BuildingService.List("", "")
+	page, size := utils.ParsePage(c)
+	buildings, total, err := h.BuildingService.List("", "", page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"buildings": buildings})
+	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
 func (h *BuildingHandler) GetPublic(c *gin.Context) {
@@ -289,8 +291,18 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
+	query := h.DB.Where("building_id = ?", buildingID)
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if floor := c.Query("floor"); floor != "" {
+		query = query.Where("floor = ?", floor)
+	}
+	if layout := c.Query("layout"); layout != "" {
+		query = query.Where("layout = ?", layout)
+	}
 	var rooms []models.Room
-	if err := h.DB.Where("building_id = ?", buildingID).Find(&rooms).Error; err != nil {
+	if err := query.Find(&rooms).Error; err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
@@ -299,14 +311,9 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 }
 
 func (h *BuildingHandler) MyBuilding(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	building, err := h.BuildingService.GetWithStats(bid)
@@ -319,14 +326,9 @@ func (h *BuildingHandler) MyBuilding(c *gin.Context) {
 }
 
 func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	var req struct {
@@ -355,14 +357,9 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 }
 
 func (h *BuildingHandler) MyStats(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	stats, err := h.BuildingService.GetWithStats(bid)

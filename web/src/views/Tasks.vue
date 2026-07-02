@@ -90,7 +90,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { buildingGetTasks, buildingProcessTask } from '../api'
 import { ElMessage } from 'element-plus'
-import { List } from '@element-plus/icons-vue'
 
 const tasks = ref([])
 const loading = ref(false)

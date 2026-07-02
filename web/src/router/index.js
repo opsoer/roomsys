@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
 const routes = [
   {
@@ -71,8 +72,9 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _, next) => {
-  const token = localStorage.getItem('token')
-  const role = localStorage.getItem('role')
+  const authStore = useAuthStore()
+  const token = authStore.token
+  const role = authStore.role
 
   if (to.name === 'Login' && token) {
     next(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')

@@ -42,13 +42,17 @@ func (s *RoomService) GetWithContract(id uint) (*models.Room, *models.RentalCont
 	return &room, &contract, nil
 }
 
-func (s *RoomService) List(buildingID uint) ([]models.Room, error) {
+func (s *RoomService) List(buildingID uint, page, size int) ([]models.Room, int64, error) {
 	var rooms []models.Room
-	err := s.DB.Where("building_id = ?", buildingID).
-		Preload("Media").
-		Order("room_number").
-		Find(&rooms).Error
-	return rooms, err
+	query := s.DB.Where("building_id = ?", buildingID)
+
+	var total int64
+	if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Preload("Media").Order("room_number").Offset((page - 1) * size).Limit(size).Find(&rooms).Error
+	return rooms, total, err
 }
 
 func (s *RoomService) Create(room *models.Room) error {
@@ -90,6 +94,16 @@ func (s *RoomService) GetActiveContract(roomID uint) (*models.RentalContract, er
 	var contract models.RentalContract
 	err := s.DB.Where("room_id = ? AND status = ?", roomID, "active").
 		Preload("Tenant").
+		First(&contract).Error
+	if err != nil {
+		return nil, err
+	}
+	return &contract, nil
+}
+
+func (s *RoomService) GetActiveContractPublic(roomID uint) (*models.RentalContract, error) {
+	var contract models.RentalContract
+	err := s.DB.Where("room_id = ? AND status = ?", roomID, "active").
 		First(&contract).Error
 	if err != nil {
 		return nil, err

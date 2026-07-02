@@ -50,7 +50,7 @@ type BillHandler struct {
 type CreateBillReq struct {
 	Type        string  `json:"type" binding:"required"`
 	Subtype     string  `json:"subtype" binding:"required"`
-	Amount      float64 `json:"amount" binding:"required"`
+	Amount      float64 `json:"amount" binding:"required,gte=0"`
 	RoomID      *uint   `json:"room_id"`
 	Description string  `json:"description"`
 	BillDate    string  `json:"bill_date" binding:"required"`
@@ -67,14 +67,9 @@ type UpdateBillReq struct {
 }
 
 func (h *BillHandler) List(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 
@@ -86,22 +81,20 @@ func (h *BillHandler) List(c *gin.Context) {
 		"end_date":   c.Query("end_date"),
 	}
 
-	bills, err := h.BillService.List(bid, params)
+	page, size := utils.ParsePage(c)
+	bills, total, err := h.BillService.List(bid, params, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询账单列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询账单列表失败")
+		return
 	}
-	utils.Success(c, gin.H{"bills": bills})
+	utils.Success(c, gin.H{"bills": bills, "total": total, "page": page, "size": size})
 }
 
 func (h *BillHandler) Create(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	var req CreateBillReq
@@ -169,18 +162,17 @@ func (h *BillHandler) Create(c *gin.Context) {
 }
 
 func (h *BillHandler) Update(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	billID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的账单ID")
 		return
 	}
-	id := c.Param("id")
-	billID, _ := strconv.ParseUint(id, 10, 32)
 	bill, err := h.BillService.GetByID(uint(billID))
 	if err != nil || bill.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("更新账单失败: 账单不存在")
@@ -222,6 +214,12 @@ func (h *BillHandler) Update(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
+	updatedBill, err := h.BillService.GetByID(bill.ID)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("bill_id", bill.ID).Msg("获取更新后的账单失败")
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
 	logger.Log.Info().
 		Uint("bill_id", bill.ID).
 		Str("bill_no", bill.BillNo).
@@ -229,22 +227,21 @@ func (h *BillHandler) Update(c *gin.Context) {
 		Float64("new_amount", newAmount).
 		Str("modify_reason", req.ModifyReason).
 		Msg("账单更新成功")
-	utils.Success(c, gin.H{"bill": bill})
+	utils.Success(c, gin.H{"bill": updatedBill})
 }
 
 func (h *BillHandler) Delete(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	billID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的账单ID")
 		return
 	}
-	id := c.Param("id")
-	billID, _ := strconv.ParseUint(id, 10, 32)
 	bill, err := h.BillService.GetByID(uint(billID))
 	if err != nil || bill.BuildingID != bid {
 		utils.Error(c, http.StatusNotFound, "账单不存在")
@@ -259,14 +256,9 @@ func (h *BillHandler) Delete(c *gin.Context) {
 }
 
 func (h *BillHandler) Stats(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	month := c.Query("month")
@@ -307,14 +299,9 @@ func (h *BillHandler) Trend(c *gin.Context) {
 }
 
 func (h *BillHandler) ExportCSV(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 
@@ -325,7 +312,7 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 		"end_date":   c.Query("end_date"),
 	}
 
-	bills, err := h.BillService.List(bid, params)
+	bills, _, err := h.BillService.List(bid, params, 1, 100000)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("导出账单失败")
 		utils.Error(c, http.StatusInternalServerError, "导出失败")

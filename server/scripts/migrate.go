@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
+	"math/big"
 
 	"rental-server/config"
 	"rental-server/models"
@@ -25,22 +27,31 @@ func main() {
 	}
 	fmt.Println("数据库迁移完成")
 
-	fmt.Println("唯一索引已确认")
-
 	seedAdmin(db)
-	fmt.Println("默认管理员已创建: admin / admin123")
 }
 
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
-		hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		randomPassword := generateRandomPassword(16)
+		hash, _ := bcrypt.GenerateFromPassword([]byte(randomPassword), bcrypt.DefaultCost)
 		admin = models.User{
 			Username:     "admin",
 			PasswordHash: string(hash),
 			Role:         "super_admin",
 		}
 		db.Create(&admin)
+		fmt.Printf("已创建默认超级管理员: admin / %s\n", randomPassword)
 	}
+}
+
+func generateRandomPassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	result := make([]byte, length)
+	for i := range result {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		result[i] = charset[n.Int64()]
+	}
+	return string(result)
 }

@@ -87,15 +87,16 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import { getBuildings, getDistricts, getRecruitPhone } from '../api'
+import { getBuildings, getRecruitPhone } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useUtils } from '../composables/useUtils'
+import shenzhen from '../utils/shenzhen'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()
 const buildings = ref([])
-const districts = ref([])
+const districts = ref(shenzhen.map(d => d.value))
 const loading = ref(true)
 const refreshing = ref(false)
 const districtFilter = ref('')
@@ -143,10 +144,6 @@ async function fetchRecruit() {
 }
 
 onMounted(async () => {
-  try {
-    const res = await getDistricts()
-    districts.value = res.data.districts || []
-  } catch {}
   await fetchBuildings()
   await fetchRecruit()
 })

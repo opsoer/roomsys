@@ -57,7 +57,6 @@
       <h4 class="sidebar-title">上传媒体</h4>
       <div class="upload-actions">
         <el-upload
-          :action="`/api/building/rooms/${room.id}/media`"
           :http-request="customUpload"
           :data="{ category: 'cover' }"
           :on-success="handleUploadSuccess"
@@ -69,7 +68,6 @@
           <el-button type="warning" :icon="Plus" style="width:100%">上传封面</el-button>
         </el-upload>
         <el-upload
-          :action="`/api/building/rooms/${room.id}/media`"
           :http-request="customUpload"
           :data="{ category: 'gallery' }"
           :on-success="handleUploadSuccess"
@@ -82,7 +80,6 @@
           <el-button type="primary" :icon="Picture" style="width:100%">上传照片</el-button>
         </el-upload>
         <el-upload
-          :action="`/api/building/rooms/${room.id}/media`"
           :http-request="customUpload"
           :data="{ category: 'video' }"
           :on-success="handleUploadSuccess"
@@ -99,7 +96,6 @@
 </template>
 
 <script setup>
-import { Plus, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { buildingUploadMedia } from '../../api'
 

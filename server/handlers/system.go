@@ -47,8 +47,12 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "时间偏移量必须在 -720 到 720 分钟之间")
 		return
 	}
+	userID, _ := utils.GetUserID(c)
 	utils.SetTimeOffset(time.Duration(req.OffsetSeconds) * time.Second)
-	logger.Log.Info().Int64("offset_seconds", req.OffsetSeconds).Msg("模拟时间已更新，触发合同到期检查")
+	logger.Log.Info().
+		Uint("user_id", userID).
+		Int64("offset_seconds", req.OffsetSeconds).
+		Msg("模拟时间已更新，触发合同到期检查")
 	AutoCheckExpiringContracts(h.DB)
 	now := utils.Now()
 	offset := utils.GetTimeOffset()

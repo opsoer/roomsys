@@ -30,8 +30,6 @@
 </template>
 
 <script setup>
-import { Close } from '@element-plus/icons-vue'
-
 defineProps({
   room: { type: Object, required: true },
   coverImage: { type: Object, default: null },

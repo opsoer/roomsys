@@ -1,14 +1,18 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/utils"
 	"rental-server/handlers"
+	"rental-server/middleware"
 	"rental-server/models"
 	"rental-server/routes"
 
@@ -43,23 +47,29 @@ func main() {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	logger.Log.Info().Int("max_idle", 10).Int("max_open", 100).Msg("数据库连接池已配置")
 
 	if os.Getenv("GIN_MODE") == "release" {
-		logger.Log.Warn().Msg("生产环境 AutoMigrate 可能修改表结构，建议手动管理迁移")
+		logger.Log.Warn().Msg("生产环境跳过 AutoMigrate，请使用版本化迁移工具管理表结构")
+	} else {
+		if err := models.AutoMigrate(db); err != nil {
+			logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
+		}
+		logger.Log.Info().Msg("数据库迁移完成")
 	}
-	if err := models.AutoMigrate(db); err != nil {
-		logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
-	}
-	logger.Log.Info().Msg("数据库迁移完成")
 
-	utils.InitBillNo(db)
 	seedAdmin(db)
 
 	// 启动时自动创建当月租金账单
 	handlers.AutoCreateMonthlyRentBills(db)
 	// 定时任务：每月1号自动创建租金账单
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Log.Error().Interface("panic", r).Msg("租金账单定时任务 panic，已恢复")
+			}
+		}()
 		for {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
@@ -74,13 +84,50 @@ func main() {
 
 	// 每6小时检查一次公寓到期
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Log.Error().Interface("panic", r).Msg("到期检查定时任务 panic，已恢复")
+			}
+		}()
 		for {
 			checkExpiredBuildings(db)
 			time.Sleep(6 * time.Hour)
 		}
 	}()
 
-	if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
+	// 每12小时清理已吊销的令牌
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Log.Error().Interface("panic", r).Msg("令牌清理定时任务 panic，已恢复")
+			}
+		}()
+		for {
+			time.Sleep(12 * time.Hour)
+			utils.CleanupRevokedTokens()
+		}
+	}()
+
+	// 每天凌晨3点清理超过90天的软删除数据
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Log.Error().Interface("panic", r).Msg("软删除清理定时任务 panic，已恢复")
+			}
+		}()
+		for {
+			now := utils.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+			time.Sleep(next.Sub(now))
+			if err := models.CleanupSoftDeleted(db, 90); err != nil {
+				logger.Log.Error().Err(err).Msg("软删除数据清理失败")
+			} else {
+				logger.Log.Info().Msg("软删除数据清理完成")
+			}
+		}
+	}()
+
+	if err := os.MkdirAll(cfg.UploadDir, 0750); err != nil {
 		logger.Log.Fatal().Err(err).Str("dir", cfg.UploadDir).Msg("创建上传目录失败")
 	}
 	logger.Log.Info().Str("dir", cfg.UploadDir).Msg("上传目录就绪")
@@ -103,6 +150,11 @@ func main() {
 			"http://127.0.0.1:3000",
 			"http://127.0.0.1:8080",
 		}
+		if extraOrigins := os.Getenv("CORS_ORIGINS"); extraOrigins != "" {
+			for _, o := range splitStr(extraOrigins, ",") {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
 		allowed := false
 		for _, o := range allowedOrigins {
 			if origin == o {
@@ -114,7 +166,7 @@ func main() {
 			c.Header("Access-Control-Allow-Origin", origin)
 		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With, X-CSRF-Token")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -128,13 +180,21 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if os.Getenv("GIN_MODE") == "release" {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		c.Next()
 	})
 
+	r.Use(middleware.RateLimitMiddleware())
+
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "DELETE" {
-			if c.GetHeader("X-Requested-With") == "" {
-				c.AbortWithStatusJSON(403, gin.H{"error": "缺少CSRF令牌"})
+			token := c.GetHeader("X-CSRF-Token")
+			if token == "" || len(token) < 16 {
+				c.AbortWithStatusJSON(403, gin.H{"error": "缺少有效的CSRF令牌"})
 				return
 			}
 		}
@@ -205,7 +265,8 @@ func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
-		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		randomPassword := generateRandomPassword(16)
+		hash, err := bcrypt.GenerateFromPassword([]byte(randomPassword), bcrypt.DefaultCost)
 		if err != nil {
 			logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
 			return
@@ -219,11 +280,31 @@ func seedAdmin(db *gorm.DB) {
 			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
 			return
 		}
-		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin123")
+		logger.Log.Info().Str("password", randomPassword).Msg("已创建默认超级管理员: admin，请登录后立即修改密码")
 	} else {
 		if admin.Role != "super_admin" {
 			db.Model(&admin).Update("role", "super_admin")
 			logger.Log.Info().Uint("user_id", admin.ID).Msg("已升级 admin 为超级管理员")
 		}
 	}
+}
+
+func generateRandomPassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	result := make([]byte, length)
+	for i := range result {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		result[i] = charset[n.Int64()]
+	}
+	return string(result)
+}
+
+func splitStr(s, sep string) []string {
+	var result []string
+	for _, part := range strings.Split(s, sep) {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

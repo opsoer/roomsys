@@ -32,7 +32,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Loading } from '@element-plus/icons-vue'
 import { buildingGetRoom, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { showImagePreview } from 'vant'
@@ -115,7 +114,9 @@ async function handleDeleteMedia(mediaId) {
     await buildingDeleteMedia(route.params.id, mediaId)
     ElMessage.success('已删除')
     await fetchRoom()
-  } catch {}
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error('删除文件失败')
+  }
 }
 
 async function handleDeleteRoom() {
@@ -124,7 +125,9 @@ async function handleDeleteRoom() {
     await buildingDeleteRoom(route.params.id)
     ElMessage.success('房间已删除')
     goBack()
-  } catch {}
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error('删除房间失败')
+  }
 }
 
 function openRentDialog() {
@@ -147,7 +150,9 @@ async function fetchBuildingInfo() {
   try {
     const res = await getBuildingInfo()
     landlords.value = res.data.landlords || []
-  } catch {}
+  } catch (err) {
+    console.error('获取公寓信息失败', err)
+  }
 }
 
 onMounted(() => {

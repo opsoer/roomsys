@@ -19,16 +19,19 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	handlers.AutoCheckExpiringContracts(db)
 
+	buildingSvc := services.NewBuildingService(db)
+	roomSvc := services.NewRoomService(db)
+	billSvc := services.NewBillService(db)
+	dividendSvc := services.NewDividendService(db)
+	taskSvc := services.NewTaskService(db)
+	mediaSvc := services.NewMediaService(db, cfg)
+	authSvc := services.NewAuthService(db, cfg)
+	settingsSvc := services.NewSettingsService(db)
+	recruitSvc := services.NewRecruitService(db)
+
 	// ========== 公开接口 ==========
 	public := r.Group("/api")
 	{
-		buildingSvc := services.NewBuildingService(db)
-		roomSvc := services.NewRoomService(db)
-		settingsSvc := services.NewSettingsService(db)
-		recruitSvc := services.NewRecruitService(db)
-		mediaSvc := services.NewMediaService(db, cfg)
-		authSvc := services.NewAuthService(db, cfg)
-
 		auth := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		public.POST("/auth/login", auth.Login)
 		public.POST("/auth/refresh", auth.RefreshToken)
@@ -58,12 +61,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	platform.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
-		buildingSvc := services.NewBuildingService(db)
-		authSvc := services.NewAuthService(db, cfg)
-		systemSvc := services.NewSettingsService(db)
-		recruitSvc := services.NewRecruitService(db)
-		settingsSvc := services.NewSettingsService(db)
-
 		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
 		platform.POST("/buildings", buildingH.Create)
 		platform.GET("/buildings", buildingH.List)
@@ -78,7 +75,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.PUT("/auth/users/:id", authH.UpdateUser)
 		platform.DELETE("/auth/users/:id", authH.DeleteUser)
 
-		systemH := &handlers.SystemHandler{DB: db, SettingsService: systemSvc}
+		systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
 
@@ -98,14 +95,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	building.Use(middleware.AdminOrBuildingAdminMiddleware())
 	building.Use(middleware.BuildingScopeMiddleware(db))
 	{
-		buildingSvc := services.NewBuildingService(db)
-		roomSvc := services.NewRoomService(db)
-		billSvc := services.NewBillService(db)
-		dividendSvc := services.NewDividendService(db)
-		taskSvc := services.NewTaskService(db)
-		mediaSvc := services.NewMediaService(db, cfg)
-		authSvc := services.NewAuthService(db, cfg)
-
 		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 
 		// 楼栋信息

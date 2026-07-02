@@ -94,14 +94,6 @@
       </div>
       <div class="contract-grid">
         <div class="contract-row">
-          <span class="contract-label"><van-icon name="contact" /> 租客</span>
-          <span class="contract-val">{{ contract.tenant?.name }}</span>
-        </div>
-        <div class="contract-row">
-          <span class="contract-label"><van-icon name="phone-o" /> 电话</span>
-          <span class="contract-val">{{ contract.tenant?.phone }}</span>
-        </div>
-        <div class="contract-row">
           <span class="contract-label"><van-icon name="clock-o" /> 起租</span>
           <span class="contract-val">{{ contract.start_date }}</span>
         </div>
@@ -123,6 +115,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getPublicRoom, getBuildingDetail } from '../api'
+import { mediaUrl, statusLabel, statusTagType } from '../utils/format'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -135,18 +129,14 @@ const allImages = ref([])
 const videos = ref([])
 
 function goToDashboard() {
-  const token = localStorage.getItem('token')
-  const role = localStorage.getItem('role')
+  const authStore = useAuthStore()
+  const token = authStore.token
+  const role = authStore.role
   if (token) {
     router.push(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')
   } else {
     router.push('/login')
   }
-}
-
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
 }
 
 function previewImage(index) {
@@ -155,14 +145,6 @@ function previewImage(index) {
     startPosition: index,
     closeable: true,
   })
-}
-
-function statusTagType(s) {
-  return s === 'vacant' ? 'success' : s === 'rented' ? 'danger' : 'warning'
-}
-
-function statusLabel(s) {
-  return s === 'vacant' ? '未出租' : s === 'rented' ? '已出租' : '即将退租'
 }
 
 onMounted(async () => {

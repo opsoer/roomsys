@@ -20,33 +20,25 @@ type DividendHandler struct {
 }
 
 func (h *DividendHandler) List(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	dividends, err := h.DividendService.List(bid)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红记录失败")
+		utils.Error(c, http.StatusInternalServerError, "查询分红记录失败")
+		return
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(dividends)).Msg("查询分红记录")
 	utils.Success(c, gin.H{"dividends": dividends})
 }
 
 func (h *DividendHandler) Calculate(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	month := c.Query("month")
@@ -99,14 +91,9 @@ type SettleDividendReq struct {
 }
 
 func (h *DividendHandler) Settle(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	userID := c.GetUint("user_id")
@@ -186,19 +173,16 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 }
 
 func (h *DividendHandler) GetShareholders(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	shareholders, err := h.DividendService.GetShareholders(bid)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询股东列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询股东列表失败")
+		return
 	}
 	utils.Success(c, gin.H{"shareholders": shareholders})
 }
@@ -209,14 +193,9 @@ type CreateShareholderReq struct {
 }
 
 func (h *DividendHandler) CreateShareholder(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	var req CreateShareholderReq
@@ -240,18 +219,17 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 }
 
 func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	shareholderID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的股东ID")
 		return
 	}
-	id := c.Param("id")
-	shareholderID, _ := strconv.ParseUint(id, 10, 32)
 	var req struct {
 		Name       string  `json:"name"`
 		ShareRatio float64 `json:"share_ratio"`
@@ -276,18 +254,17 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 }
 
 func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	shareholderID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的股东ID")
 		return
 	}
-	id := c.Param("id")
-	shareholderID, _ := strconv.ParseUint(id, 10, 32)
 	if err := h.DividendService.DeleteShareholder(uint(shareholderID)); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("删除股东失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
@@ -297,14 +274,9 @@ func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 }
 
 func (h *DividendHandler) Predict(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	months := 3

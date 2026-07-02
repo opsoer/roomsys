@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -23,38 +24,34 @@ type ProcessTaskReq struct {
 }
 
 func (h *TaskHandler) List(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 	status := c.Query("status")
 	tasks, err := h.TaskService.List(bid, status)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询任务列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询任务列表失败")
+		return
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(tasks)).Msg("查询任务列表")
 	utils.Success(c, gin.H{"tasks": tasks})
 }
 
 func (h *TaskHandler) Process(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	taskID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的任务ID")
 		return
 	}
-	id := c.Param("id")
-	taskID, _ := strconv.ParseUint(id, 10, 32)
 	task, err := h.TaskService.GetByID(uint(taskID))
 	if err != nil || task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("处理任务失败: 任务不存在")
@@ -105,12 +102,23 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		}
 	}()
 
-	handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid)
+	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid); err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("创建押金退还账单失败")
+		utils.Error(c, http.StatusInternalServerError, "创建退还账单失败")
+		return
+	}
 
 	if err := tx.Model(&models.Room{}).Where("id = ? AND status != ?", *task.RoomID, "vacant").Update("status", "vacant").Error; err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("更新房间状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
+		return
+	}
+	if err := tx.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", *task.RoomID, "active").Update("status", "ended").Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("结束合同失败")
+		utils.Error(c, http.StatusInternalServerError, "结束合同失败")
 		return
 	}
 	if err := tx.Model(&models.Task{}).Where("id = ?", task.ID).Update("status", "completed").Error; err != nil {
@@ -130,18 +138,17 @@ func (h *TaskHandler) Process(c *gin.Context) {
 }
 
 func (h *TaskHandler) Complete(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	taskID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的任务ID")
 		return
 	}
-	id := c.Param("id")
-	taskID, _ := strconv.ParseUint(id, 10, 32)
 	task, err := h.TaskService.GetByID(uint(taskID))
 	if err != nil || task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("完成任务失败: 任务不存在")
@@ -158,18 +165,17 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 }
 
 func (h *TaskHandler) Delete(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+	id := c.Param("id")
+	taskID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的任务ID")
 		return
 	}
-	id := c.Param("id")
-	taskID, _ := strconv.ParseUint(id, 10, 32)
 	if err := h.TaskService.Delete(uint(taskID)); err != nil {
 		logger.Log.Error().Err(err).Str("id", id).Uint("building_id", bid).Msg("删除任务失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
@@ -179,22 +185,30 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
 
-func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint) {
-	billNo := utils.GenerateBillNo()
-	billDate := utils.Now().Format("2006-01-02")
-
-	if refundedDeposit > 0 {
-		bill := models.Bill{
-			BuildingID:  buildingID,
-			BillNo:      billNo,
-			Type:        "expense",
-			Subtype:     "押金退还",
-			Amount:      refundedDeposit,
-			RoomID:      &room.ID,
-			Description: "退租押金退还",
-			BillDate:    billDate,
-			CreatedBy:   userID,
-		}
-		tx.Create(&bill)
+func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint) error {
+	if refundedDeposit <= 0 {
+		return nil
 	}
+
+	now := utils.Now()
+	datePart := now.Format("20060102")
+	var count int64
+	tx.Model(&models.Bill{}).
+		Where("building_id = ? AND bill_no LIKE ?", buildingID, "B"+datePart+"%").
+		Count(&count)
+	billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+
+	billDate := now.Format("2006-01-02")
+	bill := models.Bill{
+		BuildingID:  buildingID,
+		BillNo:      billNo,
+		Type:        "expense",
+		Subtype:     "押金退还",
+		Amount:      refundedDeposit,
+		RoomID:      &room.ID,
+		Description: "退租押金退还",
+		BillDate:    billDate,
+		CreatedBy:   userID,
+	}
+	return tx.Create(&bill).Error
 }

@@ -1,49 +1,10 @@
 package utils
 
 import (
-	"fmt"
 	"math"
 	"sync"
 	"time"
-
-	"gorm.io/gorm"
 )
-
-var (
-	billNoMu   sync.Mutex
-	billNoSeq  int64
-	billNoOnce sync.Once
-	billNoDB   *gorm.DB
-)
-
-func InitBillNo(db *gorm.DB) {
-	billNoDB = db
-	loadBillNoSeq()
-}
-
-func loadBillNoSeq() {
-	if billNoDB == nil {
-		return
-	}
-	type result struct {
-		MaxBillNo string
-	}
-	var r result
-	billNoDB.Raw("SELECT MAX(bill_no) AS max_bill_no FROM bills").Scan(&r)
-	if r.MaxBillNo != "" && len(r.MaxBillNo) > 15 {
-		seqStr := r.MaxBillNo[15:]
-		fmt.Sscanf(seqStr, "%04d", &billNoSeq)
-	}
-}
-
-func GenerateBillNo() string {
-	billNoMu.Lock()
-	defer billNoMu.Unlock()
-	billNoSeq++
-	ts := Now().Format("20060102150405")
-	seq := billNoSeq % 100000
-	return fmt.Sprintf("B%s%05d", ts, seq)
-}
 
 var (
 	timeOffset time.Duration

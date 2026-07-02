@@ -70,7 +70,7 @@ type Room struct {
 
 type RoomMedia struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	RoomID    uint      `gorm:"index;not null" json:"room_id"`
+	RoomID    uint      `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
 	Type      string    `gorm:"size:10;not null" json:"type"`
 	Category  string    `gorm:"size:20;not null;default:'gallery'" json:"category"`
 	FilePath  string    `gorm:"size:500;not null" json:"file_path"`
@@ -94,9 +94,9 @@ type Tenant struct {
 
 type RentalContract struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
-	RoomID       uint           `gorm:"index;not null" json:"room_id"`
+	RoomID       uint           `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
 	BuildingID   uint           `gorm:"index;not null" json:"building_id"`
-	TenantID     uint           `gorm:"index;not null" json:"tenant_id"`
+	TenantID     uint           `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"tenant_id"`
 	RentPrice    float64        `gorm:"type:decimal(10,2);not null" json:"rent_price"`
 	Deposit      float64        `gorm:"type:decimal(10,2)" json:"deposit"`
 	EarnestMoney float64        `gorm:"type:decimal(10,2)" json:"earnest_money"`
@@ -123,7 +123,7 @@ type Bill struct {
 	PaidAt        *time.Time     `json:"paid_at"`
 	PaymentMethod string         `gorm:"size:20" json:"payment_method"`
 	BuildingID    uint           `gorm:"index;not null" json:"building_id"`
-	RoomID        *uint          `gorm:"index" json:"room_id"`
+	RoomID        *uint          `gorm:"index;constraint:OnDelete:SET NULL" json:"room_id"`
 	Description   string         `gorm:"type:text" json:"description"`
 	BillDate      string         `gorm:"size:10;not null" json:"bill_date"`
 	CreatedBy     uint           `json:"created_by"`
@@ -150,7 +150,7 @@ type Dividend struct {
 	TotalIncome    float64        `gorm:"type:decimal(10,2)" json:"total_income"`
 	TotalExpense   float64        `gorm:"type:decimal(10,2)" json:"total_expense"`
 	NetProfit      float64        `gorm:"type:decimal(10,2)" json:"net_profit"`
-	ShareholderID  uint           `gorm:"uniqueIndex:idx_dividend;not null" json:"shareholder_id"`
+	ShareholderID  uint           `gorm:"uniqueIndex:idx_dividend;not null;constraint:OnDelete:CASCADE" json:"shareholder_id"`
 	DividendAmount float64        `gorm:"type:decimal(10,2)" json:"dividend_amount"`
 	SettledBy      uint           `json:"settled_by"`
 	PaidStatus     string         `gorm:"size:10;not null;default:'unpaid'" json:"paid_status"`
@@ -170,7 +170,7 @@ type Task struct {
 	Status      string         `gorm:"size:20;not null;default:'pending'" json:"status"`
 	AssignedTo  string         `gorm:"size:50" json:"assigned_to"`
 	DueDate     string         `gorm:"size:10" json:"due_date"`
-	RoomID      *uint          `gorm:"index" json:"room_id"`
+	RoomID      *uint          `gorm:"index;constraint:OnDelete:SET NULL" json:"room_id"`
 	Deposit     float64        `gorm:"type:decimal(10,2)" json:"deposit"`
 	Description string         `gorm:"type:text" json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
@@ -224,4 +224,17 @@ func AutoMigrate(db *gorm.DB) error {
 		&RecruitSubmission{},
 		&AuditLog{},
 	)
+}
+
+func CleanupSoftDeleted(db *gorm.DB, days int) error {
+	cutoff := time.Now().AddDate(0, 0, -days)
+	tables := []interface{}{
+		&User{}, &Building{}, &Room{}, &RoomMedia{},
+		&Tenant{}, &RentalContract{}, &Bill{},
+		&Shareholder{}, &Dividend{}, &Task{},
+	}
+	for _, table := range tables {
+		db.Unscoped().Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).Delete(table)
+	}
+	return nil
 }

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"time"
+	"fmt"
 
 	"rental-server/logger"
 	"rental-server/models"
@@ -13,26 +13,28 @@ import (
 func AutoCreateMonthlyRentBills(db *gorm.DB) {
 	now := utils.Now()
 	month := now.Format("2006-01")
+	startDate := month + "-01"
+	endDate := now.AddDate(0, 1, 0).Format("2006-01-01")
 
 	var contracts []models.RentalContract
-	db.Where("status = ?", "active").Find(&contracts)
+	db.Joins("LEFT JOIN bills ON bills.room_id = rental_contracts.room_id AND bills.subtype = '租金' AND bills.bill_date >= ? AND bills.bill_date < ?",
+		startDate, endDate).
+		Where("rental_contracts.status = ? AND bills.id IS NULL", "active").
+		Find(&contracts)
 
 	for _, contract := range contracts {
-		var existingBill models.Bill
-		result := db.Where("room_id = ? AND subtype = ? AND bill_date LIKE ?",
-			contract.RoomID, "租金", month+"%").First(&existingBill)
-		if result.Error == nil {
-			continue
-		}
+		amount := float64(int(contract.RentPrice*100)) / 100
 
-		daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
-		dailyRate := contract.RentPrice / float64(daysInMonth)
-		amount := dailyRate * float64(now.Day())
-		amount = float64(int(amount*100)) / 100
+		datePart := now.Format("20060102")
+		var count int64
+		db.Model(&models.Bill{}).
+			Where("building_id = ? AND bill_no LIKE ?", contract.BuildingID, "B"+datePart+"%").
+			Count(&count)
+		billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
 
 		bill := models.Bill{
 			BuildingID:  contract.BuildingID,
-			BillNo:      utils.GenerateBillNo(),
+			BillNo:      billNo,
 			Type:        "income",
 			Subtype:     "租金",
 			Amount:      amount,

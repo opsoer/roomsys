@@ -27,7 +27,7 @@ export function statusLabel(status) {
 export function statusTagType(status) {
   const types = {
     vacant: 'success',
-    rented: 'primary',
+    rented: 'danger',
     expiring: 'warning',
     expired: 'danger',
   }

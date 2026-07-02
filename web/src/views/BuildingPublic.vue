@@ -1,5 +1,14 @@
 <template>
-  <div class="page-building" v-if="building">
+  <div class="page-building">
+    <template v-if="loadError && !building">
+      <van-nav-bar title="加载失败" left-arrow @click-left="$router.push('/')" />
+      <div style="text-align:center;padding:80px 20px;">
+        <van-icon name="warning-o" size="48" color="#999" />
+        <p style="color:#999;margin:16px 0;">数据加载失败，请检查网络后重试</p>
+        <van-button type="primary" size="small" @click="retryLoad">重新加载</van-button>
+      </div>
+    </template>
+    <template v-else-if="building">
     <van-nav-bar
       :title="building.name"
       left-arrow
@@ -43,7 +52,7 @@
       <van-icon name="phone-o" size="14" color="#e6a23c" />
       <span v-for="(l, i) in building.landlords" :key="l.id">
         <template v-if="i > 0">、</template>
-        {{ l.name }} {{ l.phone }}
+        {{ l.name }} {{ maskPhone(l.phone) }}
       </span>
     </div>
 
@@ -108,6 +117,7 @@
     <div class="page-footer">
       <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
     </div>
+    </template>
   </div>
 </template>
 
@@ -116,6 +126,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildingDetail, getBuildingRooms } from '../api'
+import { mediaUrl, statusLabel, statusTagType, maskPhone } from '../utils/format'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,6 +135,7 @@ const id = computed(() => route.params.id)
 const building = ref(null)
 const rooms = ref([])
 const loading = ref(true)
+const loadError = ref(false)
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
@@ -152,32 +165,17 @@ const layoutOptions = computed(() => {
   return opts
 })
 
-const displayRooms = computed(() => {
-  if (!statusFilter.value) return rooms.value
-  return rooms.value.filter(r => r.status === statusFilter.value)
-})
+const displayRooms = computed(() => rooms.value)
 
 function goToDashboard() {
-  const token = localStorage.getItem('token')
-  const role = localStorage.getItem('role')
+  const authStore = useAuthStore()
+  const token = authStore.token
+  const role = authStore.role
   if (token) {
     router.push(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')
   } else {
     router.push('/login')
   }
-}
-
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
-}
-
-function statusTagType(s) {
-  return s === 'vacant' ? 'success' : s === 'rented' ? 'danger' : 'warning'
-}
-
-function statusLabel(s) {
-  return s === 'vacant' ? '未出租' : s === 'rented' ? '已出租' : '即将退租'
 }
 
 async function fetchRooms() {
@@ -196,11 +194,28 @@ async function fetchRooms() {
   }
 }
 
+async function retryLoad() {
+  loadError.value = false
+  loading.value = true
+  try {
+    const res = await getBuildingDetail(id.value)
+    building.value = res.data.building
+    await fetchRooms()
+  } catch {
+    loadError.value = true
+    showToast('加载失败，请重试')
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const res = await getBuildingDetail(id.value)
     building.value = res.data.building
+    loadError.value = false
   } catch {
+    loadError.value = true
     showToast('加载失败')
   }
   await fetchRooms()

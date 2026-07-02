@@ -92,12 +92,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus, Loading, Picture } from '@element-plus/icons-vue'
 import { buildingGetRooms, buildingCreateRoom } from '../api'
 import { ElMessage } from 'element-plus'
+import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 
-const floorOptions = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
-const layoutOptions = ['单间','大单间','一室一厅','两室一厅','三室一厅','四室及以上']
+const floorOptions = FLOOR_OPTIONS
+const layoutOptions = LAYOUT_OPTIONS
 
 const rooms = ref([])
 const loading = ref(true)

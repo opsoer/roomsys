@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"fmt"
 	"rental-server/models"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -13,9 +15,11 @@ type FinanceRow struct {
 
 func QueryMonthlyFinance(db *gorm.DB, buildingID uint, month string) MonthlyFinanceSummary {
 	var rows []FinanceRow
+	startDate := month + "-01"
+	endDate := fmt.Sprintf("%s-01", NextMonth(month))
 	db.Model(&models.Bill{}).
 		Select("type, COALESCE(SUM(amount), 0) as total").
-		Where("building_id = ? AND DATE_FORMAT(bill_date, '%Y-%m') = ?", buildingID, month).
+		Where("building_id = ? AND bill_date >= ? AND bill_date < ?", buildingID, startDate, endDate).
 		Group("type").
 		Find(&rows)
 
@@ -28,4 +32,9 @@ func QueryMonthlyFinance(db *gorm.DB, buildingID uint, month string) MonthlyFina
 		}
 	}
 	return NewMonthlyFinanceSummary(totalIncome, totalExpense)
+}
+
+func NextMonth(month string) string {
+	t, _ := time.Parse("2006-01", month)
+	return t.AddDate(0, 1, 0).Format("2006-01")
 }

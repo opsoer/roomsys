@@ -28,7 +28,7 @@
             left-icon="lock"
             clearable
           />
-          <div style="margin: 28px 16px 16px">
+          <div class="login-btn-wrapper">
             <van-button round block type="primary" native-type="submit" :loading="loading">
               登录
             </van-button>
@@ -128,6 +128,9 @@ async function handleLogin() {
   border-radius: 16px;
   padding: 24px 0 8px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.login-btn-wrapper {
+  margin: 28px 16px 16px;
 }
 :deep(.van-field) {
   padding: 12px 16px;

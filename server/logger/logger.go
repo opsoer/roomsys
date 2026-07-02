@@ -38,7 +38,7 @@ func Init(cfg Config) {
 	logFile := filepath.Join(logDir, time.Now().Format("2006-01-02")+".log")
 	fileWriter, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "打开日志文件失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "打开日志文件失败，仅使用控制台输出: %v\n", err)
 	}
 
 	var writers []io.Writer

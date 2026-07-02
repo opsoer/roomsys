@@ -88,7 +88,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import { Search } from '@element-plus/icons-vue'
 
 defineProps({
   buildings: { type: Array, default: () => [] },

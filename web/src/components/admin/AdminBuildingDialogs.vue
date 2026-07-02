@@ -173,7 +173,6 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage } from '../../api'
 import shenzhen from '../../utils/shenzhen'
@@ -292,7 +291,7 @@ async function handleCreate() {
     showCreate.value = false
     const newBuilding = createdId ? { id: createdId } : null
     if (newBuilding) {
-      const loginUrl = `${window.location.origin}/landlord/login/${newBuilding.id}`
+      const loginUrl = `${window.location.origin}/login`
       ElMessage.success(`公寓创建成功！管理员登录链接：${loginUrl}`)
     } else {
       ElMessage.success('公寓创建成功')
@@ -344,7 +343,7 @@ async function handleCreateAdmin() {
       password: adminForm.value.password,
       building_id: selectedBuildingId.value,
     })
-    const loginUrl = `${window.location.origin}/landlord/login/${selectedBuildingId.value}`
+    const loginUrl = `${window.location.origin}/login`
     ElMessage.success(`管理员创建成功！登录链接：${loginUrl}`)
     showCreateAdmin.value = false
   } finally {

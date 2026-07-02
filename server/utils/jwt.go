@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,6 +14,35 @@ type Claims struct {
 	Role       string `json:"role"`
 	BuildingID uint   `json:"building_id"`
 	jwt.RegisteredClaims
+}
+
+var (
+	revokedTokens   = make(map[string]time.Time)
+	revokedTokensMu sync.RWMutex
+)
+
+func RevokeToken(tokenStr string) {
+	revokedTokensMu.Lock()
+	defer revokedTokensMu.Unlock()
+	revokedTokens[tokenStr] = time.Now()
+}
+
+func IsTokenRevoked(tokenStr string) bool {
+	revokedTokensMu.RLock()
+	defer revokedTokensMu.RUnlock()
+	_, revoked := revokedTokens[tokenStr]
+	return revoked
+}
+
+func CleanupRevokedTokens() {
+	revokedTokensMu.Lock()
+	defer revokedTokensMu.Unlock()
+	now := time.Now()
+	for token, t := range revokedTokens {
+		if now.Sub(t) > 720*time.Hour {
+			delete(revokedTokens, token)
+		}
+	}
 }
 
 func GenerateToken(userID uint, username, role, secret string, buildingID uint) (string, error) {
@@ -51,6 +81,9 @@ func IsRefreshTokenFromClaims(claims *Claims) bool {
 }
 
 func ParseToken(tokenStr, secret string) (*Claims, error) {
+	if IsTokenRevoked(tokenStr) {
+		return nil, fmt.Errorf("token has been revoked")
+	}
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])

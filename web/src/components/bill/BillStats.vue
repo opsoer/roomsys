@@ -50,11 +50,7 @@ import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
 import { buildingGetBillStats } from '../../api'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { PieChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-use([CanvasRenderer, PieChart, GridComponent, TooltipComponent, LegendComponent])
+import '../../utils/echarts'
 
 const props = defineProps({
   mode: { type: String, default: 'monthly' },

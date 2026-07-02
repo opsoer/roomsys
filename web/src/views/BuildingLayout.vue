@@ -64,12 +64,7 @@
         </h2>
         <van-icon name="friends-o" size="20" @click="showUserMenu = !showUserMenu" />
       </div>
-      <div v-if="showUserMenu" class="mobile-user-dropdown" @click="showUserMenu = false">
-        <div class="mobile-user-card" @click.stop>
-          <div class="mobile-user-name">{{ username }}</div>
-          <van-button round block type="danger" size="small" @click="logout">退出登录</van-button>
-        </div>
-      </div>
+      <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-body">
         <router-view v-slot="{ Component }">
           <transition name="slide-fade" mode="out-in">
@@ -150,17 +145,15 @@ import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildingInfo } from '../api'
 import { useAuthStore } from '../stores/auth'
+import { useMobile } from '../composables/useMobile'
+import MobileUserMenu from '../components/common/MobileUserMenu.vue'
 
 const showMobileMenu = ref(false)
 const showUserMenu = ref(false)
 const router = useRouter()
 const authStore = useAuthStore()
 const buildingName = ref('')
-
-const isMobile = ref(window.innerWidth <= 768)
-function handleResize() {
-  isMobile.value = window.innerWidth <= 768
-}
+const { isMobile } = useMobile()
 
 const username = ref(authStore.username)
 const loggedIn = computed(() => authStore.isLoggedIn)
@@ -176,18 +169,11 @@ function goToBuildingPage() {
   }
 }
 
-function logout() {
-  authStore.logout()
-  showToast('已退出')
-  router.push('/')
-}
-
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
   ;(async () => {
-  const bid = localStorage.getItem('building_id')
+  const bid = authStore.buildingId
   if (!bid || bid === '0' || bid === 'null') {
-    const r = localStorage.getItem('role')
+    const r = authStore.role
     if (r === 'super_admin') {
       ElMessage.info('请先在平台后台创建或选择一个公寓')
       router.push('/admin/buildings')
@@ -203,10 +189,6 @@ onMounted(() => {
     ElMessage.error('获取公寓信息失败')
   }
   })()
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -302,31 +284,6 @@ onUnmounted(() => {
 .mobile-user {
   font-size: 14px;
   color: #666;
-}
-.mobile-user-dropdown {
-  position: fixed;
-  inset: 0;
-  z-index: 600;
-  background: rgba(0,0,0,0.3);
-}
-.mobile-user-card {
-  position: absolute;
-  right: 12px;
-  top: 56px;
-  background: #fff;
-  border-radius: 10px;
-  padding: 16px;
-  min-width: 160px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.mobile-user-name {
-  font-size: 14px;
-  color: #333;
-  font-weight: 500;
-  text-align: center;
 }
 
 

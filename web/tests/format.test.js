@@ -64,7 +64,7 @@ describe('statusLabel', () => {
 describe('statusTagType', () => {
   it('returns correct Element Plus tag type', () => {
     expect(statusTagType('vacant')).toBe('success')
-    expect(statusTagType('rented')).toBe('primary')
+    expect(statusTagType('rented')).toBe('danger')
     expect(statusTagType('expiring')).toBe('warning')
     expect(statusTagType('expired')).toBe('danger')
   })

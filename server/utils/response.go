@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,20 +14,80 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+type PageResult struct {
+	Items interface{} `json:"items"`
+	Total int64       `json:"total"`
+	Page  int         `json:"page"`
+	Size  int         `json:"size"`
+}
+
+func ParsePage(c *gin.Context) (page, size int) {
+	page = 1
+	size = 20
+	if p := c.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if s := c.Query("page_size"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 && v <= 100 {
+			size = v
+		}
+	}
+	return
+}
+
+const (
+	CodeSuccess            = 0
+	CodeBadRequest         = 400
+	CodeUnauthorized       = 401
+	CodeForbidden          = 403
+	CodeNotFound           = 404
+	CodeConflict           = 409
+	CodeTooManyRequests    = 429
+	CodeInternalError      = 500
+	CodeMonthSettled       = 1001
+	CodeBuildingExpired    = 1002
+	CodeActiveContract     = 1003
+	CodeInvalidStatus      = 1004
+	CodeMissingDescription = 1005
+)
+
 func Success(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, APIResponse{Code: 0, Message: "success", Data: data})
+	c.JSON(http.StatusOK, APIResponse{Code: CodeSuccess, Message: "success", Data: data})
 }
 
 func SuccessWithMsg(c *gin.Context, msg string, data interface{}) {
-	c.JSON(http.StatusOK, APIResponse{Code: 0, Message: msg, Data: data})
+	c.JSON(http.StatusOK, APIResponse{Code: CodeSuccess, Message: msg, Data: data})
 }
 
 func Created(c *gin.Context, msg string, data interface{}) {
-	c.JSON(http.StatusCreated, APIResponse{Code: 0, Message: msg, Data: data})
+	c.JSON(http.StatusCreated, APIResponse{Code: CodeSuccess, Message: msg, Data: data})
 }
 
 func Error(c *gin.Context, httpCode int, msg string) {
-	c.JSON(httpCode, APIResponse{Code: httpCode, Message: msg})
+	bizCode := httpCode
+	switch httpCode {
+	case http.StatusBadRequest:
+		bizCode = CodeBadRequest
+	case http.StatusUnauthorized:
+		bizCode = CodeUnauthorized
+	case http.StatusForbidden:
+		bizCode = CodeForbidden
+	case http.StatusNotFound:
+		bizCode = CodeNotFound
+	case http.StatusConflict:
+		bizCode = CodeConflict
+	case http.StatusTooManyRequests:
+		bizCode = CodeTooManyRequests
+	case http.StatusInternalServerError:
+		bizCode = CodeInternalError
+	}
+	c.JSON(httpCode, APIResponse{Code: bizCode, Message: msg})
+}
+
+func ErrorWithCode(c *gin.Context, httpCode, bizCode int, msg string) {
+	c.JSON(httpCode, APIResponse{Code: bizCode, Message: msg})
 }
 
 var ErrUnauthorized = errors.New("未授权")

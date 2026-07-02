@@ -49,9 +49,9 @@ type UpdateRoomStatusReq struct {
 	Status          string   `json:"status" binding:"required"`
 	TenantName      string   `json:"tenant_name"`
 	TenantPhone     string   `json:"tenant_phone"`
-	RentPrice       float64  `json:"rent_price"`
-	Deposit         float64  `json:"deposit"`
-	EarnestMoney    float64  `json:"earnest_money"`
+	RentPrice       float64  `json:"rent_price" binding:"gte=0"`
+	Deposit         float64  `json:"deposit" binding:"gte=0"`
+	EarnestMoney    float64  `json:"earnest_money" binding:"gte=0"`
 	StartDate       string   `json:"start_date"`
 	EndDate         string   `json:"end_date"`
 	RefundedDeposit *float64 `json:"refunded_deposit"`
@@ -65,8 +65,16 @@ type UpdateContractReq struct {
 func (h *RoomHandler) GetPublic(c *gin.Context) {
 	roomID := c.Param("rid")
 	buildingID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
-	bid, _ := strconv.ParseUint(buildingID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+	bid, err := strconv.ParseUint(buildingID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
 
 	room, contract, err := h.RoomService.GetWithContract(uint(rid))
 	if err != nil {
@@ -99,8 +107,16 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 
 func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	roomID := c.Param("rid")
-	bid, _ := strconv.ParseUint(c.Param("id"), 10, 32)
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	bid, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	room, err := h.RoomService.GetByID(uint(rid))
 	if err != nil || room.BuildingID != uint(bid) {
@@ -108,7 +124,7 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 		return
 	}
 
-	contract, err := h.RoomService.GetActiveContract(uint(rid))
+	contract, err := h.RoomService.GetActiveContractPublic(uint(rid))
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "无有效合同")
 		return
@@ -117,29 +133,29 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 }
 
 func (h *RoomHandler) List(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
-		return
-	}
 
-	rooms, err := h.RoomService.List(bid)
+	page, size := utils.ParsePage(c)
+	rooms, total, err := h.RoomService.List(bid, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"rooms": rooms})
+	utils.Success(c, gin.H{"rooms": rooms, "total": total, "page": page, "size": size})
 }
 
 func (h *RoomHandler) Get(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	room, contract, err := h.RoomService.GetWithContract(uint(rid))
 	if err != nil {
@@ -156,14 +172,9 @@ func (h *RoomHandler) Get(c *gin.Context) {
 }
 
 func (h *RoomHandler) Create(c *gin.Context) {
-	buildingID, exists := c.Get("building_id")
-	if !exists {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-	bid, ok := buildingID.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "服务器错误")
 		return
 	}
 
@@ -197,7 +208,11 @@ func (h *RoomHandler) Create(c *gin.Context) {
 
 func (h *RoomHandler) Update(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	var req UpdateRoomReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -234,7 +249,20 @@ func (h *RoomHandler) Update(c *gin.Context) {
 
 func (h *RoomHandler) Delete(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+
+	var activeContractCount int64
+	h.DB.Model(&models.RentalContract{}).
+		Where("room_id = ? AND status = ?", rid, "active").
+		Count(&activeContractCount)
+	if activeContractCount > 0 {
+		utils.Error(c, http.StatusBadRequest, "该房间存在活跃合同，无法删除")
+		return
+	}
 
 	if err := h.RoomService.Delete(uint(rid)); err != nil {
 		logger.Log.Error().Err(err).Msg("删除房间失败")
@@ -247,7 +275,11 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 
 func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	var req UpdateRoomStatusReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -261,7 +293,16 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
+	if req.Status != "rented" && req.Status != "vacant" {
+		utils.Error(c, http.StatusBadRequest, "无效的状态值，仅支持 rented 或 vacant")
+		return
+	}
+
 	if req.Status == "rented" {
+		if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Update("status", "ended").Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("结束旧合同失败")
+		}
+
 		tenant := models.Tenant{
 			Name:  req.TenantName,
 			Phone: req.TenantPhone,
@@ -298,7 +339,11 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 
 func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	contract, err := h.RoomService.GetActiveContract(uint(rid))
 	if err != nil {
@@ -310,7 +355,11 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 
 func (h *RoomHandler) RenewContract(c *gin.Context) {
 	roomID := c.Param("id")
-	rid, _ := strconv.ParseUint(roomID, 10, 32)
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
 
 	var req UpdateContractReq
 	if err := c.ShouldBindJSON(&req); err != nil {

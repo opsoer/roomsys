@@ -86,11 +86,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { buildingGetBillTrend } from '../../api'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
+import '../../utils/echarts'
 
 const trendRange = ref('12')
 const trendLoading = ref(false)

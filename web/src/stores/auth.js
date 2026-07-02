@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
@@ -54,6 +54,30 @@ export const useAuthStore = defineStore('auth', () => {
     if (role.value === 'super_admin') return '/admin/buildings'
     return '/landlord/rooms'
   }
+
+  function handleStorageChange(e) {
+    if (e.key === 'token') {
+      token.value = e.newValue || ''
+    } else if (e.key === 'refreshToken') {
+      refreshToken.value = e.newValue || ''
+    } else if (e.key === 'username') {
+      username.value = e.newValue || ''
+    } else if (e.key === 'role') {
+      role.value = e.newValue || ''
+    } else if (e.key === 'building_id') {
+      buildingId.value = e.newValue || ''
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorageChange)
+  }
+
+  onUnmounted(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  })
 
   return {
     token,

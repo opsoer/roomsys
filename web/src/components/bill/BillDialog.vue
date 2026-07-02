@@ -14,7 +14,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="金额" prop="amount" :rules="[{ required: true, message: '请输入金额' }]">
-          <el-input-number v-model="form.amount" :min="0" :precision="2" style="width: 100%" />
+          <el-input-number v-model="form.amount" :min="0.01" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="账单日期" prop="bill_date" :rules="[{ required: true, message: '请选择日期' }]">
           <el-date-picker v-model="form.bill_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -33,7 +33,7 @@
           <span style="font-weight:600;color:#f56c6c">{{ form._old_amount.toFixed(2) }}</span>
         </el-form-item>
         <el-form-item label="新金额" prop="amount" :rules="[{ required: true, message: '请输入金额' }]">
-          <el-input-number v-model="form.amount" :min="0" :precision="2" style="width: 100%" />
+          <el-input-number v-model="form.amount" :min="0.01" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="修改原因" prop="modify_reason"
           :rules="[{ required: true, message: '请填写修改原因' }]">
