@@ -58,7 +58,7 @@
       <div class="upload-actions">
         <el-upload
           :http-request="customUpload"
-          :data="{ category: 'cover' }"
+          :data="{ category: 'cover', roomId: room.id }"
           :on-success="handleUploadSuccess"
           :on-error="handleUploadError"
           :before-upload="beforeUploadImage"
@@ -69,7 +69,7 @@
         </el-upload>
         <el-upload
           :http-request="customUpload"
-          :data="{ category: 'gallery' }"
+          :data="{ category: 'gallery', roomId: room.id }"
           :on-success="handleUploadSuccess"
           :on-error="handleUploadError"
           :before-upload="beforeUploadImage"
@@ -81,7 +81,7 @@
         </el-upload>
         <el-upload
           :http-request="customUpload"
-          :data="{ category: 'video' }"
+          :data="{ category: 'video', roomId: room.id }"
           :on-success="handleUploadSuccess"
           :on-error="handleUploadError"
           :before-upload="beforeUploadVideo"

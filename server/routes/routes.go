@@ -54,6 +54,18 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		public.GET("/media/*filepath", mediaH.Serve)
+
+		public.GET("/config", func(c *gin.Context) {
+			domain := ""
+			scheme := "http"
+			if cfg.QiniuUseHTTPS {
+				scheme = "https"
+			}
+			if cfg.QiniuDomain != "" {
+				domain = cfg.QiniuDomain
+			}
+			c.JSON(200, gin.H{"cdn_domain": domain, "cdn_scheme": scheme})
+		})
 	}
 
 	// ========== 平台超级管理员 ==========

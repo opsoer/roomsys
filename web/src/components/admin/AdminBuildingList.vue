@@ -38,6 +38,9 @@
       </div>
       <el-card v-for="b in buildings" :key="b.id" shadow="hover" style="margin-bottom: 12px;">
         <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;">
+          <div v-if="b.cover_image" style="width:120px;height:90px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f0f0f0;">
+            <img :src="mediaUrl(b.cover_image)" :alt="b.name" style="width:100%;height:100%;object-fit:cover;" />
+          </div>
           <div style="flex: 1; min-width: 240px;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
               <span style="font-size: 18px; font-weight: 600;">{{ b.name }}</span>
@@ -88,6 +91,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { mediaUrl } from '../../utils/format'
 
 defineProps({
   buildings: { type: Array, default: () => [] },

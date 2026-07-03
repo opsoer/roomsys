@@ -33,5 +33,6 @@ app.component('Search', Search)
 app.component('Setting', Setting)
 app.component('User', User)
 app.component('VideoCamera', VideoCamera)
+
 app.use(router)
 app.mount('#app')

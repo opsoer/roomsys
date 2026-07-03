@@ -149,7 +149,12 @@ func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) err
 	cfg := h.qiniuConfig()
 	formUploader := storage.NewFormUploader(&cfg)
 	ret := storage.PutRet{}
-	return formUploader.Put(context.Background(), &ret, upToken, key, reader, size, nil)
+	extra := storage.PutExtra{
+		Params: map[string]string{
+			"x-qn-meta-cache-control": "public, max-age=31536000, immutable",
+		},
+	}
+	return formUploader.Put(context.Background(), &ret, upToken, key, reader, size, &extra)
 }
 
 func (h *MediaHandler) qiniuDelete(key string) error {
@@ -356,6 +361,7 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 		}
 		url := fmt.Sprintf("%s://%s/%s", scheme, domain, safePath)
 		logger.Log.Debug().Str("path", safePath).Str("redirect", url).Msg("文件服务: 重定向到七牛")
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
 		c.Redirect(http.StatusFound, url)
 		return
 	}

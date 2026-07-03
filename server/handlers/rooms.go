@@ -146,7 +146,30 @@ func (h *RoomHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"rooms": rooms, "total": total, "page": page, "size": size})
+	type RoomWithThumbnail struct {
+		models.Room
+		Thumbnail string `json:"thumbnail"`
+	}
+	var result []RoomWithThumbnail
+	for _, r := range rooms {
+		thumb := ""
+		for _, m := range r.Media {
+			if m.Category == "cover" && m.Type == "image" {
+				thumb = m.FilePath
+				break
+			}
+		}
+		if thumb == "" {
+			for _, m := range r.Media {
+				if m.Type == "image" {
+					thumb = m.FilePath
+					break
+				}
+			}
+		}
+		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb})
+	}
+	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
 func (h *RoomHandler) Get(c *gin.Context) {

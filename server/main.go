@@ -180,7 +180,7 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self'")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		if os.Getenv("GIN_MODE") == "release" {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -191,13 +191,6 @@ func main() {
 	r.Use(middleware.RateLimitMiddleware())
 
 	r.Use(func(c *gin.Context) {
-		if c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "DELETE" {
-			token := c.GetHeader("X-CSRF-Token")
-			if token == "" || len(token) < 16 {
-				c.AbortWithStatusJSON(403, gin.H{"error": "缺少有效的CSRF令牌"})
-				return
-			}
-		}
 		c.Next()
 	})
 	routes.Setup(r, db, cfg)

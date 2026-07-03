@@ -17,15 +17,15 @@
             <el-icon><HomeFilled /></el-icon>
             <span class="nav-text">租房管理</span>
           </el-menu-item>
-          <el-menu-item v-if="isBuildingAdmin" index="/landlord/bills">
+          <el-menu-item v-if="isBuildingAdmin && isFullPackage" index="/landlord/bills">
             <el-icon><Money /></el-icon>
             <span class="nav-text">财务管理</span>
           </el-menu-item>
-          <el-menu-item v-if="isBuildingAdmin" index="/landlord/dividends">
+          <el-menu-item v-if="isBuildingAdmin && isFullPackage" index="/landlord/dividends">
             <el-icon><Coin /></el-icon>
             <span class="nav-text">分红管理</span>
           </el-menu-item>
-          <el-menu-item v-if="isBuildingAdmin" index="/landlord/tasks">
+          <el-menu-item v-if="isBuildingAdmin && isFullPackage" index="/landlord/tasks">
             <el-icon><List /></el-icon>
             <span class="nav-text">代办事项</span>
           </el-menu-item>
@@ -42,7 +42,7 @@
           <template v-if="loggedIn">
             <el-tag v-if="isBuildingAdmin" size="small" type="warning">管理员</el-tag>
             <span class="user-text">{{ username }}</span>
-            <el-button size="small" @click="logout">退出</el-button>
+            <el-button size="small" @click="handleLogout">退出</el-button>
           </template>
         </div>
       </el-header>
@@ -89,7 +89,7 @@
               :class="{ 'menu-active': $route.path.startsWith('/landlord/rooms') }"
             />
             <van-cell
-              v-if="isBuildingAdmin"
+              v-if="isBuildingAdmin && isFullPackage"
               title="财务管理"
               icon="gold-coin-o"
               :to="'/landlord/bills'"
@@ -97,7 +97,7 @@
               :class="{ 'menu-active': $route.path.startsWith('/landlord/bills') }"
             />
             <van-cell
-              v-if="isBuildingAdmin"
+              v-if="isBuildingAdmin && isFullPackage"
               title="分红管理"
               icon="chart-treemap"
               :to="'/landlord/dividends'"
@@ -105,7 +105,7 @@
               :class="{ 'menu-active': $route.path.startsWith('/landlord/dividends') }"
             />
             <van-cell
-              v-if="isBuildingAdmin"
+              v-if="isBuildingAdmin && isFullPackage"
               title="代办事项"
               icon="todo-o"
               :to="'/landlord/tasks'"
@@ -153,11 +153,19 @@ const showUserMenu = ref(false)
 const router = useRouter()
 const authStore = useAuthStore()
 const buildingName = ref('')
+const buildingPackage = ref('basic')
 const { isMobile } = useMobile()
 
 const username = ref(authStore.username)
 const loggedIn = computed(() => authStore.isLoggedIn)
 const isBuildingAdmin = computed(() => authStore.isBuildingAdmin)
+const isFullPackage = computed(() => buildingPackage.value === 'full')
+
+function handleLogout() {
+  authStore.logout()
+  showToast('已退出')
+  router.push('/')
+}
 
 function goToBuildingPage() {
   const bid = authStore.buildingId
@@ -185,6 +193,7 @@ onMounted(() => {
   try {
     const res = await getBuildingInfo()
     buildingName.value = res.data.building?.name || ''
+    buildingPackage.value = res.data.building?.package || 'basic'
   } catch {
     ElMessage.error('获取公寓信息失败')
   }
