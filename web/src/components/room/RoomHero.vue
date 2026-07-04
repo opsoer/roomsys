@@ -30,6 +30,8 @@
 </template>
 
 <script setup>
+import { mediaUrl, statusLabel } from '../../utils/format'
+
 defineProps({
   room: { type: Object, required: true },
   coverImage: { type: Object, default: null },
@@ -38,17 +40,8 @@ defineProps({
 
 defineEmits(['fullscreen', 'delete-media', 'edit', 'delete-room'])
 
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
-}
-
 function statusTag(s) {
   return s === 'vacant' ? 'success' : s === 'rented' ? 'danger' : s === 'expiring' ? 'warning' : 'info'
-}
-
-function statusLabel(s) {
-  return s === 'vacant' ? '未出租' : s === 'rented' ? '已出租' : s === 'expiring' ? '即将退租' : '待处理退租'
 }
 </script>
 

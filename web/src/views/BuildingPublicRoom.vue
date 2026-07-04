@@ -18,7 +18,7 @@
           fit="cover"
           class="swipe-img"
           @click="previewImage(i)"
-          @error="e => e.target.style.display='none'"
+          @error="e => { if (e.target.tagName === 'IMG') e.target.src = '/default-image.svg' }"
         />
       </van-swipe-item>
     </van-swipe>
@@ -51,6 +51,19 @@
         <van-icon name="contact" size="16" color="#e6a23c" />
         <span class="landlord-name">{{ l.name }}</span>
         <a :href="'tel:' + l.phone" class="landlord-phone">{{ l.phone }}</a>
+      </div>
+    </div>
+
+    <!-- 到期信息（公开显示） -->
+    <div v-if="room.end_date" class="room-section">
+      <div class="section-title">
+        <van-icon name="clock-o" /> 退租信息
+      </div>
+      <div class="contract-grid">
+        <div class="contract-row">
+          <span class="contract-label"><van-icon name="clock-o" /> 预计退租</span>
+          <span class="contract-val" style="color:#e6a23c;font-weight:600;">{{ room.end_date }}</span>
+        </div>
       </div>
     </div>
 
@@ -167,7 +180,7 @@ onMounted(async () => {
   try {
     const res = await getBuildingDetail(buildingId.value)
     building.value = res.data.building
-  } catch {}
+  } catch { showToast('加载房东信息失败') }
 })
 </script>
 

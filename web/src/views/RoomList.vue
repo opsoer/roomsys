@@ -45,7 +45,7 @@
     <div v-else class="room-grid">
       <div v-for="room in rooms" :key="room.id" class="room-card" @click="$router.push(`/landlord/rooms/${room.id}`)">
         <div class="room-card-image">
-            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
+            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
           <div v-else class="room-card-placeholder">
             <el-icon :size="48" color="#ccc"><Picture /></el-icon>
           </div>
@@ -95,6 +95,7 @@ import { ref, onMounted } from 'vue'
 import { buildingGetRooms, buildingCreateRoom } from '../api'
 import { ElMessage } from 'element-plus'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
+import { mediaUrl, statusLabel } from '../utils/format'
 
 const floorOptions = FLOOR_OPTIONS
 const layoutOptions = LAYOUT_OPTIONS
@@ -108,15 +109,6 @@ const showAddDialog = ref(false)
 const submitting = ref(false)
 const addForm = ref({ room_number: '', floor: '', layout: '', description: '' })
 const addFormRef = ref(null)
-
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
-}
-
-function statusLabel(s) {
-  return s === 'vacant' ? '未出租' : s === 'rented' ? '已出租' : '即将退租'
-}
 
 async function fetchRooms() {
   loading.value = true

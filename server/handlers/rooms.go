@@ -92,14 +92,15 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 		EndDate         string                  `json:"end_date"`
 	}
 	detail := RoomDetail{Room: *room}
-	if h.hasAuth(c) {
+	if contract != nil {
+		detail.EndDate = contract.EndDate
+		detail.Room.Status = dynamicRoomStatus(detail.Room.Status, detail.EndDate)
+	}
+	if h.hasAuth(c) && contract != nil {
 		tokenStr := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 		claims, err := utils.ParseToken(tokenStr, h.Cfg.JWTSecret)
 		if err == nil && claims.BuildingID > 0 && claims.BuildingID == room.BuildingID {
-			if contract != nil {
-				detail.CurrentContract = contract
-				detail.EndDate = contract.EndDate
-			}
+			detail.CurrentContract = contract
 		}
 	}
 	utils.Success(c, gin.H{"room": detail})
@@ -189,8 +190,13 @@ func (h *RoomHandler) Get(c *gin.Context) {
 	type RoomDetail struct {
 		models.Room
 		CurrentContract *models.RentalContract `json:"current_contract,omitempty"`
+		EndDate         string                  `json:"end_date"`
 	}
 	detail := RoomDetail{Room: *room, CurrentContract: contract}
+	if contract != nil {
+		detail.EndDate = contract.EndDate
+		detail.Room.Status = dynamicRoomStatus(detail.Room.Status, detail.EndDate)
+	}
 	utils.Success(c, gin.H{"room": detail})
 }
 

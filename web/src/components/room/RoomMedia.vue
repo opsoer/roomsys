@@ -48,6 +48,8 @@
 </template>
 
 <script setup>
+import { mediaUrl } from '../../utils/format'
+
 defineProps({
   room: { type: Object, required: true },
   galleryImages: { type: Array, default: () => [] },
@@ -56,11 +58,6 @@ defineProps({
 })
 
 defineEmits(['fullscreen', 'delete-media'])
-
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
-}
 </script>
 
 <style scoped>

@@ -18,7 +18,7 @@ export function statusLabel(status) {
   const labels = {
     vacant: '未出租',
     rented: '已出租',
-    expiring: '即将到期',
+    expiring: '即将退租',
     expired: '已过期',
   }
   return labels[status] || status

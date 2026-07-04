@@ -88,7 +88,7 @@
         @click="$router.push(`/building/${id}/room/${room.id}`)"
       >
         <div class="room-card-img">
-          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
+          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
           <div v-else class="room-card-img-placeholder">
             <van-icon name="photo-o" size="36" color="#ccc" />
           </div>

@@ -46,7 +46,7 @@
           @click="$router.push(`/building/${b.id}`)"
         >
           <div class="card-img">
-            <img v-if="b.cover_image" :src="mediaUrl(b.cover_image)" :alt="b.name" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.png' }" />
+            <img v-if="b.cover_image" :src="mediaUrl(b.cover_image)" :alt="b.name" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
             <div v-else class="card-img-placeholder">
               <van-icon name="home-o" size="48" color="#ccc" />
             </div>

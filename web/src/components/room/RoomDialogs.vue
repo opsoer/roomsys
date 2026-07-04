@@ -27,18 +27,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showEndDateDialog" title="续租" width="420px">
-      <el-form ref="endDateFormRef" :model="endDateForm" label-width="90px">
-        <el-form-item label="续租租金" prop="rent_price" :rules="[{ required: true, message: '请输入续租租金' }]">
-          <el-input-number v-model="endDateForm.rent_price" :min="0" :precision="2" style="width:100%" />
+    <el-dialog v-model="showEndDateDialog" title="修改退租时间" width="420px">
+      <el-form ref="endDateFormRef" :model="endDateForm" label-width="100px">
+        <el-form-item label="退租日期" prop="end_date" :rules="[{ required: true, message: '请选择退租日期' }]">
+          <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择退租日期" style="width:100%" />
         </el-form-item>
-        <el-form-item label="续租结束日" prop="end_date" :rules="[{ required: true, message: '请选择续租结束日' }]">
-          <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择续租结束日" style="width:100%" />
+        <el-form-item label="退租租金" prop="rent_price" :rules="[{ required: true, message: '请输入退租租金' }]">
+          <el-input-number v-model="endDateForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEndDateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="endDateSubmitting" @click="handleUpdateEndDate">确定续租</el-button>
+        <el-button type="primary" :loading="endDateSubmitting" @click="handleUpdateEndDate">确定修改</el-button>
       </template>
     </el-dialog>
 

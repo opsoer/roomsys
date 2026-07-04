@@ -12,7 +12,7 @@
       <div class="sidebar-card-header">
         <h4 class="sidebar-title" style="margin:0">当前租约</h4>
         <el-button v-if="room.status === 'rented' || room.status === 'expiring'" size="small" text type="primary" @click="$emit('renew')">
-          续租
+          修改退租时间
         </el-button>
       </div>
       <div class="sidebar-row">

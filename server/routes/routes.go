@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"rental-server/config"
 	"rental-server/handlers"
 	"rental-server/middleware"
@@ -17,7 +19,14 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		c.File("../web/dist/index.html")
 	})
 
-	handlers.AutoCheckExpiringContracts(db)
+	go func() {
+		handlers.AutoCheckExpiringContracts(db)
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			handlers.AutoCheckExpiringContracts(db)
+		}
+	}()
 
 	buildingSvc := services.NewBuildingService(db)
 	roomSvc := services.NewRoomService(db)
@@ -38,7 +47,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
-		public.GET("/buildings/districts", buildingH.Districts)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 

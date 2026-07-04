@@ -190,9 +190,6 @@ func main() {
 
 	r.Use(middleware.RateLimitMiddleware())
 
-	r.Use(func(c *gin.Context) {
-		c.Next()
-	})
 	routes.Setup(r, db, cfg)
 	logger.Log.Info().Str("port", cfg.ServerPort).Msg("服务启动")
 	r.Run(":" + cfg.ServerPort)

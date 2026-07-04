@@ -39,6 +39,7 @@ import RoomHero from '../components/room/RoomHero.vue'
 import RoomMedia from '../components/room/RoomMedia.vue'
 import RoomSidebar from '../components/room/RoomSidebar.vue'
 import RoomDialogs from '../components/room/RoomDialogs.vue'
+import { mediaUrl } from '../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,11 +76,6 @@ function showFullscreen(url) {
 
 function goBack() {
   router.push('/landlord/rooms')
-}
-
-function mediaUrl(path) {
-  if (!path) return ''
-  return `/api/media/${path}`
 }
 
 async function fetchRoom() {

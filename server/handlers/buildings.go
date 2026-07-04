@@ -15,6 +15,24 @@ import (
 	"gorm.io/gorm"
 )
 
+func dynamicRoomStatus(dbStatus string, endDate string) string {
+	if endDate == "" {
+		return dbStatus
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return dbStatus
+	}
+	now := utils.Now()
+	if now.After(end) {
+		return "expired"
+	}
+	if end.Before(now.AddDate(0, 0, 30)) {
+		return "expiring"
+	}
+	return dbStatus
+}
+
 type BuildingHandler struct {
 	DB             *gorm.DB
 	BuildingService *services.BuildingService
@@ -165,7 +183,9 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	if req.BuildingNo != "" {
 		updates["building_no"] = req.BuildingNo
 	}
-	updates["cover_image"] = req.CoverImage
+	if req.CoverImage != "" {
+		updates["cover_image"] = req.CoverImage
+	}
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
@@ -291,10 +311,8 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
+	requestedStatus := c.Query("status")
 	query := h.DB.Where("building_id = ?", buildingID)
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
 	if floor := c.Query("floor"); floor != "" {
 		query = query.Where("floor = ?", floor)
 	}
@@ -307,9 +325,22 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
+
+	roomIDs := make([]uint, len(rooms))
+	for i, r := range rooms {
+		roomIDs[i] = r.ID
+	}
+	var contracts []models.RentalContract
+	h.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
+	contractMap := make(map[uint]string)
+	for _, ct := range contracts {
+		contractMap[ct.RoomID] = ct.EndDate
+	}
+
 	type RoomWithThumbnail struct {
 		models.Room
 		Thumbnail string `json:"thumbnail"`
+		EndDate   string `json:"end_date"`
 	}
 	var result []RoomWithThumbnail
 	for _, r := range rooms {
@@ -328,7 +359,13 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 				}
 			}
 		}
-		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb})
+		endDate := contractMap[r.ID]
+		dynStatus := dynamicRoomStatus(r.Status, endDate)
+		r.Status = dynStatus
+		if requestedStatus != "" && dynStatus != requestedStatus {
+			continue
+		}
+		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: endDate})
 	}
 	utils.Success(c, gin.H{"rooms": result})
 }
@@ -370,7 +407,9 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
-	updates["cover_image"] = req.CoverImage
+	if req.CoverImage != "" {
+		updates["cover_image"] = req.CoverImage
+	}
 	if err := h.BuildingService.Update(bid, updates); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新公寓信息失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
@@ -394,6 +433,3 @@ func (h *BuildingHandler) MyStats(c *gin.Context) {
 	utils.Success(c, gin.H{"stats": stats})
 }
 
-func (h *BuildingHandler) Districts(c *gin.Context) {
-	utils.Success(c, gin.H{"districts": []interface{}{}})
-}

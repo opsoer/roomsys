@@ -221,6 +221,27 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	subDir := vf.MediaType + "s"
 	if category == "cover" {
 		subDir = "covers"
+
+		oldMedias, err := h.MediaService.GetMediaByRoomAndCategory(room.ID, category)
+		if err == nil {
+			for _, oldMedia := range oldMedias {
+				if h.useQiniu() {
+					if delErr := h.qiniuDelete(oldMedia.FilePath); delErr != nil {
+						logger.Log.Error().Err(delErr).Str("key", oldMedia.FilePath).Msg("删除旧封面文件失败")
+					}
+				} else {
+					absPath := filepath.Join(h.Cfg.UploadDir, oldMedia.FilePath)
+					if delErr := os.Remove(absPath); delErr != nil {
+						logger.Log.Error().Err(delErr).Str("path", absPath).Msg("删除旧封面文件失败")
+					}
+				}
+				if delErr := h.MediaService.DeleteMedia(&oldMedia); delErr != nil {
+					logger.Log.Error().Err(delErr).Uint("media_id", oldMedia.ID).Msg("删除旧封面记录失败")
+				} else {
+					logger.Log.Info().Uint("media_id", oldMedia.ID).Str("key", oldMedia.FilePath).Msg("已删除旧封面")
+				}
+			}
+		}
 	}
 
 	uuidName := uuid.New().String() + vf.Ext
@@ -313,6 +334,20 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
+
+	if building.CoverImage != "" {
+		if h.useQiniu() {
+			if delErr := h.qiniuDelete(building.CoverImage); delErr != nil {
+				logger.Log.Error().Err(delErr).Str("key", building.CoverImage).Msg("删除旧公寓封面失败")
+			}
+		} else {
+			absPath := filepath.Join(h.Cfg.UploadDir, building.CoverImage)
+			if delErr := os.Remove(absPath); delErr != nil {
+				logger.Log.Error().Err(delErr).Str("path", absPath).Msg("删除旧公寓封面失败")
+			}
+		}
+	}
+
 	vf, file, header, err := validateUploadFile(c, false)
 	if err != nil {
 		logger.Log.Warn().Err(err).Uint("building_id", bid).Msg("封面上传失败: " + err.Error())

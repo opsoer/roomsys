@@ -20,7 +20,7 @@ func (h *SettingsHandler) Get(c *gin.Context) {
 	key := c.Param("key")
 	setting, err := h.SettingsService.Get(key)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "设置不存在")
+		utils.Success(c, gin.H{"key": key, "value": ""})
 		return
 	}
 	utils.Success(c, gin.H{"key": setting.Key, "value": setting.Value})
