@@ -55,9 +55,13 @@
 
     <div v-if="isAdmin" class="sidebar-card">
       <h4 class="sidebar-title">上传媒体</h4>
-      <div v-if="uploading" style="margin-bottom:12px">
-        <el-progress :percentage="uploadProgress" :stroke-width="6" />
-        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">视频压缩中（首次加载约 25MB 引擎）...</div>
+      <div v-if="uploading || isCompressing" style="margin-bottom:12px">
+        <el-progress v-if="loadProgress === -1" :percentage="0" :indeterminate="true" :stroke-width="6" />
+        <el-progress v-else :percentage="isCompressing && loadProgress < 100 ? loadProgress : uploadProgress" :stroke-width="6" />
+        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">
+          <template v-if="loadProgress < 0 || loadProgress < 100">正在下载压缩引擎{{ loadProgress >= 0 ? '... ' + loadProgress + '%' : '...' }}</template>
+          <template v-else>正在压缩视频...</template>
+        </div>
       </div>
       <div class="upload-actions">
         <el-upload
@@ -117,6 +121,7 @@ const emit = defineEmits(['renew', 'rent', 'vacant', 'upload-success'])
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const isCompressing = ref(false)
+const loadProgress = ref(0)
 
 function compressImage(file, maxWidth = 1600, quality = 0.65) {
   return new Promise((resolve, reject) => {
@@ -163,8 +168,9 @@ async function customUpload(options) {
     let file
     if (options.file.type.startsWith('video/')) {
       isCompressing.value = true
+      loadProgress.value = 0
       try {
-        file = await compressVideo(options.file)
+        file = await compressVideo(options.file, (p) => { loadProgress.value = p })
       } catch (e) {
         isCompressing.value = false
         uploading.value = false
@@ -186,6 +192,7 @@ async function customUpload(options) {
         }
       } finally {
         isCompressing.value = false
+        loadProgress.value = 0
       }
     } else {
       file = await compressImage(options.file)

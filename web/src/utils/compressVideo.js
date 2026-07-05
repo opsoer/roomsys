@@ -1,12 +1,26 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile, toBlobURL } from '@ffmpeg/util'
+import { fetchFile } from '@ffmpeg/util'
 
 let ffmpeg = null
 let loadPromise = null
 
-const CORE_URL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
+const CORE_URL = '/api/ffmpeg'
 
-async function getFFmpeg() {
+function fetchBlobWithProgress(url, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url)
+    xhr.responseType = 'blob'
+    xhr.onprogress = (e) => {
+      if (onProgress) onProgress(e.total ? Math.round((e.loaded / e.total) * 100) : -1)
+    }
+    xhr.onload = () => resolve(URL.createObjectURL(xhr.response))
+    xhr.onerror = () => reject(new Error('下载失败'))
+    xhr.send()
+  })
+}
+
+async function getFFmpeg(onProgress) {
   if (ffmpeg) return ffmpeg
   if (loadPromise) return loadPromise
 
@@ -14,8 +28,8 @@ async function getFFmpeg() {
     try {
       const instance = new FFmpeg()
       await instance.load({
-        coreURL: await toBlobURL(`${CORE_URL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${CORE_URL}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: await fetchBlobWithProgress(`${CORE_URL}/ffmpeg-core.js`, onProgress),
+        wasmURL: await fetchBlobWithProgress(`${CORE_URL}/ffmpeg-core.wasm`, onProgress),
       })
       ffmpeg = instance
       return instance
@@ -30,12 +44,12 @@ async function getFFmpeg() {
   return loadPromise
 }
 
-export async function compressVideo(file) {
+export async function compressVideo(file, onLoadProgress) {
   if (!file.type.startsWith('video/')) return file
   if (file.size < 5 * 1024 * 1024) return file
 
   try {
-    const ff = await getFFmpeg()
+    const ff = await getFFmpeg(onLoadProgress)
     const ext = file.name.match(/\.(\w+)$/)?.[1] || 'mp4'
     const inputName = `input.${ext}`
     const outputName = 'output.mp4'

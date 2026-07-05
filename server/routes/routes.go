@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"path/filepath"
 	"time"
 
 	"rental-server/config"
@@ -15,6 +16,7 @@ import (
 func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	r.Static("/assets", "../web/dist/assets")
 	r.StaticFile("/", "../web/dist/index.html")
+	r.Static("/api/ffmpeg", filepath.Join(cfg.UploadDir, "ffmpeg"))
 	r.NoRoute(func(c *gin.Context) {
 		c.File("../web/dist/index.html")
 	})
