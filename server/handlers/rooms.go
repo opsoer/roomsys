@@ -171,14 +171,22 @@ func (h *RoomHandler) List(c *gin.Context) {
 		thumb := ""
 		for _, m := range r.Media {
 			if m.Category == "cover" && m.Type == "image" {
-				thumb = m.FilePath
+				if m.ThumbnailPath != "" {
+					thumb = m.ThumbnailPath
+				} else {
+					thumb = m.FilePath
+				}
 				break
 			}
 		}
 		if thumb == "" {
 			for _, m := range r.Media {
 				if m.Type == "image" {
-					thumb = m.FilePath
+					if m.ThumbnailPath != "" {
+						thumb = m.ThumbnailPath
+					} else {
+						thumb = m.FilePath
+					}
 					break
 				}
 			}

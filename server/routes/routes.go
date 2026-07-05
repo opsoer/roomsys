@@ -136,6 +136,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.POST("/rooms/:id/media", mediaH.Upload)
 		building.DELETE("/rooms/:id/media/:mediaId", mediaH.Delete)
 		building.POST("/cover", mediaH.UploadCover)
+		building.GET("/media/upload-token", mediaH.GetUploadToken)
+		building.POST("/rooms/:id/media/confirm", mediaH.ConfirmUpload)
 
 		// 管理员管理（building_admin 可创建普通 admin）
 		building.POST("/auth/create-admin", authH.CreateRegularAdmin)

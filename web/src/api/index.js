@@ -281,10 +281,25 @@ export function getUnprocessedRecruitCount() {
   return api.get('/admin/recruit/unprocessed-count')
 }
 
-export function buildingUploadMedia(roomId, formData) {
+export function buildingUploadMedia(roomId, formData, onProgress) {
   return uploadApi.post(`/building/rooms/${roomId}/media`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress,
   })
+}
+
+export function getUploadToken(params) {
+  return api.get('/building/media/upload-token', { params })
+}
+
+export function confirmMediaUpload(roomId, data) {
+  return uploadApi.post(`/building/rooms/${roomId}/media/confirm`, data, {
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+export function getConfig() {
+  return api.get('/config')
 }
 
 export default api

@@ -55,6 +55,7 @@
 
     <div v-if="isAdmin" class="sidebar-card">
       <h4 class="sidebar-title">上传媒体</h4>
+      <el-progress v-if="uploading" :percentage="uploadProgress" :stroke-width="6" style="margin-bottom:12px" />
       <div class="upload-actions">
         <el-upload
           :http-request="customUpload"
@@ -96,6 +97,7 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { buildingUploadMedia } from '../../api'
 
@@ -108,17 +110,66 @@ defineProps({
 
 const emit = defineEmits(['renew', 'rent', 'vacant', 'upload-success'])
 
-function customUpload(options) {
-  const formData = new FormData()
-  formData.append('file', options.file)
-  for (const key in options.data) {
-    formData.append(key, options.data[key])
-  }
-  buildingUploadMedia(options.data.roomId || '', formData).then(res => {
-    options.onSuccess(res.data, options.file, options.fileList)
-  }).catch(err => {
-    options.onError(err, options.file, options.fileList)
+const uploading = ref(false)
+const uploadProgress = ref(0)
+
+function compressImage(file, maxWidth = 1920, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      resolve(file)
+      return
+    }
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width <= maxWidth && height <= maxWidth) {
+        resolve(file)
+        return
+      }
+      const canvas = document.createElement('canvas')
+      if (width > maxWidth) {
+        height = Math.round((maxWidth / width) * height)
+        width = maxWidth
+      }
+      if (height > maxWidth) {
+        width = Math.round((maxWidth / height) * width)
+        height = maxWidth
+      }
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(blob => {
+        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+        resolve(compressed)
+      }, 'image/jpeg', quality)
+    }
+    img.onerror = () => resolve(file)
+    img.src = url
   })
+}
+
+async function customUpload(options) {
+  uploading.value = true
+  uploadProgress.value = 0
+  try {
+    const compressed = await compressImage(options.file)
+    const formData = new FormData()
+    formData.append('file', compressed)
+    for (const key in options.data) {
+      formData.append(key, options.data[key])
+    }
+    const res = await buildingUploadMedia(options.data.roomId || '', formData, (e) => {
+      uploadProgress.value = Math.round((e.loaded / e.total) * 100)
+    })
+    options.onSuccess(res.data, options.file, options.fileList)
+  } catch (err) {
+    options.onError(err, options.file, options.fileList)
+  } finally {
+    uploading.value = false
+  }
 }
 
 function handleUploadError() {

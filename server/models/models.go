@@ -69,15 +69,16 @@ type Room struct {
 }
 
 type RoomMedia struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	RoomID    uint      `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
-	Type      string    `gorm:"size:10;not null" json:"type"`
-	Category  string    `gorm:"size:20;not null;default:'gallery'" json:"category"`
-	FilePath  string    `gorm:"size:500;not null" json:"file_path"`
-	FileName  string    `gorm:"size:255" json:"file_name"`
-	FileSize  int64     `json:"file_size"`
-	SortOrder int       `gorm:"default:0" json:"sort_order"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	RoomID        uint      `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
+	Type          string    `gorm:"size:10;not null" json:"type"`
+	Category      string    `gorm:"size:20;not null;default:'gallery'" json:"category"`
+	FilePath      string    `gorm:"size:500;not null" json:"file_path"`
+	ThumbnailPath string    `gorm:"size:500" json:"thumbnail_path"`
+	FileName      string    `gorm:"size:255" json:"file_name"`
+	FileSize      int64     `json:"file_size"`
+	SortOrder     int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type Tenant struct {

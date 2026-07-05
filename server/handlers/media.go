@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -108,6 +109,21 @@ func (h *MediaHandler) uploadToStorage(key string, file io.Reader, size int64) e
 	return err
 }
 
+func qiniuUploadURL(zone string) string {
+	switch zone {
+	case "z0":
+		return "https://upload.qiniup.com"
+	case "z1":
+		return "https://upload-z1.qiniup.com"
+	case "z2":
+		return "https://upload-z2.qiniup.com"
+	case "na0":
+		return "https://upload-na0.qiniup.com"
+	default:
+		return "https://upload-z2.qiniup.com"
+	}
+}
+
 func getZone(name string) *storage.Region {
 	switch name {
 	case "z0":
@@ -188,6 +204,42 @@ func (h *MediaHandler) getDomain() (string, error) {
 	return domains[0].Domain, nil
 }
 
+func (h *MediaHandler) uploadAndProcess(fileData []byte, vf *validatedFile, key string) (processedSize int64, thumbKey string, err error) {
+	processed, thumbnail, pErr := utils.ProcessImageBytes(fileData, vf.Ext)
+	if pErr != nil {
+		logger.Log.Warn().Err(pErr).Msg("图片处理失败，使用原图")
+		processed = fileData
+	}
+
+	if err := h.uploadToStorage(key, bytes.NewReader(processed), int64(len(processed))); err != nil {
+		return 0, "", err
+	}
+
+	if thumbnail != nil {
+		thumbName := "thumb_" + filepath.Base(key)
+		thumbKey = filepath.ToSlash(filepath.Join(filepath.Dir(key), thumbName))
+		if tErr := h.uploadToStorage(thumbKey, bytes.NewReader(thumbnail), int64(len(thumbnail))); tErr != nil {
+			logger.Log.Warn().Err(tErr).Msg("上传缩略图失败，不影响主文件")
+			thumbKey = ""
+		}
+	}
+
+	return int64(len(processed)), thumbKey, nil
+}
+
+func (h *MediaHandler) deleteFile(key string) {
+	if h.useQiniu() {
+		if err := h.qiniuDelete(key); err != nil {
+			logger.Log.Warn().Err(err).Str("key", key).Msg("删除文件失败")
+		}
+	} else {
+		absPath := filepath.Join(h.Cfg.UploadDir, key)
+		if err := os.Remove(absPath); err != nil {
+			logger.Log.Warn().Err(err).Str("path", absPath).Msg("删除本地文件失败")
+		}
+	}
+}
+
 func (h *MediaHandler) Upload(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -225,15 +277,9 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		oldMedias, err := h.MediaService.GetMediaByRoomAndCategory(room.ID, category)
 		if err == nil {
 			for _, oldMedia := range oldMedias {
-				if h.useQiniu() {
-					if delErr := h.qiniuDelete(oldMedia.FilePath); delErr != nil {
-						logger.Log.Error().Err(delErr).Str("key", oldMedia.FilePath).Msg("删除旧封面文件失败")
-					}
-				} else {
-					absPath := filepath.Join(h.Cfg.UploadDir, oldMedia.FilePath)
-					if delErr := os.Remove(absPath); delErr != nil {
-						logger.Log.Error().Err(delErr).Str("path", absPath).Msg("删除旧封面文件失败")
-					}
+				h.deleteFile(oldMedia.FilePath)
+				if oldMedia.ThumbnailPath != "" {
+					h.deleteFile(oldMedia.ThumbnailPath)
 				}
 				if delErr := h.MediaService.DeleteMedia(&oldMedia); delErr != nil {
 					logger.Log.Error().Err(delErr).Uint("media_id", oldMedia.ID).Msg("删除旧封面记录失败")
@@ -246,35 +292,58 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 
 	uuidName := uuid.New().String() + vf.Ext
 	buildingStr := fmt.Sprintf("%d", bid)
-	key := filepath.Join("buildings", buildingStr, "rooms", roomID, subDir, uuidName)
-	key = filepath.ToSlash(key)
+	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomID, subDir, uuidName))
+
+	var thumbKey string
+	var processedSize int64
+
+	if vf.MediaType == "image" {
+		fileData, rErr := io.ReadAll(file)
+		if rErr != nil {
+			utils.Error(c, http.StatusInternalServerError, "读取文件失败")
+			return
+		}
+		processedSize, thumbKey, err = h.uploadAndProcess(fileData, vf, key)
+		if err != nil {
+			logger.Log.Error().Err(err).Str("key", key).Msg("上传文件失败")
+			utils.Error(c, http.StatusInternalServerError, "上传文件失败")
+			return
+		}
+	} else {
+		if err := h.uploadToStorage(key, file, header.Size); err != nil {
+			logger.Log.Error().Err(err).Str("key", key).Msg("上传文件失败")
+			utils.Error(c, http.StatusInternalServerError, "上传文件失败")
+			return
+		}
+		processedSize = header.Size
+	}
 
 	media := models.RoomMedia{
-		RoomID:   room.ID,
-		Type:     vf.MediaType,
-		Category: category,
-		FilePath: key,
-		FileName: header.Filename,
-		FileSize: header.Size,
+		RoomID:        room.ID,
+		Type:          vf.MediaType,
+		Category:      category,
+		FilePath:      key,
+		ThumbnailPath: thumbKey,
+		FileName:      header.Filename,
+		FileSize:      header.Size,
 	}
 	if err := h.MediaService.CreateMedia(&media); err != nil {
+		h.deleteFile(key)
+		if thumbKey != "" {
+			h.deleteFile(thumbKey)
+		}
 		logger.Log.Error().Err(err).Msg("保存媒体记录到数据库失败")
 		utils.Error(c, http.StatusInternalServerError, "保存记录失败")
 		return
 	}
 
-	if err := h.uploadToStorage(key, file, header.Size); err != nil {
-		h.MediaService.DeleteMedia(&media)
-		logger.Log.Error().Err(err).Str("key", key).Msg("上传文件失败")
-		utils.Error(c, http.StatusInternalServerError, "上传文件失败")
-		return
-	}
 	logger.Log.Info().
 		Uint("media_id", media.ID).
 		Uint("room_id", room.ID).
 		Uint("building_id", bid).
 		Str("key", key).
 		Int64("size", header.Size).
+		Int64("compressed_size", processedSize).
 		Msg("文件上传成功")
 	utils.Created(c, "上传成功", gin.H{"media": media})
 }
@@ -303,15 +372,9 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if h.useQiniu() {
-		if err := h.qiniuDelete(media.FilePath); err != nil {
-			logger.Log.Error().Err(err).Str("key", media.FilePath).Msg("删除七牛文件失败")
-		}
-	} else {
-		absPath := filepath.Join(h.Cfg.UploadDir, media.FilePath)
-		if err := os.Remove(absPath); err != nil {
-			logger.Log.Error().Err(err).Str("path", absPath).Msg("删除本地文件失败")
-		}
+	h.deleteFile(media.FilePath)
+	if media.ThumbnailPath != "" {
+		h.deleteFile(media.ThumbnailPath)
 	}
 
 	if err := h.MediaService.DeleteMedia(media); err != nil {
@@ -336,19 +399,10 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 	}
 
 	if building.CoverImage != "" {
-		if h.useQiniu() {
-			if delErr := h.qiniuDelete(building.CoverImage); delErr != nil {
-				logger.Log.Error().Err(delErr).Str("key", building.CoverImage).Msg("删除旧公寓封面失败")
-			}
-		} else {
-			absPath := filepath.Join(h.Cfg.UploadDir, building.CoverImage)
-			if delErr := os.Remove(absPath); delErr != nil {
-				logger.Log.Error().Err(delErr).Str("path", absPath).Msg("删除旧公寓封面失败")
-			}
-		}
+		h.deleteFile(building.CoverImage)
 	}
 
-	vf, file, header, err := validateUploadFile(c, false)
+	vf, file, _, err := validateUploadFile(c, false)
 	if err != nil {
 		logger.Log.Warn().Err(err).Uint("building_id", bid).Msg("封面上传失败: " + err.Error())
 		utils.Error(c, http.StatusBadRequest, "请选择文件")
@@ -356,11 +410,26 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 	}
 	defer file.Close()
 
+	fileData, err := io.ReadAll(file)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "读取文件失败")
+		return
+	}
+
 	uuidName := uuid.New().String() + vf.Ext
 	buildingStr := fmt.Sprintf("%d", bid)
 	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "cover", uuidName))
 
-	if err := h.uploadToStorage(key, file, header.Size); err != nil {
+	if vf.MediaType == "image" {
+		processed, pErr := utils.ProcessImageNoThumb(fileData)
+		if pErr == nil {
+			fileData = processed
+		} else {
+			logger.Log.Warn().Err(pErr).Msg("图片处理失败，使用原图")
+		}
+	}
+
+	if err := h.uploadToStorage(key, bytes.NewReader(fileData), int64(len(fileData))); err != nil {
 		logger.Log.Error().Err(err).Str("key", key).Msg("封面上传失败")
 		utils.Error(c, http.StatusInternalServerError, "上传封面失败")
 		return
@@ -373,6 +442,139 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 	}
 	logger.Log.Info().Uint("building_id", bid).Str("key", key).Msg("公寓封面上传成功")
 	utils.Created(c, "封面上传成功", gin.H{"cover_image": key})
+}
+
+type InitUploadReq struct {
+	RoomID   string `json:"room_id" form:"room_id"`
+	Category string `json:"category" form:"category"`
+	Ext      string `json:"ext" form:"ext"`
+	FileSize int64  `json:"file_size" form:"file_size"`
+}
+
+func (h *MediaHandler) GetUploadToken(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	if !h.useQiniu() {
+		utils.Error(c, http.StatusBadRequest, "未配置七牛云存储")
+		return
+	}
+
+	var req InitUploadReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	if req.RoomID != "" {
+		rid, pErr := strconv.ParseUint(req.RoomID, 10, 32)
+		if pErr != nil {
+			utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+			return
+		}
+		if _, rErr := h.MediaService.GetRoomByID(uint(rid), bid); rErr != nil {
+			utils.Error(c, http.StatusNotFound, "房间不存在")
+			return
+		}
+	}
+
+	if req.Ext == "" {
+		req.Ext = ".jpg"
+	}
+	if !strings.HasPrefix(req.Ext, ".") {
+		req.Ext = "." + req.Ext
+	}
+
+	subDir := "images"
+	uuidName := uuid.New().String() + req.Ext
+	buildingStr := fmt.Sprintf("%d", bid)
+	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", req.RoomID, subDir, uuidName))
+
+	putPolicy := storage.PutPolicy{
+		Scope:   fmt.Sprintf("%s:%s", h.Cfg.QiniuBucket, key),
+		Expires: 3600,
+	}
+	upToken := putPolicy.UploadToken(h.qiniuMac())
+
+	uploadHost := qiniuUploadURL(h.Cfg.QiniuZone)
+
+	domain, dErr := h.getDomain()
+	if dErr != nil {
+		utils.Error(c, http.StatusInternalServerError, "获取域名失败")
+		return
+	}
+	scheme := "http"
+	if h.Cfg.QiniuUseHTTPS {
+		scheme = "https"
+	}
+
+	utils.Success(c, gin.H{
+		"token":       upToken,
+		"key":         key,
+		"upload_url":  uploadHost,
+		"domain":      domain,
+		"cdn_scheme":  scheme,
+	})
+}
+
+type ConfirmUploadReq struct {
+	Key       string `json:"key" binding:"required"`
+	Type      string `json:"type" binding:"required"`
+	Category  string `json:"category"`
+	FileName  string `json:"file_name"`
+	FileSize  int64  `json:"file_size"`
+}
+
+func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	roomID := c.Param("id")
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+	room, err := h.MediaService.GetRoomByID(uint(rid), bid)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return
+	}
+
+	var req ConfirmUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if req.Category == "" {
+		req.Category = "gallery"
+	}
+
+	media := models.RoomMedia{
+		RoomID:   room.ID,
+		Type:     req.Type,
+		Category: req.Category,
+		FilePath: req.Key,
+		FileName: req.FileName,
+		FileSize: req.FileSize,
+	}
+	if err := h.MediaService.CreateMedia(&media); err != nil {
+		logger.Log.Error().Err(err).Msg("保存媒体记录到数据库失败")
+		utils.Error(c, http.StatusInternalServerError, "保存记录失败")
+		return
+	}
+
+	logger.Log.Info().
+		Uint("media_id", media.ID).
+		Uint("room_id", room.ID).
+		Uint("building_id", bid).
+		Str("key", req.Key).
+		Msg("直传文件确认成功")
+	utils.Created(c, "上传成功", gin.H{"media": media})
 }
 
 func (h *MediaHandler) Serve(c *gin.Context) {

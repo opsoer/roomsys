@@ -105,6 +105,44 @@ const coverUrl = computed(() => {
   return form.value.cover_image ? `/api/media/${form.value.cover_image}` : ''
 })
 
+function compressImage(file, maxWidth = 1920, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      resolve(file)
+      return
+    }
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width <= maxWidth && height <= maxWidth) {
+        resolve(file)
+        return
+      }
+      const canvas = document.createElement('canvas')
+      if (width > maxWidth) {
+        height = Math.round((maxWidth / width) * height)
+        width = maxWidth
+      }
+      if (height > maxWidth) {
+        width = Math.round((maxWidth / height) * width)
+        height = maxWidth
+      }
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(blob => {
+        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+        resolve(compressed)
+      }, 'image/jpeg', quality)
+    }
+    img.onerror = () => resolve(file)
+    img.src = url
+  })
+}
+
 function beforeUploadCover(file) {
   if (!file.type.startsWith('image/')) {
     ElMessage.error('仅支持图片格式')
@@ -118,9 +156,10 @@ function beforeUploadCover(file) {
 }
 
 async function handleUploadCover(option) {
-  const formData = new FormData()
-  formData.append('file', option.file)
   try {
+    const compressed = await compressImage(option.file)
+    const formData = new FormData()
+    formData.append('file', compressed)
     const res = await buildingUploadCover(formData)
     form.value.cover_image = res.data?.cover_image || ''
     ElMessage.success('封面上传成功')
