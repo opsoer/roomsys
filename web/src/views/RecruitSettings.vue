@@ -1,19 +1,5 @@
 <template>
   <div>
-    <div class="phone-section">
-      <div class="phone-header" @click="showPhone = !showPhone">
-        <h3>招商电话</h3>
-        <el-icon :class="{ rotated: showPhone }"><ArrowDown /></el-icon>
-      </div>
-      <div v-show="showPhone" style="display:flex;gap:10px;max-width:400px;">
-        <el-input v-model="phone" placeholder="输入房东入驻热线电话" />
-        <el-button type="primary" @click="handleSavePhone" :loading="saving">保存</el-button>
-      </div>
-      <div v-show="showPhone" style="font-size:12px;color:#999;margin-top:4px;">设置后将在网站首页最前面显示</div>
-    </div>
-
-    <el-divider />
-
     <div class="todo-header">
       <h3>代办事项</h3>
       <el-badge :value="pendingCount" :hidden="!pendingCount" class="recruit-badge-wrap">
@@ -87,36 +73,11 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
-import { getRecruitSettings, updateRecruitPhone, getRecruitList, processRecruit } from '../api'
+import { getRecruitList, processRecruit } from '../api'
 
-const showPhone = ref(false)
-
-const phone = ref('')
-const saving = ref(false)
 const submissions = ref([])
 const loading = ref(false)
 const pendingCount = ref(0)
-
-async function fetchPhone() {
-  try {
-    const r = await getRecruitSettings()
-    phone.value = r.data?.value || ''
-  } catch {
-    ElMessage.error('获取招商电话失败')
-  }
-}
-
-async function handleSavePhone() {
-  saving.value = true
-  try {
-    await updateRecruitPhone(phone.value)
-    ElMessage.success('保存成功')
-  } catch {
-    ElMessage.error('保存失败')
-  } finally {
-    saving.value = false
-  }
-}
 
 async function fetchSubmissions() {
   loading.value = true
@@ -147,7 +108,6 @@ function formatTime(t) {
 }
 
 onMounted(() => {
-  fetchPhone()
   fetchSubmissions()
 })
 </script>
@@ -155,25 +115,6 @@ onMounted(() => {
 <style scoped>
 .recruit-badge-wrap {
   line-height: 1;
-}
-.phone-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  margin-bottom: 12px;
-  user-select: none;
-}
-.phone-header h3 {
-  margin: 0;
-}
-.phone-header .el-icon {
-  transition: transform 0.2s;
-  font-size: 14px;
-  color: #999;
-}
-.phone-header .rotated {
-  transform: rotate(-180deg);
 }
 .todo-header {
   display: flex;
@@ -270,9 +211,6 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .phone-section h3 {
-    font-size: 15px;
-  }
   .desktop-table {
     display: none;
   }

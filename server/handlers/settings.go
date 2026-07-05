@@ -43,10 +43,4 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 	utils.Success(c, gin.H{"key": key, "value": body.Value})
 }
 
-func (h *SettingsHandler) GetPublicRecruit(c *gin.Context) {
-	phone, err := h.SettingsService.GetPublicRecruit()
-	if err != nil {
-		phone = ""
-	}
-	utils.Success(c, gin.H{"phone": phone})
-}
+

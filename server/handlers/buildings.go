@@ -15,24 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func dynamicRoomStatus(dbStatus string, endDate string) string {
-	if endDate == "" {
-		return dbStatus
-	}
-	end, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		return dbStatus
-	}
-	now := utils.Now()
-	if now.After(end) {
-		return "expired"
-	}
-	if end.Before(now.AddDate(0, 0, 30)) {
-		return "expiring"
-	}
-	return dbStatus
-}
-
 type BuildingHandler struct {
 	DB             *gorm.DB
 	BuildingService *services.BuildingService
@@ -360,7 +342,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 			}
 		}
 		endDate := contractMap[r.ID]
-		dynStatus := dynamicRoomStatus(r.Status, endDate)
+		dynStatus := utils.DynamicRoomStatus(r.Status, endDate)
 		r.Status = dynStatus
 		if requestedStatus != "" && dynStatus != requestedStatus {
 			continue

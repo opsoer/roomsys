@@ -88,3 +88,21 @@ func NewMonthlyFinanceSummary(totalIncome, totalExpense float64) MonthlyFinanceS
 		NetProfit:    totalIncome - totalExpense,
 	}
 }
+
+func DynamicRoomStatus(dbStatus string, endDate string) string {
+	if dbStatus != "rented" || endDate == "" {
+		return dbStatus
+	}
+	end, err := ParseDate(endDate)
+	if err != nil {
+		return dbStatus
+	}
+	now := Now()
+	if now.After(end) {
+		return "expired"
+	}
+	if end.Before(now.AddDate(0, 0, 30)) {
+		return "expiring"
+	}
+	return dbStatus
+}

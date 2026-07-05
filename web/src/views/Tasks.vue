@@ -71,11 +71,11 @@
             <el-input-number v-model="processForm.refunded_deposit" :min="0" :max="originalDeposit" :precision="2" style="width: 100%" />
           </el-form-item>
         </el-form>
-        <div v-if="deduction > 0" style="background: #fef0f0; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #f56c6c">
-          将自动创建一笔 <strong>{{ deduction.toFixed(2) }}</strong> 元的押金收入账单
+        <div v-if="processForm.refunded_deposit > 0" style="background: #fef0f0; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #f56c6c">
+          将自动创建 <strong>{{ Number(processForm.refunded_deposit).toFixed(2) }}</strong> 元的押金支出账单
         </div>
         <div style="font-size: 12px; color: #999; margin-top: 8px">
-          退还押金后将自动创建押金退还支出账单和押金收入账单，房间状态改为未出租
+          确认后退还押金，房间状态改为未出租
         </div>
       </div>
       <template #footer>

@@ -56,8 +56,8 @@
             <el-input-number v-model="vacateForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
           </el-form-item>
         </el-form>
-        <div v-if="vacateDeduction > 0" class="vacate-deduction-note">
-          将自动创建 <strong>{{ vacateDeduction.toFixed(2) }}</strong> 元的押金收入账单
+        <div v-if="vacateForm.refunded_deposit > 0" class="vacate-deduction-note">
+          将自动创建 <strong>{{ Number(vacateForm.refunded_deposit).toFixed(2) }}</strong> 元的押金支出账单
         </div>
       </div>
       <template #footer>

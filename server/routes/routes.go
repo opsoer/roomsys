@@ -50,9 +50,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 
-		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
-		public.GET("/settings/recruit", settingsH.GetPublicRecruit)
-
 		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
 		public.GET("/buildings/:id/rooms/:rid/contract", roomH.GetActiveContractPublic)

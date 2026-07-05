@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"rental-server/config"
 	"rental-server/logger"
@@ -94,7 +96,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	detail := RoomDetail{Room: *room}
 	if contract != nil {
 		detail.EndDate = contract.EndDate
-		detail.Room.Status = dynamicRoomStatus(detail.Room.Status, detail.EndDate)
+		detail.Room.Status = utils.DynamicRoomStatus(detail.Room.Status, detail.EndDate)
 	}
 	if h.hasAuth(c) && contract != nil {
 		tokenStr := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
@@ -147,9 +149,22 @@ func (h *RoomHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
+
+	roomIDs := make([]uint, len(rooms))
+	for i, r := range rooms {
+		roomIDs[i] = r.ID
+	}
+	var contracts []models.RentalContract
+	h.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
+	contractMap := make(map[uint]string)
+	for _, ct := range contracts {
+		contractMap[ct.RoomID] = ct.EndDate
+	}
+
 	type RoomWithThumbnail struct {
 		models.Room
 		Thumbnail string `json:"thumbnail"`
+		EndDate   string `json:"end_date"`
 	}
 	var result []RoomWithThumbnail
 	for _, r := range rooms {
@@ -168,7 +183,9 @@ func (h *RoomHandler) List(c *gin.Context) {
 				}
 			}
 		}
-		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb})
+		endDate := contractMap[r.ID]
+		r.Status = utils.DynamicRoomStatus(r.Status, endDate)
+		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: endDate})
 	}
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
@@ -195,7 +212,7 @@ func (h *RoomHandler) Get(c *gin.Context) {
 	detail := RoomDetail{Room: *room, CurrentContract: contract}
 	if contract != nil {
 		detail.EndDate = contract.EndDate
-		detail.Room.Status = dynamicRoomStatus(detail.Room.Status, detail.EndDate)
+		detail.Room.Status = utils.DynamicRoomStatus(detail.Room.Status, detail.EndDate)
 	}
 	utils.Success(c, gin.H{"room": detail})
 }
@@ -327,6 +344,9 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(uint)
+
 	if req.Status == "rented" {
 		if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Update("status", "ended").Error; err != nil {
 			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("结束旧合同失败")
@@ -358,8 +378,99 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			return
 		}
 
+		now := utils.Now()
+		datePart := now.Format("20060102")
+		var count int64
+		h.DB.Model(&models.Bill{}).
+			Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+			Count(&count)
+
+		if req.RentPrice > 0 {
+			startDate, _ := time.Parse("2006-01-02", req.StartDate)
+			endDate, _ := time.Parse("2006-01-02", req.EndDate)
+			monthEnd := time.Date(startDate.Year(), startDate.Month()+1, 0, 0, 0, 0, 0, startDate.Location())
+			daysInMonth := monthEnd.Day()
+
+			var billEnd time.Time
+			if endDate.Before(monthEnd) || endDate.Equal(monthEnd) {
+				billEnd = endDate
+			} else {
+				billEnd = monthEnd
+			}
+
+			var rentAmount float64
+			var rentDesc string
+			if startDate.Day() == 1 && billEnd.Equal(monthEnd) {
+				rentAmount = float64(int(req.RentPrice*100)) / 100
+				rentDesc = "租金：" + monthEnd.Format("2006-01") + "-01 ~ " + billEnd.Format("2006-01-02")
+			} else {
+				rentAmount = utils.CalcProratedAmount(req.RentPrice, startDate, billEnd, daysInMonth)
+				rentDesc = "租金：" + startDate.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
+			}
+
+			rentNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+			rentBill := models.Bill{
+				BillNo:      rentNo,
+				Type:        "income",
+				Subtype:     "租金",
+				Amount:      rentAmount,
+				BuildingID:  room.BuildingID,
+				RoomID:      &room.ID,
+				Description: rentDesc,
+				BillDate:    now.Format("2006-01-02"),
+				CreatedBy:   uid,
+			}
+			if err := h.DB.Create(&rentBill).Error; err != nil {
+				logger.Log.Error().Err(err).Msg("创建出租租金账单失败")
+			}
+			count++
+		}
+
+		if req.Deposit > 0 {
+			depositNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+			depositBill := models.Bill{
+				BillNo:      depositNo,
+				Type:        "income",
+				Subtype:     "押金",
+				Amount:      req.Deposit,
+				BuildingID:  room.BuildingID,
+				RoomID:      &room.ID,
+				Description: "押金：出租押金",
+				BillDate:    now.Format("2006-01-02"),
+				CreatedBy:   uid,
+			}
+			if err := h.DB.Create(&depositBill).Error; err != nil {
+				logger.Log.Error().Err(err).Msg("创建出租押金账单失败")
+			}
+		}
+
 		h.RoomService.UpdateStatus(room.ID, "rented")
 	} else if req.Status == "vacant" {
+		if req.RefundedDeposit != nil && *req.RefundedDeposit > 0 {
+			now := utils.Now()
+			datePart := now.Format("20060102")
+			var count int64
+			h.DB.Model(&models.Bill{}).
+				Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+				Count(&count)
+
+			bill := models.Bill{
+				BillNo:      fmt.Sprintf("B%s%05d", datePart, count+1),
+				Type:        "expense",
+				Subtype:     "押金退还",
+				Amount:      *req.RefundedDeposit,
+				BuildingID:  room.BuildingID,
+				RoomID:      &room.ID,
+				Description: "押金退还：退租押金支出",
+				BillDate:    now.Format("2006-01-02"),
+				CreatedBy:   uid,
+			}
+			if err := h.DB.Create(&bill).Error; err != nil {
+				logger.Log.Error().Err(err).Msg("创建押金退还账单失败")
+				utils.Error(c, http.StatusInternalServerError, "创建退还账单失败")
+				return
+			}
+		}
 		h.RoomService.UpdateStatus(room.ID, "vacant")
 	}
 

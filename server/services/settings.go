@@ -25,10 +25,4 @@ func (s *SettingsService) Update(key, value string) error {
 	return s.DB.Save(&setting).Error
 }
 
-func (s *SettingsService) GetPublicRecruit() (string, error) {
-	setting, err := s.Get("recruit_phone")
-	if err != nil {
-		return "", err
-	}
-	return setting.Value, nil
-}
+

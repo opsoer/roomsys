@@ -44,8 +44,7 @@
           <div style="flex: 1; min-width: 240px;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
               <span style="font-size: 18px; font-weight: 600;">{{ b.name }}</span>
-              <el-tag v-if="b.building_status === 'normal'" size="small" type="success">正常</el-tag>
-              <el-tag v-else-if="b.building_status === 'expiring'" size="small" type="warning">即将到期</el-tag>
+              <el-tag v-if="b.status === 'active'" size="small" type="success">正常</el-tag>
               <el-tag v-else size="small" type="danger">已到期</el-tag>
               <el-tag :type="b.package === 'full' ? 'primary' : 'info'" size="small" effect="plain">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</el-tag>
             </div>

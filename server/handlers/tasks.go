@@ -206,7 +206,7 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 		Subtype:     "押金退还",
 		Amount:      refundedDeposit,
 		RoomID:      &room.ID,
-		Description: "退租押金退还",
+		Description: "押金退还：退租押金支出",
 		BillDate:    billDate,
 		CreatedBy:   userID,
 	}

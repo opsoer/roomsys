@@ -74,11 +74,12 @@ func (h *BillHandler) List(c *gin.Context) {
 	}
 
 	params := map[string]interface{}{
-		"type":       c.Query("type"),
-		"subtype":    c.Query("subtype"),
-		"room_id":    c.Query("room_id"),
-		"start_date": c.Query("start_date"),
-		"end_date":   c.Query("end_date"),
+		"type":        c.Query("type"),
+		"subtype":     c.Query("subtype"),
+		"room_id":     c.Query("room_id"),
+		"room_number": c.Query("room_number"),
+		"start_date":  c.Query("start_date"),
+		"end_date":    c.Query("end_date"),
 	}
 
 	page, size := utils.ParsePage(c)

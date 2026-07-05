@@ -29,6 +29,11 @@
         <el-option label="全部" value="" />
         <el-option v-for="d in 31" :key="d" :label="d + '日'" :value="d" />
       </el-select>
+      <el-select v-model="filter.room_number" placeholder="关联房间" clearable style="width: 120px" @change="$emit('search')">
+        <el-option label="全部" value="" />
+        <el-option label="其他（无房间号）" value="other" />
+        <el-option v-for="r in rooms" :key="r.id" :label="r.room_number" :value="r.room_number" />
+      </el-select>
       <el-button type="primary" @click="$emit('add')">新增账单</el-button>
     </div>
 
@@ -52,7 +57,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="room" label="关联房间" width="100">
-          <template #default="{ row }">{{ row.room?.room_number || '-' }}</template>
+          <template #default="{ row }">{{ row.room?.room_number || '其他' }}</template>
         </el-table-column>
         <el-table-column prop="description" label="备注" min-width="150" show-overflow-tooltip />
         <el-table-column label="操作" width="100" fixed="right">
@@ -73,7 +78,7 @@
         <div class="bc-info">
           <span>{{ row.bill_date }}</span>
           <span class="bc-subtype">{{ row.subtype }}</span>
-          <span class="bc-room">{{ row.room?.room_number || '-' }}</span>
+          <span class="bc-room">{{ row.room?.room_number || '其他' }}</span>
         </div>
         <div class="bc-body">
           <span :class="['bc-amount', row.type]">
@@ -94,11 +99,12 @@ import dayjs from 'dayjs'
 const props = defineProps({
   bills: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  rooms: { type: Array, default: () => [] },
 })
 
 defineEmits(['search', 'add', 'edit'])
 
-const filter = reactive({ type: '', subtype: '' })
+const filter = reactive({ type: '', subtype: '', room_number: '' })
 const now = dayjs()
 const filterYear = ref(now.year())
 const filterMonth = ref(now.month() + 1)
@@ -113,6 +119,7 @@ function getFilterParams() {
   const params = {}
   if (filter.type) params.type = filter.type
   if (filter.subtype) params.subtype = filter.subtype
+  if (filter.room_number) params.room_number = filter.room_number
   const y = filterYear.value
   const m = filterMonth.value
   const d = filterDay.value

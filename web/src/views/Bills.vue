@@ -4,6 +4,7 @@
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="账单列表" name="list">
         <BillList ref="billListRef" :bills="bills" :loading="billLoading"
+          :rooms="allRooms"
           @search="fetchBills" @add="openAddDialog" @edit="handleEdit" />
       </el-tab-pane>
 

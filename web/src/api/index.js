@@ -265,18 +265,6 @@ export function buildingCreateAdmin(data) {
 }
 
 // ===== 招募 =====
-export function getRecruitPhone() {
-  return api.get('/settings/recruit')
-}
-
-export function getRecruitSettings() {
-  return api.get('/admin/settings/recruit_phone')
-}
-
-export function updateRecruitPhone(phone) {
-  return api.put('/admin/settings/recruit_phone', { value: phone })
-}
-
 export function getRecruitList() {
   return api.get('/admin/recruit/list')
 }

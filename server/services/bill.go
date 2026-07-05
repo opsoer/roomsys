@@ -39,6 +39,13 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}, page,
 	if ed, ok := params["end_date"]; ok && ed != "" {
 		query = query.Where("bill_date <= ?", ed)
 	}
+	if rn, ok := params["room_number"]; ok && rn != "" {
+		if rn == "other" {
+			query = query.Where("room_id IS NULL")
+		} else {
+			query = query.Where("room_id IN (?)", s.DB.Table("rooms").Select("id").Where("room_number = ?", rn))
+		}
+	}
 
 	var total int64
 	if err := query.Model(&models.Bill{}).Count(&total).Error; err != nil {

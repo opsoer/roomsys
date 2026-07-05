@@ -41,31 +41,36 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	var landlords []models.BuildingLandlord
 	s.DB.Where("building_id = ?", id).Find(&landlords)
 
-	type roomStatusCount struct {
-		Status string
-		Count  int64
-	}
-	var statusCounts []roomStatusCount
-	s.DB.Model(&models.Room{}).
-		Select("status, count(*) as count").
-		Where("building_id = ?", id).
-		Group("status").
-		Scan(&statusCounts)
+	var rooms []models.Room
+	s.DB.Where("building_id = ?", id).Find(&rooms)
 
-	statusMap := make(map[string]int64)
-	var roomCount int64
-	for _, sc := range statusCounts {
-		statusMap[sc.Status] = sc.Count
-		roomCount += sc.Count
+	roomIDs := make([]uint, len(rooms))
+	for i, r := range rooms {
+		roomIDs[i] = r.ID
+	}
+
+	var contracts []models.RentalContract
+	if len(roomIDs) > 0 {
+		s.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
+	}
+	contractMap := make(map[uint]string)
+	for _, ct := range contracts {
+		contractMap[ct.RoomID] = ct.EndDate
+	}
+
+	stats := make(map[string]int64)
+	for _, r := range rooms {
+		dynStatus := utils.DynamicRoomStatus(r.Status, contractMap[r.ID])
+		stats[dynStatus]++
 	}
 
 	return &BuildingWithStats{
 		Building:      building,
 		Landlords:     landlords,
-		RoomCount:     roomCount,
-		VacantCount:   statusMap["vacant"],
-		RentedCount:   statusMap["rented"],
-		ExpiringCount: statusMap["expiring"],
+		RoomCount:     int64(len(rooms)),
+		VacantCount:   stats["vacant"],
+		RentedCount:   stats["rented"],
+		ExpiringCount: stats["expiring"],
 	}, nil
 }
 
@@ -110,24 +115,30 @@ func (s *BuildingService) List(status, keyword string, page, size int) ([]Buildi
 		buildingIDs[i] = b.ID
 	}
 
-	type roomStatusCount struct {
-		BuildingID uint
-		Status     string
-		Count      int64
-	}
-	var statusCounts []roomStatusCount
-	s.DB.Model(&models.Room{}).
-		Select("building_id, status, count(*) as count").
-		Where("building_id IN ?", buildingIDs).
-		Group("building_id, status").
-		Scan(&statusCounts)
+	var allRooms []models.Room
+	s.DB.Where("building_id IN ?", buildingIDs).Find(&allRooms)
 
-	statusMap := make(map[uint]map[string]int64)
-	for _, sc := range statusCounts {
-		if statusMap[sc.BuildingID] == nil {
-			statusMap[sc.BuildingID] = make(map[string]int64)
+	roomIDs := make([]uint, len(allRooms))
+	for i, r := range allRooms {
+		roomIDs[i] = r.ID
+	}
+
+	var allContracts []models.RentalContract
+	if len(roomIDs) > 0 {
+		s.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&allContracts)
+	}
+	contractMap := make(map[uint]string)
+	for _, ct := range allContracts {
+		contractMap[ct.RoomID] = ct.EndDate
+	}
+
+	dynStatusMap := make(map[uint]map[string]int64)
+	for _, r := range allRooms {
+		if dynStatusMap[r.BuildingID] == nil {
+			dynStatusMap[r.BuildingID] = make(map[string]int64)
 		}
-		statusMap[sc.BuildingID][sc.Status] = sc.Count
+		dynStatus := utils.DynamicRoomStatus(r.Status, contractMap[r.ID])
+		dynStatusMap[r.BuildingID][dynStatus]++
 	}
 
 	var allLandlords []models.BuildingLandlord
@@ -139,14 +150,14 @@ func (s *BuildingService) List(status, keyword string, page, size int) ([]Buildi
 
 	result := make([]BuildingWithStats, len(buildings))
 	for i, b := range buildings {
-		sc := statusMap[b.ID]
+		ds := dynStatusMap[b.ID]
 		result[i] = BuildingWithStats{
 			Building:      b,
 			Landlords:     landlordMap[b.ID],
-			RoomCount:     sc["vacant"] + sc["rented"] + sc["expiring"] + sc["expired"],
-			VacantCount:   sc["vacant"],
-			RentedCount:   sc["rented"],
-			ExpiringCount: sc["expiring"],
+			RoomCount:     ds["vacant"] + ds["rented"] + ds["expiring"] + ds["expired"],
+			VacantCount:   ds["vacant"],
+			RentedCount:   ds["rented"],
+			ExpiringCount: ds["expiring"],
 		}
 	}
 

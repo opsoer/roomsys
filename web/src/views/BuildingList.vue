@@ -2,7 +2,7 @@
   <div class="page-home">
     <van-sticky>
       <div class="recruit-banner">
-        <span class="recruit-text">📞 {{ recruitPhone ? '房东入驻热线：' + recruitPhone : '招商入驻 · 诚邀房东合作' }}</span>
+        <span class="recruit-text">招商入驻 · 诚邀房东合作</span>
         <van-button size="small" round type="warning" @click="$router.push('/apply')" style="font-size:13px;padding:0 16px;">申请入驻</van-button>
       </div>
       <div class="top-bar">
@@ -87,7 +87,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import { getBuildings, getRecruitPhone } from '../api'
+import { getBuildings } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useUtils } from '../composables/useUtils'
 import shenzhen from '../utils/shenzhen'
@@ -100,7 +100,6 @@ const districts = ref(shenzhen.map(d => d.value))
 const loading = ref(true)
 const refreshing = ref(false)
 const districtFilter = ref('')
-const recruitPhone = ref('')
 
 const districtOptions = computed(() => {
   const opts = [{ text: '全部区域', value: '' }]
@@ -134,18 +133,8 @@ async function onRefresh() {
   showToast('刷新成功')
 }
 
-async function fetchRecruit() {
-  try {
-    const res = await getRecruitPhone()
-    recruitPhone.value = res.data?.phone || ''
-  } catch {
-    ElMessage.error('获取招商信息失败')
-  }
-}
-
 onMounted(async () => {
   await fetchBuildings()
-  await fetchRecruit()
 })
 </script>
 
