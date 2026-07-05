@@ -6,21 +6,7 @@ let loadPromise = null
 
 const CORE_URL = '/api/ffmpeg'
 
-function fetchBlobWithProgress(url, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('GET', url)
-    xhr.responseType = 'blob'
-    xhr.onprogress = (e) => {
-      if (onProgress) onProgress(e.total ? Math.round((e.loaded / e.total) * 100) : -1)
-    }
-    xhr.onload = () => resolve(URL.createObjectURL(xhr.response))
-    xhr.onerror = () => reject(new Error('下载失败'))
-    xhr.send()
-  })
-}
-
-async function getFFmpeg(onProgress) {
+async function getFFmpeg() {
   if (ffmpeg) return ffmpeg
   if (loadPromise) return loadPromise
 
@@ -28,8 +14,8 @@ async function getFFmpeg(onProgress) {
     try {
       const instance = new FFmpeg()
       await instance.load({
-        coreURL: await fetchBlobWithProgress(`${CORE_URL}/ffmpeg-core.js`, onProgress),
-        wasmURL: await fetchBlobWithProgress(`${CORE_URL}/ffmpeg-core.wasm`, onProgress),
+        coreURL: `${CORE_URL}/ffmpeg-core.js`,
+        wasmURL: `${CORE_URL}/ffmpeg-core.wasm`,
       })
       ffmpeg = instance
       return instance
@@ -44,12 +30,12 @@ async function getFFmpeg(onProgress) {
   return loadPromise
 }
 
-export async function compressVideo(file, onLoadProgress) {
+export async function compressVideo(file) {
   if (!file.type.startsWith('video/')) return file
   if (file.size < 5 * 1024 * 1024) return file
 
   try {
-    const ff = await getFFmpeg(onLoadProgress)
+    const ff = await getFFmpeg()
     const ext = file.name.match(/\.(\w+)$/)?.[1] || 'mp4'
     const inputName = `input.${ext}`
     const outputName = 'output.mp4'
