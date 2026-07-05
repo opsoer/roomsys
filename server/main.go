@@ -252,13 +252,14 @@ func checkExpiredBuildings(db *gorm.DB) {
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
+	password := "admin"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
+		return
+	}
+
 	if result.Error != nil {
-		password := "admin"
-		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
-			return
-		}
 		admin = models.User{
 			Username:     "admin",
 			PasswordHash: string(hash),
@@ -270,10 +271,11 @@ func seedAdmin(db *gorm.DB) {
 		}
 		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin")
 	} else {
-		if admin.Role != "super_admin" {
-			db.Model(&admin).Update("role", "super_admin")
-			logger.Log.Info().Uint("user_id", admin.ID).Msg("已升级 admin 为超级管理员")
-		}
+		db.Model(&admin).Updates(map[string]interface{}{
+			"password_hash": string(hash),
+			"role":          "super_admin",
+		})
+		logger.Log.Info().Msg("已重置超级管理员密码: admin / admin")
 	}
 }
 
