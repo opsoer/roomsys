@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"os"
 	"strings"
 	"time"
@@ -255,8 +253,8 @@ func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
-		randomPassword := generateRandomPassword(16)
-		hash, err := bcrypt.GenerateFromPassword([]byte(randomPassword), bcrypt.DefaultCost)
+		password := "admin123"
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
 			return
@@ -270,23 +268,13 @@ func seedAdmin(db *gorm.DB) {
 			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
 			return
 		}
-		logger.Log.Info().Str("password", randomPassword).Msg("已创建默认超级管理员: admin，请登录后立即修改密码")
+		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin123")
 	} else {
 		if admin.Role != "super_admin" {
 			db.Model(&admin).Update("role", "super_admin")
 			logger.Log.Info().Uint("user_id", admin.ID).Msg("已升级 admin 为超级管理员")
 		}
 	}
-}
-
-func generateRandomPassword(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-	result := make([]byte, length)
-	for i := range result {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		result[i] = charset[n.Int64()]
-	}
-	return string(result)
 }
 
 func splitStr(s, sep string) []string {
