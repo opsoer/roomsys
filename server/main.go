@@ -253,7 +253,7 @@ func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
-		password := "admin123"
+		password := "admin"
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
@@ -268,7 +268,7 @@ func seedAdmin(db *gorm.DB) {
 			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
 			return
 		}
-		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin123")
+		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin")
 	} else {
 		if admin.Role != "super_admin" {
 			db.Model(&admin).Update("role", "super_admin")
