@@ -1,6 +1,10 @@
 package services
 
 import (
+	"fmt"
+	"regexp"
+	"strconv"
+
 	"rental-server/models"
 	"rental-server/utils"
 
@@ -168,14 +172,59 @@ func (s *BuildingService) Create(building *models.Building) error {
 	return s.DB.Create(building).Error
 }
 
+func (s *BuildingService) ExistsByName(name string) (bool, error) {
+	var count int64
+	err := s.DB.Model(&models.Building{}).Where("name = ?", name).Count(&count).Error
+	return count > 0, err
+}
+
+func (s *BuildingService) GenerateSuggestedName(baseName string) (string, error) {
+	var names []string
+	if err := s.DB.Model(&models.Building{}).
+		Where("name = ? OR name LIKE ?", baseName, baseName+"%").
+		Pluck("name", &names).Error; err != nil {
+		return "", err
+	}
+	maxSuffix := 0
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(baseName) + `(\d+)$`)
+	for _, n := range names {
+		matches := re.FindStringSubmatch(n)
+		if len(matches) == 2 {
+			if num, err := strconv.Atoi(matches[1]); err == nil && num > maxSuffix {
+				maxSuffix = num
+			}
+		}
+	}
+	return fmt.Sprintf("%s%d", baseName, maxSuffix+1), nil
+}
+
 func (s *BuildingService) Update(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", id).Updates(updates).Error
 }
 
+func (s *BuildingService) HasActiveContracts(id uint) (bool, error) {
+	var count int64
+	err := s.DB.Model(&models.RentalContract{}).
+		Where("building_id = ? AND status = ?", id, "active").
+		Count(&count).Error
+	return count > 0, err
+}
+
 func (s *BuildingService) Delete(id uint) error {
+	has, err := s.HasActiveContracts(id)
+	if err != nil {
+		return err
+	}
+	if has {
+		return fmt.Errorf("active_contracts_exist")
+	}
 	return s.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("building_id = ?", id).Delete(&models.RoomMedia{}).Error; err != nil {
-			return err
+		var roomIDs []uint
+		tx.Model(&models.Room{}).Where("building_id = ?", id).Pluck("id", &roomIDs)
+		if len(roomIDs) > 0 {
+			if err := tx.Where("room_id IN ?", roomIDs).Delete(&models.RoomMedia{}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Room{}).Error; err != nil {
 			return err
@@ -184,9 +233,6 @@ func (s *BuildingService) Delete(id uint) error {
 			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Bill{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("building_id = ?", id).Delete(&models.Tenant{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.RentalContract{}).Error; err != nil {

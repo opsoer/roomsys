@@ -19,6 +19,7 @@ require (
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mozillazg/go-pinyin v0.21.0 // indirect
 	golang.org/x/image v0.43.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	modernc.org/fileutil v1.0.0 // indirect

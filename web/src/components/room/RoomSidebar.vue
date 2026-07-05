@@ -55,7 +55,10 @@
 
     <div v-if="isAdmin" class="sidebar-card">
       <h4 class="sidebar-title">上传媒体</h4>
-      <el-progress v-if="uploading" :percentage="uploadProgress" :stroke-width="6" style="margin-bottom:12px" />
+      <div v-if="uploading" style="margin-bottom:12px">
+        <el-progress :percentage="uploadProgress" :stroke-width="6" />
+        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">视频压缩中（首次加载约 25MB 引擎）...</div>
+      </div>
       <div class="upload-actions">
         <el-upload
           :http-request="customUpload"
@@ -98,8 +101,9 @@
 
 <script setup>
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildingUploadMedia } from '../../api'
+import { compressVideo } from '../../utils/compressVideo'
 
 defineProps({
   room: { type: Object, required: true },
@@ -112,8 +116,9 @@ const emit = defineEmits(['renew', 'rent', 'vacant', 'upload-success'])
 
 const uploading = ref(false)
 const uploadProgress = ref(0)
+const isCompressing = ref(false)
 
-function compressImage(file, maxWidth = 1920, quality = 0.8) {
+function compressImage(file, maxWidth = 1600, quality = 0.65) {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       resolve(file)
@@ -155,9 +160,38 @@ async function customUpload(options) {
   uploading.value = true
   uploadProgress.value = 0
   try {
-    const compressed = await compressImage(options.file)
+    let file
+    if (options.file.type.startsWith('video/')) {
+      isCompressing.value = true
+      try {
+        file = await compressVideo(options.file)
+      } catch (e) {
+        isCompressing.value = false
+        uploading.value = false
+        const title = e.code === 'COMPRESS_UNSUPPORTED' ? '设备不支持' : '压缩失败'
+        const msg = e.code === 'COMPRESS_UNSUPPORTED'
+          ? '当前手机版本太低，建议更换手机上传视频。'
+          : '视频压缩失败，是否继续上传原件？'
+        try {
+          await ElMessageBox.confirm(msg, title, {
+            confirmButtonText: '依然上传',
+            cancelButtonText: '取消上传',
+            type: 'warning',
+          })
+          file = options.file
+          uploading.value = true
+          uploadProgress.value = 0
+        } catch {
+          return
+        }
+      } finally {
+        isCompressing.value = false
+      }
+    } else {
+      file = await compressImage(options.file)
+    }
     const formData = new FormData()
-    formData.append('file', compressed)
+    formData.append('file', file)
     for (const key in options.data) {
       formData.append(key, options.data[key])
     }
@@ -169,6 +203,7 @@ async function customUpload(options) {
     options.onError(err, options.file, options.fileList)
   } finally {
     uploading.value = false
+    isCompressing.value = false
   }
 }
 

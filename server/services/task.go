@@ -14,7 +14,7 @@ func NewTaskService(db *gorm.DB) *TaskService {
 	return &TaskService{DB: db}
 }
 
-func (s *TaskService) List(buildingID uint, status string) ([]models.Task, error) {
+func (s *TaskService) List(buildingID uint, status string, page, size int) ([]models.Task, int64, error) {
 	var tasks []models.Task
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -22,8 +22,13 @@ func (s *TaskService) List(buildingID uint, status string) ([]models.Task, error
 		query = query.Where("status = ?", status)
 	}
 
-	err := query.Preload("Room").Order("created_at DESC").Find(&tasks).Error
-	return tasks, err
+	var total int64
+	if err := query.Model(&models.Task{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Preload("Room").Order("created_at DESC").Offset((page - 1) * size).Limit(size).Find(&tasks).Error
+	return tasks, total, err
 }
 
 func (s *TaskService) GetByID(id uint) (*models.Task, error) {

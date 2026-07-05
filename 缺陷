@@ -52,19 +52,24 @@
 - ✅ 部署：Docker Compose 三件套（Nginx + 你后端 + Umami）
 
 
-
-
-最佳方案：Docker 部署，但 Go 后端不打包成镜像
-非 Docker:    Go 后端（宿主直接跑二进制）
-Docker:       MySQL + Umami + Nginx
-理由：
-1. 你的 Go 后端编译后就是一个静态二进制文件，没有任何运行时依赖。把它塞进 Docker 镜像纯属多此一举——每次更新代码要重新编译镜像、重新打标签、重新 pull，反而麻烦。
-2. MySQL 和 Umami 用 Docker——这两个正好是需要统一管理、有标准镜像的服务。你不需要关心 MySQL 怎么装、Umami 怎么配置 Node 环境，docker compose 一行解决。
-3. Nginx 推荐用 Docker——配置挂载出来就行，更新版本方便。
-最终结构：
-
-宿主进程：Go 后端（直接跑二进制）
-Docker 容器：Nginx、MySQL、Umami
-Nginx 反代：Go 后端 + Umami
-所有服务共用同一网络
-磁盘占用量：~800MB（MySQL 镜像 + Umami 镜像 + Nginx alpine 镜像），你 20GB 系统盘完全够用。
+FFmpeg 不是 Go 依赖包，它是一个独立的命令行工具（可执行文件），就像 git、npm 一样装到操作系统上。Go 程序通过 os/exec 调用它，相当于在代码里执行了一个脚本命令。
+安装有多麻烦
+Windows 开发机：去 https://ffmpeg.org/download.html 下载 zip → 解压 → 把 bin/ 目录加到 PATH 环境变量 → 重启终端 → 搞定（5 分钟）
+Linux 服务器：一行命令搞定
+apt install ffmpeg   # Ubuntu/Debian
+yum install ffmpeg   # CentOS
+数据流程（改装后）
+手机上传 200MB 视频
+       │
+       ▼
+Go 收到文件 → 写入临时文件（tmp/original_xxx.mp4）
+       │
+       ▼
+Go 执行: ffmpeg -i tmp.mp4 -b:v 2M -vf scale=-2:720 compressed.mp4
+       │                          ↑ 转 720p 2Mbps ≈ 压缩到 20-30MB
+       ▼
+Go 读到 compressed.mp4 → 上传到七牛 → 删除两个临时文件
+       │Plan·DeepSeek V4 Flash FreeOpenCode Zen
+       ▼
+DB 记录 file_path = videos/compressed_xxx.mp4（存的是压缩版）
+全程后端异步处理，用户上传界面正常显示进度条。上传时间会变长（多 10-30 秒压缩时间），但上传的数据量从 200MB 降到 20-30MB，整体等待时间其实是缩短的。

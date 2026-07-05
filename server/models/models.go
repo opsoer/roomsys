@@ -24,7 +24,7 @@ type User struct {
 
 type Building struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
-	Name         string         `gorm:"uniqueIndex;size:100;not null" json:"name"`
+	Name         string         `gorm:"size:100;not null" json:"name"`
 	Package      string         `gorm:"size:20;not null;default:'basic'" json:"package"`
 	ContractDate string         `gorm:"size:10" json:"contract_date"`
 	ExpiredAt    string         `gorm:"size:10" json:"expired_at"`

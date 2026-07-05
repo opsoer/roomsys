@@ -173,7 +173,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage } from '../../api'
 import shenzhen from '../../utils/shenzhen'
 
@@ -297,6 +297,24 @@ async function handleCreate() {
       ElMessage.success('公寓创建成功')
     }
     emit('save-success')
+  } catch (err) {
+    const respData = err.response?.data
+    if (respData?.code === 1006 && respData?.data?.suggested_name) {
+      const suggested = respData.data.suggested_name
+      try {
+        await ElMessageBox.confirm(
+          `公寓名称"${createForm.value.name}"已存在，建议修改为"${suggested}"，是否使用该名称？`,
+          '名称重复',
+          { confirmButtonText: '使用建议名称', cancelButtonText: '手动修改', type: 'warning' }
+        )
+        createForm.value.name = suggested
+        submitting.value = false
+        await handleCreate()
+        return
+      } catch {
+        // User cancelled - let them edit manually
+      }
+    }
   } finally {
     submitting.value = false
   }

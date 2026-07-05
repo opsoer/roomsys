@@ -62,6 +62,9 @@
         </div>
       </div>
     </div>
+    <div v-if="roomTotal > roomPageSize" style="display: flex; justify-content: center; margin-top: 16px">
+      <el-pagination background layout="prev, pager, next" :total="roomTotal" :page-size="roomPageSize" :current-page="roomPage" @current-change="onRoomPageChange" />
+    </div>
 
     <el-dialog v-model="showAddDialog" title="添加房间" width="500px">
       <el-form ref="addFormRef" :model="addForm" label-width="90px">
@@ -109,21 +112,30 @@ const showAddDialog = ref(false)
 const submitting = ref(false)
 const addForm = ref({ room_number: '', floor: '', layout: '', description: '' })
 const addFormRef = ref(null)
+const roomPage = ref(1)
+const roomTotal = ref(0)
+const roomPageSize = 20
 
 async function fetchRooms() {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: roomPage.value, page_size: roomPageSize }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
     if (layoutFilter.value) params.layout = layoutFilter.value
     const res = await buildingGetRooms(params)
     rooms.value = res.data.rooms || []
+    roomTotal.value = res.data.total || 0
   } catch {
     ElMessage.error('获取房间列表失败')
   } finally {
     loading.value = false
   }
+}
+
+function onRoomPageChange(page) {
+  roomPage.value = page
+  fetchRooms()
 }
 
 async function handleAdd() {

@@ -83,6 +83,9 @@
           </el-table-column>
         </el-table>
       </div>
+      <div v-if="divTotal > divPageSize" style="display: flex; justify-content: center; margin-top: 16px">
+        <el-pagination background layout="prev, pager, next" :total="divTotal" :page-size="divPageSize" :current-page="divCurrentPage" @current-change="onDivPageChange" />
+      </div>
       <div class="mobile-cards">
         <div v-for="d in dividends" :key="d.id" class="div-history-card">
           <div class="dhc-top">
@@ -135,6 +138,9 @@ const shSubmitting = ref(false)
 const shForm = ref({ name: '', share_ratio: 0 })
 const shFormRef = ref(null)
 const editingSHId = ref(null)
+const divCurrentPage = ref(1)
+const divTotal = ref(0)
+const divPageSize = 20
 
 async function handleCalculate() {
   if (!calcMonth.value) {
@@ -151,11 +157,17 @@ async function handleCalculate() {
 
 async function fetchDividends() {
   try {
-    const res = await buildingGetDividends()
+    const res = await buildingGetDividends(divCurrentPage.value, divPageSize)
     dividends.value = res.data.dividends
+    divTotal.value = res.data.total || 0
   } catch {
     ElMessage.error('获取分红记录失败')
   }
+}
+
+function onDivPageChange(page) {
+  divCurrentPage.value = page
+  fetchDividends()
 }
 
 async function fetchShareholders() {

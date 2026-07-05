@@ -51,6 +51,7 @@ const (
 	CodeActiveContract     = 1003
 	CodeInvalidStatus      = 1004
 	CodeMissingDescription = 1005
+	CodeNameConflict       = 1006
 )
 
 func Success(c *gin.Context, data interface{}) {

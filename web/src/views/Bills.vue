@@ -25,6 +25,9 @@
       </el-tab-pane>
     </el-tabs>
 
+    <div v-if="billTotal > billPageSize" style="display: flex; justify-content: center; margin-top: 16px">
+      <el-pagination background layout="prev, pager, next" :total="billTotal" :page-size="billPageSize" :current-page="billPage" @current-change="onBillPageChange" />
+    </div>
     <BillDialog ref="billDialogRef" :all-rooms="allRooms" @save-success="handleSaveSuccess" />
   </div>
 </template>
@@ -45,18 +48,29 @@ const billLoading = ref(false)
 const allRooms = ref([])
 const billListRef = ref(null)
 const billDialogRef = ref(null)
+const billPage = ref(1)
+const billTotal = ref(0)
+const billPageSize = 20
 
 async function fetchBills() {
   billLoading.value = true
   try {
     const params = billListRef.value?.getFilterParams() || {}
+    params.page = billPage.value
+    params.page_size = billPageSize
     const res = await buildingGetBills(params)
     bills.value = res.data.bills
+    billTotal.value = res.data.total || 0
   } catch {
     ElMessage.error('获取账单列表失败')
   } finally {
     billLoading.value = false
   }
+}
+
+function onBillPageChange(page) {
+  billPage.value = page
+  fetchBills()
 }
 
 function openAddDialog() {

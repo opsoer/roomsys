@@ -39,7 +39,8 @@ api.interceptors.response.use(
     return res
   },
   err => {
-    const msg = err.response?.data?.message || err.response?.data?.error
+    const data = err.response?.data
+    const msg = data?.message || data?.error
     if (err.response?.status === 401) {
       const isLoginPage = window.location.pathname === '/login'
       if (msg) ElMessage.error(msg)
@@ -48,6 +49,8 @@ api.interceptors.response.use(
         authStore.logout()
         router.push('/login')
       }
+    } else if (data?.code === 1006) {
+      return Promise.reject(err)
     } else if (msg) {
       ElMessage.error(msg)
     } else {
@@ -224,8 +227,8 @@ export function buildingGetDividendPredict(params) {
   return api.get('/building/dividends/predict', { params })
 }
 
-export function buildingGetDividends() {
-  return api.get('/building/dividends')
+export function buildingGetDividends(page = 1, pageSize = 20) {
+  return api.get('/building/dividends', { params: { page, page_size: pageSize } })
 }
 
 export function buildingCalculateDividend(month) {
@@ -248,8 +251,8 @@ export function buildingDeleteShareholder(id) {
   return api.delete(`/building/dividends/shareholders/${id}`)
 }
 
-export function buildingGetTasks(status) {
-  return api.get('/building/tasks', { params: { status } })
+export function buildingGetTasks(status, page = 1, pageSize = 20) {
+  return api.get('/building/tasks', { params: { status, page, page_size: pageSize } })
 }
 
 export function buildingProcessTask(id, data) {

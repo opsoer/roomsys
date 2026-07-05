@@ -25,14 +25,15 @@ func (h *DividendHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
-	dividends, err := h.DividendService.List(bid)
+	page, size := utils.ParsePage(c)
+	dividends, total, err := h.DividendService.List(bid, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红记录失败")
 		utils.Error(c, http.StatusInternalServerError, "查询分红记录失败")
 		return
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(dividends)).Msg("查询分红记录")
-	utils.Success(c, gin.H{"dividends": dividends})
+	utils.Success(c, gin.H{"dividends": dividends, "total": total, "page": page, "size": size})
 }
 
 func (h *DividendHandler) Calculate(c *gin.Context) {

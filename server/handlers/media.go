@@ -291,8 +291,11 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	}
 
 	uuidName := uuid.New().String() + vf.Ext
-	buildingStr := fmt.Sprintf("%d", bid)
-	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomID, subDir, uuidName))
+	building, _ := h.MediaService.GetBuildingByID(bid)
+	nameSlug := utils.Slugify(building.Name)
+	buildingStr := fmt.Sprintf("%d_%s", bid, nameSlug)
+	roomStr := fmt.Sprintf("%d_%s-%s", room.ID, room.Floor, room.RoomNumber)
+	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomStr, subDir, uuidName))
 
 	var thumbKey string
 	var processedSize int64
@@ -417,7 +420,8 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 	}
 
 	uuidName := uuid.New().String() + vf.Ext
-	buildingStr := fmt.Sprintf("%d", bid)
+	nameSlug := utils.Slugify(building.Name)
+	buildingStr := fmt.Sprintf("%d_%s", bid, nameSlug)
 	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "cover", uuidName))
 
 	if vf.MediaType == "image" {
@@ -468,13 +472,16 @@ func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 		return
 	}
 
+	var room *models.Room
 	if req.RoomID != "" {
 		rid, pErr := strconv.ParseUint(req.RoomID, 10, 32)
 		if pErr != nil {
 			utils.Error(c, http.StatusBadRequest, "无效的房间ID")
 			return
 		}
-		if _, rErr := h.MediaService.GetRoomByID(uint(rid), bid); rErr != nil {
+		var rErr error
+		room, rErr = h.MediaService.GetRoomByID(uint(rid), bid)
+		if rErr != nil {
 			utils.Error(c, http.StatusNotFound, "房间不存在")
 			return
 		}
@@ -489,8 +496,20 @@ func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 
 	subDir := "images"
 	uuidName := uuid.New().String() + req.Ext
-	buildingStr := fmt.Sprintf("%d", bid)
-	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", req.RoomID, subDir, uuidName))
+	building, bErr := h.MediaService.GetBuildingByID(bid)
+	if bErr != nil {
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+	nameSlug := utils.Slugify(building.Name)
+	buildingStr := fmt.Sprintf("%d_%s", bid, nameSlug)
+	var roomStr string
+	if room != nil {
+		roomStr = fmt.Sprintf("%d_%s-%s", room.ID, room.Floor, room.RoomNumber)
+	} else {
+		roomStr = req.RoomID
+	}
+	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomStr, subDir, uuidName))
 
 	putPolicy := storage.PutPolicy{
 		Scope:   fmt.Sprintf("%s:%s", h.Cfg.QiniuBucket, key),

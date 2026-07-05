@@ -105,7 +105,7 @@ const coverUrl = computed(() => {
   return form.value.cover_image ? `/api/media/${form.value.cover_image}` : ''
 })
 
-function compressImage(file, maxWidth = 1920, quality = 0.8) {
+function compressImage(file, maxWidth = 1600, quality = 0.65) {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       resolve(file)

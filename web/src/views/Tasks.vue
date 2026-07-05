@@ -3,12 +3,12 @@
     <h3 style="margin-bottom: 20px">代办事项</h3>
     <el-card>
       <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center">
-        <el-radio-group v-model="filterStatus" @change="fetchTasks">
+        <el-radio-group v-model="filterStatus" @change="currentPage=1;fetchTasks()">
           <el-radio-button value="">全部</el-radio-button>
           <el-radio-button value="pending">待处理</el-radio-button>
           <el-radio-button value="completed">已完成</el-radio-button>
         </el-radio-group>
-        <span style="color: #999; font-size: 13px">共 {{ tasks.length }} 条</span>
+        <span style="color: #999; font-size: 13px">共 {{ total }} 条</span>
       </div>
       <div v-if="loading" class="skeleton-list">
         <div v-for="n in 4" :key="n" class="skeleton-item">
@@ -50,6 +50,9 @@
             </div>
           </div>
         </div>
+      </div>
+      <div v-if="total > pageSize" style="display: flex; justify-content: center; margin-top: 16px">
+        <el-pagination background layout="prev, pager, next" :total="total" :page-size="pageSize" :current-page="currentPage" @current-change="onPageChange" />
       </div>
     </el-card>
 
@@ -94,6 +97,9 @@ import { ElMessage } from 'element-plus'
 const tasks = ref([])
 const loading = ref(false)
 const filterStatus = ref('pending')
+const currentPage = ref(1)
+const total = ref(0)
+const pageSize = 20
 
 const showProcessDialog = ref(false)
 const processingTask = ref(null)
@@ -111,13 +117,19 @@ async function fetchTasks() {
   loading.value = true
   try {
     const status = filterStatus.value || undefined
-    const res = await buildingGetTasks(status)
+    const res = await buildingGetTasks(status, currentPage.value, pageSize)
     tasks.value = res.data.tasks
+    total.value = res.data.total || 0
   } catch {
     ElMessage.error('获取任务列表失败')
   } finally {
     loading.value = false
   }
+}
+
+function onPageChange(page) {
+  currentPage.value = page
+  fetchTasks()
 }
 
 function openProcessDialog(task) {

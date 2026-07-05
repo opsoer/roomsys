@@ -79,13 +79,15 @@ func (s *DividendService) Calculate(buildingID uint, month string) (map[string]i
 	}, nil
 }
 
-func (s *DividendService) List(buildingID uint) ([]models.Dividend, error) {
+func (s *DividendService) List(buildingID uint, page, size int) ([]models.Dividend, int64, error) {
 	var dividends []models.Dividend
-	err := s.DB.Where("building_id = ?", buildingID).
-		Preload("Shareholder").
-		Order("settle_month DESC").
-		Find(&dividends).Error
-	return dividends, err
+	query := s.DB.Where("building_id = ?", buildingID)
+	var total int64
+	if err := query.Model(&models.Dividend{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.Preload("Shareholder").Order("settle_month DESC").Offset((page - 1) * size).Limit(size).Find(&dividends).Error
+	return dividends, total, err
 }
 
 func (s *DividendService) Settle(dividend *models.Dividend) error {

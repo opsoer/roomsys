@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"rental-server/logger"
@@ -93,12 +92,28 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 			building.ExpiredAt = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}
 	}
-	if err := h.BuildingService.Create(&building); err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate entry") {
-			logger.Log.Warn().Str("name", req.Name).Msg("创建公寓失败: 名称已存在")
+	exists, err := h.BuildingService.ExistsByName(req.Name)
+	if err != nil {
+		logger.Log.Error().Err(err).Msg("检查公寓名称失败")
+		utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
+		return
+	}
+	if exists {
+		suggestedName, err := h.BuildingService.GenerateSuggestedName(req.Name)
+		if err != nil {
+			logger.Log.Warn().Str("name", req.Name).Msg("生成建议名称失败")
 			utils.Error(c, http.StatusConflict, "公寓名称已存在")
 			return
 		}
+		logger.Log.Warn().Str("name", req.Name).Str("suggested", suggestedName).Msg("创建公寓失败: 名称已存在")
+		c.JSON(http.StatusConflict, utils.APIResponse{
+			Code:    utils.CodeNameConflict,
+			Message: "公寓名称已存在",
+			Data:    gin.H{"suggested_name": suggestedName},
+		})
+		return
+	}
+	if err := h.BuildingService.Create(&building); err != nil {
 		logger.Log.Error().Err(err).Str("name", req.Name).Msg("创建公寓数据库失败")
 		utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
 		return
@@ -175,14 +190,31 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 		updates["status"] = req.Status
 	}
 
-	if len(updates) > 0 {
-		if err := h.BuildingService.Update(building.ID, updates); err != nil {
-			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新公寓数据库失败")
-			if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") {
+	if req.Name != "" && req.Name != building.Name {
+		exists, err := h.BuildingService.ExistsByName(req.Name)
+		if err != nil {
+			logger.Log.Error().Err(err).Msg("检查公寓名称失败")
+			utils.Error(c, http.StatusInternalServerError, "更新失败")
+			return
+		}
+		if exists {
+			suggestedName, err := h.BuildingService.GenerateSuggestedName(req.Name)
+			if err != nil {
 				utils.Error(c, http.StatusConflict, "公寓名称已存在")
 				return
 			}
-			utils.Error(c, http.StatusConflict, "更新失败，请检查名称是否重复")
+			c.JSON(http.StatusConflict, utils.APIResponse{
+				Code:    utils.CodeNameConflict,
+				Message: "公寓名称已存在",
+				Data:    gin.H{"suggested_name": suggestedName},
+			})
+			return
+		}
+	}
+	if len(updates) > 0 {
+		if err := h.BuildingService.Update(building.ID, updates); err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新公寓数据库失败")
+			utils.Error(c, http.StatusConflict, "更新失败")
 			return
 		}
 	}
@@ -211,6 +243,11 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.BuildingService.Delete(uint(buildingID)); err != nil {
+		if err.Error() == "active_contracts_exist" {
+			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在活跃合同")
+			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract, "该公寓存在活跃合同，无法删除")
+			return
+		}
 		logger.Log.Error().Err(err).Str("id", id).Msg("删除公寓失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
@@ -294,6 +331,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		return
 	}
 	requestedStatus := c.Query("status")
+	page, size := utils.ParsePage(c)
 	query := h.DB.Where("building_id = ?", buildingID)
 	if floor := c.Query("floor"); floor != "" {
 		query = query.Where("floor = ?", floor)
@@ -301,8 +339,16 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	if layout := c.Query("layout"); layout != "" {
 		query = query.Where("layout = ?", layout)
 	}
+
+	var total int64
+	if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间总数失败")
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+
 	var rooms []models.Room
-	if err := query.Preload("Media").Find(&rooms).Error; err != nil {
+	if err := query.Preload("Media").Offset((page - 1) * size).Limit(size).Find(&rooms).Error; err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
@@ -313,7 +359,9 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		roomIDs[i] = r.ID
 	}
 	var contracts []models.RentalContract
-	h.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
+	if len(roomIDs) > 0 {
+		h.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
+	}
 	contractMap := make(map[uint]string)
 	for _, ct := range contracts {
 		contractMap[ct.RoomID] = ct.EndDate
@@ -357,7 +405,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		}
 		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: endDate})
 	}
-	utils.Success(c, gin.H{"rooms": result})
+	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
 func (h *BuildingHandler) MyBuilding(c *gin.Context) {

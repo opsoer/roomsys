@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	MaxImageWidth  = 1920
-	MaxImageHeight = 1920
+	MaxImageWidth  = 1600
+	MaxImageHeight = 1600
 	ThumbWidth     = 300
-	JPEGQuality    = 80
+	JPEGQuality    = 65
 )
 
 func ProcessImageBytes(data []byte, ext string) (processed, thumbnail []byte, err error) {

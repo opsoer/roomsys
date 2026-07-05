@@ -65,9 +65,9 @@
       <div class="filter-title">房源展示</div>
       <div class="filter-actions">
         <van-dropdown-menu>
-          <van-dropdown-item v-model="statusFilter" :options="statusOptions" @change="fetchRooms" />
-          <van-dropdown-item v-model="floorFilter" :options="floorOptions" @change="fetchRooms" />
-          <van-dropdown-item v-model="layoutFilter" :options="layoutOptions" @change="fetchRooms" />
+          <van-dropdown-item v-model="statusFilter" :options="statusOptions" @change="onFilterChange" />
+          <van-dropdown-item v-model="floorFilter" :options="floorOptions" @change="onFilterChange" />
+          <van-dropdown-item v-model="layoutFilter" :options="layoutOptions" @change="onFilterChange" />
         </van-dropdown-menu>
       </div>
     </div>
@@ -114,6 +114,12 @@
       </div>
     </div>
 
+    <div v-if="rooms.length < totalRooms" style="text-align: center; padding: 12px">
+      <van-button :loading="loadingMore" size="small" plain @click="loadMore">加载更多</van-button>
+    </div>
+    <div v-if="totalRooms > 0" style="text-align: center; padding: 0 12px 12px; font-size: 12px; color: #999">
+      共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间
+    </div>
     <div class="page-footer">
       <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
     </div>
@@ -139,6 +145,10 @@ const loadError = ref(false)
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
+const currentPage = ref(1)
+const totalRooms = ref(0)
+const pageSize = 20
+const loadingMore = ref(false)
 
 const statusOptions = [
   { text: '全部', value: '' },
@@ -178,20 +188,41 @@ function goToDashboard() {
   }
 }
 
-async function fetchRooms() {
-  loading.value = true
+async function fetchRooms(append = false) {
+  if (!append) {
+    loading.value = true
+    currentPage.value = 1
+  } else {
+    loadingMore.value = true
+  }
   try {
-    const params = {}
+    const params = { page: currentPage.value, page_size: pageSize }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
     if (layoutFilter.value) params.layout = layoutFilter.value
     const res = await getBuildingRooms(id.value, params)
-    rooms.value = res.data.rooms || []
+    const data = res.data.rooms || []
+    totalRooms.value = res.data.total || 0
+    if (append) {
+      rooms.value = [...rooms.value, ...data]
+    } else {
+      rooms.value = data
+    }
   } catch {
     showToast('加载失败')
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
+}
+
+function loadMore() {
+  currentPage.value++
+  fetchRooms(true)
+}
+
+function onFilterChange() {
+  fetchRooms(false)
 }
 
 async function retryLoad() {

@@ -30,14 +30,15 @@ func (h *TaskHandler) List(c *gin.Context) {
 		return
 	}
 	status := c.Query("status")
-	tasks, err := h.TaskService.List(bid, status)
+	page, size := utils.ParsePage(c)
+	tasks, total, err := h.TaskService.List(bid, status, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询任务列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询任务列表失败")
 		return
 	}
 	logger.Log.Debug().Uint("building_id", bid).Int("count", len(tasks)).Msg("查询任务列表")
-	utils.Success(c, gin.H{"tasks": tasks})
+	utils.Success(c, gin.H{"tasks": tasks, "total": total, "page": page, "size": size})
 }
 
 func (h *TaskHandler) Process(c *gin.Context) {
