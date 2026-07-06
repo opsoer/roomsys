@@ -34,17 +34,27 @@ func (h *RoomHandler) hasAuth(c *gin.Context) bool {
 }
 
 type CreateRoomReq struct {
-	RoomNumber  string `json:"room_number" binding:"required"`
-	Floor       string `json:"floor" binding:"required"`
-	Layout      string `json:"layout" binding:"required"`
-	Description string `json:"description"`
+	RoomNumber           string   `json:"room_number" binding:"required"`
+	Floor                string   `json:"floor" binding:"required"`
+	Layout               string   `json:"layout" binding:"required"`
+	Description          string   `json:"description"`
+	RentPrice            *float64 `json:"rent_price" binding:"required"`
+	DepositMonths        *uint    `json:"deposit_months" binding:"required"`
+	ManagementFee        *float64 `json:"management_fee" binding:"required"`
+	ElectricityUnitPrice *float64 `json:"electricity_unit_price" binding:"required"`
+	WaterUnitPrice       *float64 `json:"water_unit_price" binding:"required"`
 }
 
 type UpdateRoomReq struct {
-	RoomNumber  string `json:"room_number"`
-	Floor       string `json:"floor"`
-	Layout      string `json:"layout"`
-	Description string `json:"description"`
+	RoomNumber           string   `json:"room_number"`
+	Floor                string   `json:"floor"`
+	Layout               string   `json:"layout"`
+	Description          string   `json:"description"`
+	RentPrice            *float64 `json:"rent_price"`
+	DepositMonths        *uint    `json:"deposit_months"`
+	ManagementFee        *float64 `json:"management_fee"`
+	ElectricityUnitPrice *float64 `json:"electricity_unit_price"`
+	WaterUnitPrice       *float64 `json:"water_unit_price"`
 }
 
 type UpdateRoomStatusReq struct {
@@ -238,13 +248,27 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if *req.RentPrice <= 0 || *req.ManagementFee < 0 || *req.ElectricityUnitPrice < 0 || *req.WaterUnitPrice < 0 {
+		utils.Error(c, http.StatusBadRequest, "价格信息不能为负数")
+		return
+	}
+	if *req.DepositMonths > 3 {
+		utils.Error(c, http.StatusBadRequest, "押金月数不能超过3")
+		return
+	}
+
 	room := models.Room{
-		BuildingID:  bid,
-		RoomNumber:  req.RoomNumber,
-		Floor:       req.Floor,
-		Layout:      req.Layout,
-		Description: req.Description,
-		Status:      "vacant",
+		BuildingID:           bid,
+		RoomNumber:           req.RoomNumber,
+		Floor:                req.Floor,
+		Layout:               req.Layout,
+		Description:          req.Description,
+		Status:               "vacant",
+		RentPrice:            req.RentPrice,
+		DepositMonths:        req.DepositMonths,
+		ManagementFee:        req.ManagementFee,
+		ElectricityUnitPrice: req.ElectricityUnitPrice,
+		WaterUnitPrice:       req.WaterUnitPrice,
 	}
 
 	if err := h.RoomService.Create(&room); err != nil {
@@ -286,6 +310,21 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	}
 	if req.Description != "" {
 		updates["description"] = req.Description
+	}
+	if req.RentPrice != nil {
+		updates["rent_price"] = *req.RentPrice
+	}
+	if req.DepositMonths != nil {
+		updates["deposit_months"] = *req.DepositMonths
+	}
+	if req.ManagementFee != nil {
+		updates["management_fee"] = *req.ManagementFee
+	}
+	if req.ElectricityUnitPrice != nil {
+		updates["electricity_unit_price"] = *req.ElectricityUnitPrice
+	}
+	if req.WaterUnitPrice != nil {
+		updates["water_unit_price"] = *req.WaterUnitPrice
 	}
 
 	if err := h.RoomService.Update(uint(rid), updates); err != nil {

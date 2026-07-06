@@ -42,17 +42,59 @@
       </div>
     </div>
 
+    <!-- 价格信息 -->
+    <div v-if="room.rent_price || room.deposit_months != null || room.management_fee || room.electricity_unit_price || room.water_unit_price" class="room-price-card">
+      <div v-if="room.rent_price" class="price-item">
+        <span class="price-label">月租金</span>
+        <span class="price-value">¥{{ room.rent_price }}</span>
+      </div>
+      <div v-if="room.deposit_months != null" class="price-item">
+        <span class="price-label">押金规则</span>
+        <span class="price-value sub">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
+      </div>
+      <div v-if="room.management_fee" class="price-item">
+        <span class="price-label">管理费</span>
+        <span class="price-value sub">¥{{ room.management_fee }}/月</span>
+      </div>
+      <div v-if="room.electricity_unit_price" class="price-item">
+        <span class="price-label">电费单价</span>
+        <span class="price-value sub">¥{{ room.electricity_unit_price }}/度</span>
+      </div>
+      <div v-if="room.water_unit_price" class="price-item">
+        <span class="price-label">水费单价</span>
+        <span class="price-value sub">¥{{ room.water_unit_price }}/吨</span>
+      </div>
+    </div>
+
     <!-- 房东信息 -->
     <div v-if="building?.landlords?.length" class="room-section landlord-section">
       <div class="section-title">
         <van-icon name="phone-o" /> 房东信息
       </div>
       <div v-for="l in building.landlords" :key="l.id" class="landlord-item">
-        <van-icon name="contact" size="16" color="#e6a23c" />
-        <span class="landlord-name">{{ l.name }}</span>
-        <a :href="'tel:' + l.phone" class="landlord-phone">{{ l.phone }}</a>
+        <div class="landlord-avatar">
+          <van-icon name="contact" size="20" color="#fff" />
+        </div>
+        <div class="landlord-info">
+          <span class="landlord-name">{{ maskName(l.name) }}</span>
+          <span class="landlord-phone-masked">{{ maskPhone(l.phone) }}</span>
+        </div>
+        <van-button size="small" type="primary" round @click="showContact(l)">获取联系方式</van-button>
       </div>
     </div>
+
+    <van-dialog v-model:show="contactVisible" close-on-click-overlay>
+      <div class="contact-dialog">
+        <div class="contact-avatar">
+          <van-icon name="contact" size="32" color="#fff" />
+        </div>
+        <div class="contact-name">{{ contactLandlord.name }}</div>
+        <div class="contact-phone">{{ contactLandlord.phone }}</div>
+        <van-button type="primary" block round @click="copyPhone">
+          <van-icon name="records" style="margin-right:4px" /> 复制电话号码
+        </van-button>
+      </div>
+    </van-dialog>
 
     <!-- 到期信息（公开显示） -->
     <div v-if="room.end_date" class="room-section">
@@ -140,6 +182,42 @@ const contract = ref(null)
 const building = ref(null)
 const allImages = ref([])
 const videos = ref([])
+
+const contactVisible = ref(false)
+const contactLandlord = ref({ name: '', phone: '' })
+
+function maskName(name) {
+  if (!name) return ''
+  return name.charAt(0) + '*'.repeat(name.length - 1)
+}
+
+function maskPhone(phone) {
+  if (!phone) return ''
+  if (phone.length <= 3) return phone
+  if (phone.length <= 7) return phone.slice(0, 3) + '*'.repeat(phone.length - 3)
+  return phone.slice(0, 3) + '*'.repeat(phone.length - 7) + phone.slice(-4)
+}
+
+function showContact(landlord) {
+  contactLandlord.value = { name: landlord.name, phone: landlord.phone }
+  contactVisible.value = true
+}
+
+function copyPhone() {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(contactLandlord.value.phone)
+  } else {
+    const ta = document.createElement('textarea')
+    ta.value = contactLandlord.value.phone
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  showToast({ message: '已复制到剪贴板', duration: 1500 })
+}
 
 function goToDashboard() {
   const authStore = useAuthStore()
@@ -249,6 +327,8 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-around;
   color: #fff;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .price-item {
   text-align: center;
@@ -317,20 +397,65 @@ onMounted(async () => {
 .landlord-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.landlord-item:last-child {
+  border-bottom: none;
+}
+.landlord-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e6a23c, #f0a020);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.landlord-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .landlord-name {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   color: #333;
-  min-width: 48px;
 }
-.landlord-phone {
-  font-size: 14px;
-  color: #e6a23c;
-  text-decoration: none;
-  font-weight: 500;
+.landlord-phone-masked {
+  font-size: 12px;
+  color: #999;
+  letter-spacing: 1px;
+}
+.contact-dialog {
+  text-align: center;
+  padding: 24px 20px 16px;
+}
+.contact-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e6a23c, #f0a020);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+.contact-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 6px;
+}
+.contact-phone {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+  letter-spacing: 2px;
+  margin-bottom: 24px;
 }
 .page-footer {
   text-align: center;

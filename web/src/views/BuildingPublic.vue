@@ -106,6 +106,17 @@
             <template v-if="room.floor && room.layout"> · </template>
             <template v-if="room.layout">{{ room.layout }}</template>
           </p>
+          <div v-if="room.rent_price || room.deposit_months != null" class="room-card-price-row">
+            <span v-if="room.rent_price" class="room-card-price">¥{{ room.rent_price }}/月</span>
+            <span v-if="room.deposit_months != null" class="room-card-deposit">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
+          </div>
+          <p v-if="room.management_fee != null || room.electricity_unit_price || room.water_unit_price" class="room-card-utilities">
+            <span v-if="room.management_fee != null">管理费:{{ room.management_fee ? '¥' + room.management_fee : '无' }}</span>
+            <template v-if="room.management_fee != null && (room.electricity_unit_price || room.water_unit_price)"> · </template>
+            <template v-if="room.electricity_unit_price">电¥{{ room.electricity_unit_price }}/度</template>
+            <template v-if="room.electricity_unit_price && room.water_unit_price"> · </template>
+            <template v-if="room.water_unit_price">水¥{{ room.water_unit_price }}/吨</template>
+          </p>
           <p v-if="room.end_date" class="room-card-enddate">
             <van-icon name="clock-o" size="11" />
             退租：{{ room.end_date }}
@@ -420,6 +431,18 @@ onMounted(async () => {
 .room-card-info {
   font-size: 12px;
   color: #888;
+}
+.room-card-price-row { margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.room-card-price {
+  font-size: 14px;
+  color: #e6a23c;
+  font-weight: 700;
+}
+.room-card-deposit { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; line-height: 18px; }
+.room-card-utilities {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #999;
 }
 .room-card-enddate {
   margin-top: 4px;

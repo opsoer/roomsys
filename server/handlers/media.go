@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"rental-server/config"
 	"rental-server/logger"
@@ -268,6 +269,23 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	category := c.PostForm("category")
 	if category == "" {
 		category = "gallery"
+	}
+
+	if vf.MediaType == "image" && category != "cover" {
+		count, _ := h.MediaService.CountMediaByRoomAndType(room.ID, "image")
+		if count >= 10 {
+			file.Close()
+			utils.Error(c, http.StatusBadRequest, "每个房间最多允许10张照片")
+			return
+		}
+	}
+	if vf.MediaType == "video" {
+		count, _ := h.MediaService.CountMediaByRoomAndType(room.ID, "video")
+		if count >= 2 {
+			file.Close()
+			utils.Error(c, http.StatusBadRequest, "每个房间最多允许2个视频")
+			return
+		}
 	}
 
 	subDir := vf.MediaType + "s"
@@ -573,6 +591,21 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 		req.Category = "gallery"
 	}
 
+	if req.Type == "image" && req.Category != "cover" {
+		count, _ := h.MediaService.CountMediaByRoomAndType(room.ID, "image")
+		if count >= 10 {
+			utils.Error(c, http.StatusBadRequest, "每个房间最多允许10张照片")
+			return
+		}
+	}
+	if req.Type == "video" {
+		count, _ := h.MediaService.CountMediaByRoomAndType(room.ID, "video")
+		if count >= 2 {
+			utils.Error(c, http.StatusBadRequest, "每个房间最多允许2个视频")
+			return
+		}
+	}
+
 	media := models.RoomMedia{
 		RoomID:   room.ID,
 		Type:     req.Type,
@@ -636,4 +669,46 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 	}
 	logger.Log.Debug().Str("path", safePath).Msg("文件服务")
 	c.File(absPath)
+}
+
+func (h *MediaHandler) ReDownloadFFmpeg(c *gin.Context) {
+	dir := filepath.Join(h.Cfg.UploadDir, "ffmpeg")
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "创建目录失败")
+		return
+	}
+
+	baseURL := "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm"
+	files := []string{"ffmpeg-core.js", "ffmpeg-core.wasm"}
+	client := &http.Client{Timeout: 120 * time.Second}
+
+	var failed []string
+	for _, f := range files {
+		url := baseURL + "/" + f
+		resp, err := client.Get(url)
+		if err != nil {
+			logger.Log.Warn().Err(err).Str("url", url).Msg("下载 FFmpeg core 失败")
+			failed = append(failed, f)
+			continue
+		}
+		out, err := os.Create(filepath.Join(dir, f))
+		if err != nil {
+			resp.Body.Close()
+			failed = append(failed, f)
+			continue
+		}
+		_, err = io.Copy(out, resp.Body)
+		resp.Body.Close()
+		out.Close()
+		if err != nil {
+			os.Remove(filepath.Join(dir, f))
+			failed = append(failed, f)
+		}
+	}
+
+	if len(failed) > 0 {
+		utils.Error(c, http.StatusInternalServerError, "部分文件下载失败")
+		return
+	}
+	utils.Success(c, gin.H{"message": "FFmpeg 核心文件下载完成"})
 }

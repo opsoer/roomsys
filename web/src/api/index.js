@@ -301,6 +301,10 @@ export function confirmMediaUpload(roomId, data) {
   })
 }
 
+export function reDownloadFFmpeg() {
+  return uploadApi.post('/building/ffmpeg/re-download')
+}
+
 export function getConfig() {
   return api.get('/config')
 }

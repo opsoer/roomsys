@@ -257,7 +257,7 @@ func checkExpiredBuildings(db *gorm.DB) {
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
-	password := "admin"
+	password := "admin123"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")

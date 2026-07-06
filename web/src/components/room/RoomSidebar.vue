@@ -4,9 +4,20 @@
       <h4 class="sidebar-title">联系房东</h4>
       <div v-for="l in landlords" :key="l.id" class="sidebar-row">
         <span class="sidebar-label">{{ l.name }}</span>
-        <a :href="'tel:' + l.phone" class="sidebar-phone">{{ l.phone }}</a>
+        <el-button text type="primary" size="small" @click="showContact(l)">获取联系方式</el-button>
       </div>
     </div>
+
+    <el-dialog v-model="contactVisible" title="房东联系方式" width="360px" align-center>
+      <div style="text-align:center;padding:12px 0">
+        <div style="font-size:16px;font-weight:600;margin-bottom:16px">{{ contactLandlord.name }}</div>
+        <div style="font-size:22px;font-weight:700;color:#333;letter-spacing:2px;margin-bottom:16px">{{ contactLandlord.phone }}</div>
+        <el-button type="primary" @click="copyPhone">复制电话号码</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="contactVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <div v-if="currentContract && isAdmin" class="sidebar-card">
       <div class="sidebar-card-header">
@@ -58,7 +69,10 @@
       <div v-if="uploading || isCompressing" style="margin-bottom:12px">
         <el-progress v-if="isCompressing" :percentage="0" :indeterminate="true" :stroke-width="6" />
         <el-progress v-else :percentage="uploadProgress" :stroke-width="6" />
-        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">正在压缩视频...</div>
+        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">
+          正在压缩视频...{{ compressElapsed > 0 ? ` 已用时 ${compressElapsed}s` : '' }}
+          <el-button text size="small" type="danger" @click="cancelCompress" style="margin-left:8px">取消</el-button>
+        </div>
       </div>
       <div class="upload-actions">
         <el-upload
@@ -80,9 +94,12 @@
           :before-upload="beforeUploadImage"
           :show-file-list="false"
           accept="image/jpeg,image/png,image/gif"
+          :disabled="imageCount >= 10"
           multiple
         >
-          <el-button type="primary" :icon="Picture" style="width:100%">上传照片</el-button>
+          <el-button type="primary" :icon="Picture" style="width:100%" :disabled="imageCount >= 10">
+            上传照片{{ imageCount >= 10 ? '（已满）' : `（${imageCount}/10）` }}
+          </el-button>
         </el-upload>
         <el-upload
           :http-request="customUpload"
@@ -92,8 +109,11 @@
           :before-upload="beforeUploadVideo"
           :show-file-list="false"
           accept="video/mp4,video/quicktime"
+          :disabled="videoCount >= 2"
         >
-          <el-button type="success" :icon="VideoCamera" style="width:100%">上传视频</el-button>
+          <el-button type="success" :icon="VideoCamera" style="width:100%" :disabled="videoCount >= 2">
+            上传视频{{ videoCount >= 2 ? '（已满）' : `（${videoCount}/2）` }}
+          </el-button>
         </el-upload>
       </div>
     </div>
@@ -101,12 +121,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { buildingUploadMedia } from '../../api'
 import { compressVideo } from '../../utils/compressVideo'
 
-defineProps({
+const props = defineProps({
   room: { type: Object, required: true },
   landlords: { type: Array, default: () => [] },
   currentContract: { type: Object, default: null },
@@ -115,34 +136,71 @@ defineProps({
 
 const emit = defineEmits(['renew', 'rent', 'vacant', 'upload-success'])
 
+const imageCount = computed(() => {
+  const media = props.room?.media || []
+  return media.filter(m => m.type === 'image').length
+})
+const videoCount = computed(() => {
+  const media = props.room?.media || []
+  return media.filter(m => m.type === 'video').length
+})
+
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const isCompressing = ref(false)
+const compressElapsed = ref(0)
+let compressTimer = null
+let activeAbortController = null
+
+const contactVisible = ref(false)
+const contactLandlord = ref({ name: '', phone: '' })
+
+function showContact(landlord) {
+  contactLandlord.value = { name: landlord.name, phone: landlord.phone }
+  contactVisible.value = true
+}
+
+function copyPhone() {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(contactLandlord.value.phone)
+  } else {
+    const ta = document.createElement('textarea')
+    ta.value = contactLandlord.value.phone
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  ElMessage.success('已复制到剪贴板')
+  contactVisible.value = false
+}
+
+function startCompressTimer() {
+  compressElapsed.value = 0
+  compressTimer = setInterval(() => { compressElapsed.value++ }, 1000)
+}
+function stopCompressTimer() {
+  if (compressTimer) { clearInterval(compressTimer); compressTimer = null }
+  compressElapsed.value = 0
+}
+function cancelCompress() {
+  activeAbortController?.abort()
+}
 
 function compressImage(file, maxWidth = 1600, quality = 0.65) {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      resolve(file)
-      return
-    }
+    if (!file.type.startsWith('image/')) { resolve(file); return }
     const img = new Image()
     const url = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(url)
       let { width, height } = img
-      if (width <= maxWidth && height <= maxWidth) {
-        resolve(file)
-        return
-      }
+      if (width <= maxWidth && height <= maxWidth) { resolve(file); return }
       const canvas = document.createElement('canvas')
-      if (width > maxWidth) {
-        height = Math.round((maxWidth / width) * height)
-        width = maxWidth
-      }
-      if (height > maxWidth) {
-        width = Math.round((maxWidth / height) * width)
-        height = maxWidth
-      }
+      if (width > maxWidth) { height = Math.round((maxWidth / width) * height); width = maxWidth }
+      if (height > maxWidth) { width = Math.round((maxWidth / height) * width); height = maxWidth }
       canvas.width = width
       canvas.height = height
       const ctx = canvas.getContext('2d')
@@ -158,20 +216,34 @@ function compressImage(file, maxWidth = 1600, quality = 0.65) {
 }
 
 async function customUpload(options) {
+  if (uploading.value) {
+    ElMessage.warning('正在上传中，请等待当前任务完成')
+    return
+  }
   uploading.value = true
   uploadProgress.value = 0
   try {
     let file
     if (options.file.type.startsWith('video/')) {
       isCompressing.value = true
+      startCompressTimer()
+      activeAbortController = new AbortController()
       try {
-        file = await compressVideo(options.file)
+        file = await compressVideo(options.file, {
+          timeout: 120000,
+          signal: activeAbortController.signal,
+        })
       } catch (e) {
-        isCompressing.value = false
-        uploading.value = false
-        const title = e.code === 'COMPRESS_UNSUPPORTED' ? '设备不支持' : '压缩失败'
+        if (e.code === 'COMPRESS_ABORTED') {
+          return
+        }
+        const title = e.code === 'COMPRESS_UNSUPPORTED' ? '设备不支持'
+          : e.code === 'COMPRESS_TIMEOUT' ? '压缩超时'
+          : '压缩失败'
         const msg = e.code === 'COMPRESS_UNSUPPORTED'
           ? '当前手机版本太低，建议更换手机上传视频。'
+          : e.code === 'COMPRESS_TIMEOUT'
+          ? '视频压缩超时（2分钟），是否继续上传原件？'
           : '视频压缩失败，是否继续上传原件？'
         try {
           await ElMessageBox.confirm(msg, title, {
@@ -180,13 +252,13 @@ async function customUpload(options) {
             type: 'warning',
           })
           file = options.file
-          uploading.value = true
-          uploadProgress.value = 0
         } catch {
           return
         }
       } finally {
         isCompressing.value = false
+        stopCompressTimer()
+        activeAbortController = null
       }
     } else {
       file = await compressImage(options.file)
@@ -205,6 +277,7 @@ async function customUpload(options) {
   } finally {
     uploading.value = false
     isCompressing.value = false
+    stopCompressTimer()
   }
 }
 
@@ -218,28 +291,23 @@ function handleUploadSuccess() {
 }
 
 function beforeUploadImage(file) {
-  if (!file.type.startsWith('image/')) {
-    ElMessage.error('仅支持图片格式')
-    return false
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.error('图片最大 10MB')
-    return false
-  }
+  if (!file.type.startsWith('image/')) { ElMessage.error('仅支持图片格式'); return false }
+  if (file.size > 10 * 1024 * 1024) { ElMessage.error('图片最大 10MB'); return false }
+  if (imageCount.value >= 10) { ElMessage.error('每个房间最多允许10张照片'); return false }
   return true
 }
 
 function beforeUploadVideo(file) {
-  if (!file.type.startsWith('video/')) {
-    ElMessage.error('仅支持视频格式')
-    return false
-  }
-  if (file.size > 200 * 1024 * 1024) {
-    ElMessage.error('视频最大 200MB')
-    return false
-  }
+  if (!file.type.startsWith('video/')) { ElMessage.error('仅支持视频格式'); return false }
+  if (file.size > 200 * 1024 * 1024) { ElMessage.error('视频最大 200MB'); return false }
+  if (videoCount.value >= 2) { ElMessage.error('每个房间最多允许2个视频'); return false }
   return true
 }
+
+onUnmounted(() => {
+  stopCompressTimer()
+  activeAbortController?.abort()
+})
 </script>
 
 <style scoped>
@@ -271,13 +339,6 @@ function beforeUploadVideo(file) {
 }
 .sidebar-label { color: #999; font-size: 14px; }
 .sidebar-val { font-weight: 500; color: #333; font-size: 14px; }
-.sidebar-phone {
-  font-weight: 600;
-  color: #e6a23c;
-  text-decoration: none;
-  font-size: 16px;
-}
-.sidebar-phone:hover { color: #d4880f; }
 .price-primary { color: #67c23a; font-weight: 600; }
 .price-warn { color: #e6a23c; font-weight: 600; }
 .sidebar-actions { display: flex; flex-direction: column; gap: 8px; }

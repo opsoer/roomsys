@@ -96,6 +96,11 @@ async function fetchRoom() {
       floor: room.value.floor,
       layout: room.value.layout,
       description: room.value.description,
+      rent_price: room.value.rent_price ?? null,
+      deposit_months: room.value.deposit_months ?? null,
+      management_fee: room.value.management_fee ?? null,
+      electricity_unit_price: room.value.electricity_unit_price ?? null,
+      water_unit_price: room.value.water_unit_price ?? null,
     }
   } catch {
     ElMessage.error('获取房间信息失败')

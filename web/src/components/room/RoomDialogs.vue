@@ -81,6 +81,32 @@
             <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
           </el-select>
         </el-form-item>
+        <el-divider>价格设置</el-divider>
+        <el-form-item label="租金（月）" prop="rent_price" required
+          :rules="[{ required: true, message: '请输入月租金' }, { validator: (_, v) => v > 0, message: '租金必须大于0' }]">
+          <el-input :model-value="editForm.rent_price" @update:model-value="v => editForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" clearable />
+        </el-form-item>
+        <el-form-item label="押金规则" prop="deposit_months" required
+          :rules="[{ required: true, message: '请选择押金规则' }, { validator: (_, v) => v >= 0 && v <= 3, message: '押金月数范围为0~3' }]">
+          <el-select v-model="editForm.deposit_months" placeholder="选择押金规则" style="width:100%">
+            <el-option :value="0" label="无押金" />
+            <el-option :value="1" label="押一" />
+            <el-option :value="2" label="押二" />
+            <el-option :value="3" label="押三" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="管理费" prop="management_fee" required
+          :rules="[{ required: true, message: '请输入管理费' }, { validator: (_, v) => v >= 0, message: '管理费不能为负数' }]">
+          <el-input :model-value="editForm.management_fee" @update:model-value="v => editForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="每月管理费" clearable />
+        </el-form-item>
+        <el-form-item label="电费单价" prop="electricity_unit_price" required
+          :rules="[{ required: true, message: '请输入电费单价' }, { validator: (_, v) => v >= 0, message: '电费单价不能为负数' }]">
+          <el-input :model-value="editForm.electricity_unit_price" @update:model-value="v => editForm.electricity_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/度" clearable />
+        </el-form-item>
+        <el-form-item label="水费单价" prop="water_unit_price" required
+          :rules="[{ required: true, message: '请输入水费单价' }, { validator: (_, v) => v >= 0, message: '水费单价不能为负数' }]">
+          <el-input :model-value="editForm.water_unit_price" @update:model-value="v => editForm.water_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/吨" clearable />
+        </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input v-model="editForm.description" type="textarea" :rows="3" />
         </el-form-item>

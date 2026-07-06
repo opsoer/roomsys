@@ -24,6 +24,7 @@
     
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
       <div class="hero-banner">
+    
         <h1 class="hero-title">圳好租 · 深圳公寓</h1>
         <p class="hero-subtitle">直连房东 · 真实房源 · 即租即住</p>
       </div>
@@ -196,6 +197,13 @@ onMounted(async () => {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   padding: 28px 20px;
   text-align: center;
+  position: relative;
+  overflow: hidden;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 .hero-title {
   font-size: 22px;

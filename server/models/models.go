@@ -52,20 +52,24 @@ type BuildingLandlord struct {
 }
 
 type Room struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	BuildingID   uint           `gorm:"uniqueIndex:idx_building_room;not null" json:"building_id"`
-	RoomNumber   string         `gorm:"uniqueIndex:idx_building_room;size:20;not null" json:"room_number"`
-	Floor        string         `gorm:"size:10;not null" json:"floor"`
-	Layout       string         `gorm:"size:20;not null" json:"layout"`
-	Area         float64        `gorm:"type:decimal(8,2)" json:"area"`
-	Orientation  string         `gorm:"size:10" json:"orientation"`
-	SuggestedRent float64       `gorm:"type:decimal(10,2)" json:"suggested_rent"`
-	Status       string         `gorm:"size:20;not null;default:'vacant'" json:"status"`
-	Description  string         `gorm:"type:text" json:"description"`
-	Media        []RoomMedia    `gorm:"foreignKey:RoomID" json:"media,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                 uint           `gorm:"primaryKey" json:"id"`
+	BuildingID         uint           `gorm:"uniqueIndex:idx_building_room;not null" json:"building_id"`
+	RoomNumber         string         `gorm:"uniqueIndex:idx_building_room;size:20;not null" json:"room_number"`
+	Floor              string         `gorm:"size:10;not null" json:"floor"`
+	Layout             string         `gorm:"size:20;not null" json:"layout"`
+	Area               float64        `gorm:"type:decimal(8,2)" json:"area"`
+	Orientation        string         `gorm:"size:10" json:"orientation"`
+	RentPrice            *float64 `gorm:"type:decimal(10,2)" json:"rent_price"`
+	DepositMonths        *uint    `gorm:"default:0" json:"deposit_months"`
+	ManagementFee        *float64 `gorm:"type:decimal(10,2)" json:"management_fee"`
+	ElectricityUnitPrice *float64 `gorm:"type:decimal(10,4)" json:"electricity_unit_price"`
+	WaterUnitPrice       *float64 `gorm:"type:decimal(10,4)" json:"water_unit_price"`
+	Status             string         `gorm:"size:20;not null;default:'vacant'" json:"status"`
+	Description        string         `gorm:"type:text" json:"description"`
+	Media              []RoomMedia    `gorm:"foreignKey:RoomID" json:"media,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type RoomMedia struct {

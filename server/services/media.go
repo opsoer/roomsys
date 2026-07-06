@@ -48,6 +48,12 @@ func (s *MediaService) DeleteMedia(media *models.RoomMedia) error {
 	return s.DB.Delete(media).Error
 }
 
+func (s *MediaService) CountMediaByRoomAndType(roomID uint, mediaType string) (int64, error) {
+	var count int64
+	err := s.DB.Model(&models.RoomMedia{}).Where("room_id = ? AND type = ?", roomID, mediaType).Count(&count).Error
+	return count, err
+}
+
 func (s *MediaService) UpdateBuildingCover(buildingID uint, coverImage string) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", buildingID).Update("cover_image", coverImage).Error
 }
