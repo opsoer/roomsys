@@ -304,6 +304,7 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
+	go utils.RecordPageView(h.DB, "building_list", 0, 0, utils.GetRealIP(c))
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
@@ -320,6 +321,7 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
+	go utils.RecordPageView(h.DB, "building_detail", uint(buildingID), uint(buildingID), utils.GetRealIP(c))
 	utils.Success(c, gin.H{"building": building})
 }
 

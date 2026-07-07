@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,10 @@ func init() {
 
 func RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+			c.Next()
+			return
+		}
 		ip := c.ClientIP()
 		apiRateMu.Lock()
 		now := time.Now()

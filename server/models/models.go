@@ -212,6 +212,15 @@ type AuditLog struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type PageView struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	PageType   string    `gorm:"size:30;not null;index:idx_pv_query" json:"page_type"`
+	ResourceID uint      `gorm:"not null;default:0;index:idx_pv_query" json:"resource_id"`
+	BuildingID uint      `gorm:"default:0;index:idx_pv_query" json:"building_id"`
+	IP         string    `gorm:"size:45;not null" json:"ip"`
+	CreatedAt  time.Time `gorm:"index:idx_pv_query;index:idx_pv_cleanup" json:"created_at"`
+}
+
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
@@ -228,6 +237,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&Setting{},
 		&RecruitSubmission{},
 		&AuditLog{},
+		&PageView{},
 	)
 }
 

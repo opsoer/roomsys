@@ -11,16 +11,19 @@
           <span class="top-title">圳好租</span>
         </div>
         <div class="top-bar-right">
-          <van-icon name="manager" size="20" @click="goToDashboard" />
+          <span class="login-btn" @click="goToDashboard">登录</span>
         </div>
       </div>
-      <div class="filter-bar">
-        <van-dropdown-menu>
-          <van-dropdown-item v-model="districtFilter" :options="districtOptions" @change="fetchBuildings" />
-        </van-dropdown-menu>
-        <span class="filter-count">共 {{ buildings.length }} 栋</span>
-      </div>
     </van-sticky>
+    <div class="filter-bar">
+      <div class="filter-tab" :class="{ active: sheetOpen }" @click="openSheet">
+        <span>{{ districtText }}</span>
+        <van-icon name="arrow-down" size="12" />
+      </div>
+      <span class="filter-count">共 {{ buildings.length }} 栋</span>
+    </div>
+
+    <van-action-sheet v-model:show="sheetOpen" :actions="sheetActions" @select="onSheetSelect" close-on-click-action cancel-text="取消" />
     
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
       <div class="hero-banner">
@@ -101,6 +104,7 @@ const districts = ref(shenzhen.map(d => d.value))
 const loading = ref(true)
 const refreshing = ref(false)
 const districtFilter = ref('')
+const sheetOpen = ref(false)
 
 const districtOptions = computed(() => {
   const opts = [{ text: '全部区域', value: '' }]
@@ -109,6 +113,17 @@ const districtOptions = computed(() => {
   }
   return opts
 })
+const districtText = computed(() => {
+  const opt = districtOptions.value.find(o => o.value === districtFilter.value)
+  return opt ? opt.text : '区域'
+})
+const sheetActions = computed(() => districtOptions.value.map(o => ({ name: o.text, value: o.value })))
+
+function openSheet() { sheetOpen.value = true }
+function onSheetSelect(action) {
+  districtFilter.value = action.value
+  fetchBuildings()
+}
 
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -174,24 +189,43 @@ onMounted(async () => {
   gap: 12px;
   color: #666;
 }
+.login-btn {
+  color: #1989fa;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid #1989fa;
+  border-radius: 14px;
+  cursor: pointer;
+}
 .filter-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 10px 16px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;
+}
+.filter-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-tab.active {
+  border-color: #1989fa;
+  color: #1989fa;
 }
 .filter-count {
   font-size: 12px;
   color: #999;
   white-space: nowrap;
-}
-:deep(.van-dropdown-menu__bar) {
-  box-shadow: none;
-}
-:deep(.van-dropdown-menu__title) {
-  font-size: 14px;
 }
 .hero-banner {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);

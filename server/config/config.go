@@ -17,6 +17,7 @@ type Config struct {
 	UploadDir  string `json:"upload_dir"`
 	LogLevel   string `json:"log_level"`
 	LogDir     string `json:"log_dir"`
+	WebDistDir string `json:"web_dist_dir"`
 
 	QiniuAccessKey string `json:"qiniu_access_key"`
 	QiniuSecretKey string `json:"qiniu_secret_key"`
@@ -38,6 +39,7 @@ func defaults() *Config {
 		UploadDir:  "./storage/media",
 		LogLevel:   "info",
 		LogDir:     "./logs",
+		WebDistDir: "../web/dist",
 	}
 }
 
@@ -120,5 +122,8 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("QINIU_ZONE"); v != "" {
 		cfg.QiniuZone = v
+	}
+	if v := os.Getenv("WEB_DIST_DIR"); v != "" {
+		cfg.WebDistDir = v
 	}
 }

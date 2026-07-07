@@ -188,6 +188,14 @@ func (h *MediaHandler) getDomain() (string, error) {
 		return d, nil
 	}
 
+	if h.Cfg.QiniuDomain != "" {
+		qiniuDomainMu.Lock()
+		qiniuDomain = h.Cfg.QiniuDomain
+		qiniuDomainMu.Unlock()
+		logger.Log.Info().Str("domain", h.Cfg.QiniuDomain).Msg("使用配置的七牛域名")
+		return h.Cfg.QiniuDomain, nil
+	}
+
 	cfg := h.qiniuConfig()
 	bucketMgr := storage.NewBucketManager(h.qiniuMac(), &cfg)
 	domains, err := bucketMgr.ListBucketDomains(h.Cfg.QiniuBucket)

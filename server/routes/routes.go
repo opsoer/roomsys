@@ -14,11 +14,12 @@ import (
 )
 
 func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
-	r.Static("/assets", "../web/dist/assets")
-	r.StaticFile("/", "../web/dist/index.html")
+	r.Static("/assets", cfg.WebDistDir+"/assets")
+	r.StaticFile("/default-image.svg", cfg.WebDistDir+"/default-image.svg")
+	r.StaticFile("/", cfg.WebDistDir+"/index.html")
 	r.Static("/api/ffmpeg", filepath.Join(cfg.UploadDir, "ffmpeg"))
 	r.NoRoute(func(c *gin.Context) {
-		c.File("../web/dist/index.html")
+		c.File(cfg.WebDistDir + "/index.html")
 	})
 
 	go func() {
@@ -61,6 +62,9 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		public.GET("/media/*filepath", mediaH.Serve)
+
+		statsH := &handlers.StatsHandler{DB: db}
+		public.POST("/stats/landlord-view", statsH.RecordLandlordView)
 
 		public.GET("/config", func(c *gin.Context) {
 			domain := ""
@@ -106,6 +110,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/settings/:key", settingsH.Get)
 		platform.PUT("/settings/:key", settingsH.Update)
+
+		statsH := &handlers.StatsHandler{DB: db}
+		platform.GET("/stats/overview", statsH.Overview)
+		platform.GET("/stats/building/:id", statsH.BuildingDetail)
+		platform.GET("/stats/trend", statsH.Trend)
+		platform.GET("/stats/price-reference", statsH.PriceReference)
 	}
 
 	// ========== 公寓管理后台（building_admin + admin）==========
@@ -145,6 +155,11 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		// 管理员管理（building_admin 可创建普通 admin）
 		building.POST("/auth/create-admin", authH.CreateRegularAdmin)
 		building.GET("/auth/users", authH.ListBuildingUsers)
+
+		// 数据统计
+		statsH := &handlers.StatsHandler{DB: db}
+		building.GET("/stats/pv", statsH.MyBuildingStats)
+		building.GET("/stats/trend", statsH.MyBuildingTrend)
 
 		// 财务管理（全套餐）
 		fullPkg := building.Group("")

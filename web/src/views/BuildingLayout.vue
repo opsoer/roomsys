@@ -33,6 +33,10 @@
             <el-icon><User /></el-icon>
             <span class="nav-text">管理员管理</span>
           </el-menu-item>
+          <el-menu-item index="/landlord/stats">
+            <el-icon><DataAnalysis /></el-icon>
+            <span class="nav-text">数据看板</span>
+          </el-menu-item>
           <el-menu-item index="/landlord/settings">
             <el-icon><Setting /></el-icon>
             <span class="nav-text">公寓设置</span>
@@ -119,6 +123,13 @@
               :to="'/landlord/users'"
               @click="showMobileMenu = false"
               :class="{ 'menu-active': $route.path.startsWith('/landlord/users') }"
+            />
+            <van-cell
+              title="数据看板"
+              icon="chart-trending-o"
+              :to="'/landlord/stats'"
+              @click="showMobileMenu = false"
+              :class="{ 'menu-active': $route.path.startsWith('/landlord/stats') }"
             />
             <van-cell
               title="公寓设置"

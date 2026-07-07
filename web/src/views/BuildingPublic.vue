@@ -15,7 +15,7 @@
       @click-left="$router.push('/')"
     >
       <template #right>
-        <van-icon name="manager" size="20" @click="goToDashboard" />
+        <span class="login-btn" @click="goToDashboard">登录</span>
       </template>
     </van-nav-bar>
 
@@ -62,15 +62,21 @@
     </div>
 
     <div class="filter-bar">
-      <div class="filter-title">房源展示</div>
-      <div class="filter-actions">
-        <van-dropdown-menu>
-          <van-dropdown-item v-model="statusFilter" :options="statusOptions" @change="onFilterChange" />
-          <van-dropdown-item v-model="floorFilter" :options="floorOptions" @change="onFilterChange" />
-          <van-dropdown-item v-model="layoutFilter" :options="layoutOptions" @change="onFilterChange" />
-        </van-dropdown-menu>
+      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'status' }" @click="openSheet('status')">
+        <span>{{ statusText }}</span>
+        <van-icon name="arrow-down" size="12" />
+      </div>
+      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'floor' }" @click="openSheet('floor')">
+        <span>{{ floorText }}</span>
+        <van-icon name="arrow-down" size="12" />
+      </div>
+      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'layout' }" @click="openSheet('layout')">
+        <span>{{ layoutText }}</span>
+        <van-icon name="arrow-down" size="12" />
       </div>
     </div>
+
+    <van-action-sheet v-model:show="sheetOpen" :actions="sheetActions" @select="onSheetSelect" close-on-click-action cancel-text="取消" />
 
     <div v-if="loading" class="loading-wrap">
       <van-loading size="30" vertical>加载中...</van-loading>
@@ -187,6 +193,39 @@ const layoutOptions = computed(() => {
 })
 
 const displayRooms = computed(() => rooms.value)
+const sheetOpen = ref(false)
+const sheetType = ref('')
+
+const statusText = computed(() => {
+  const opt = statusOptions.find(o => o.value === statusFilter.value)
+  return opt ? opt.text : '状态'
+})
+const floorText = computed(() => {
+  const opt = floorOptions.value.find(o => o.value === floorFilter.value)
+  return opt ? opt.text : '楼层'
+})
+const layoutText = computed(() => {
+  const opt = layoutOptions.value.find(o => o.value === layoutFilter.value)
+  return opt ? opt.text : '户型'
+})
+const sheetActions = computed(() => {
+  const opts = sheetType.value === 'status' ? statusOptions
+    : sheetType.value === 'floor' ? floorOptions.value
+    : sheetType.value === 'layout' ? layoutOptions.value
+    : []
+  return opts.map(o => ({ name: o.text, value: o.value }))
+})
+
+function openSheet(type) {
+  sheetType.value = type
+  sheetOpen.value = true
+}
+function onSheetSelect(action) {
+  if (sheetType.value === 'status') statusFilter.value = action.value
+  else if (sheetType.value === 'floor') floorFilter.value = action.value
+  else if (sheetType.value === 'layout') layoutFilter.value = action.value
+  fetchRooms(false)
+}
 
 function goToDashboard() {
   const authStore = useAuthStore()
@@ -230,10 +269,6 @@ async function fetchRooms(append = false) {
 function loadMore() {
   currentPage.value++
   fetchRooms(true)
-}
-
-function onFilterChange() {
-  fetchRooms(false)
 }
 
 async function retryLoad() {
@@ -357,27 +392,35 @@ onMounted(async () => {
 .filter-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 4px;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
 }
-.filter-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  white-space: nowrap;
-  padding-left: 12px;
-  border-left: 3px solid #e6a23c;
-}
-.filter-actions {
+.filter-tab {
   display: flex;
   align-items: center;
-}
-:deep(.van-dropdown-menu__bar) {
-  box-shadow: none;
-  background: transparent;
-}
-:deep(.van-dropdown-menu__title) {
+  gap: 4px;
+  padding: 6px 14px;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
   font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-tab.active {
+  border-color: #1989fa;
+  color: #1989fa;
+}
+.login-btn {
+  color: #1989fa;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid #1989fa;
+  border-radius: 14px;
+  cursor: pointer;
 }
 .loading-wrap {
   padding: 60px 0;

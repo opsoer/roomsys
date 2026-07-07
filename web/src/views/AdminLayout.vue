@@ -6,6 +6,7 @@
         <h2 class="header-title" @click="$router.push('/')">🏠 圳好租 · 平台管理</h2>
         <el-menu :default-active="$route.path" mode="horizontal" :ellipsis="false" class="header-menu" router>
           <el-menu-item index="/admin/buildings" class="menu-item-light">公寓管理</el-menu-item>
+          <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
           <el-menu-item index="/admin/recruit" class="menu-item-light">
             <span>招商</span>
             <span v-if="recruitCount" class="recruit-badge">{{ recruitCount }}</span>
@@ -31,6 +32,7 @@
       <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-tabs">
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
+        <div :class="['mobile-tab', { active: $route.path === '/admin/stats' }]" @click="$router.push('/admin/stats')">数据看板</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/recruit' }]" @click="$router.push('/admin/recruit')">
           招商
           <span v-if="recruitCount" class="recruit-badge-mobile">{{ recruitCount }}</span>

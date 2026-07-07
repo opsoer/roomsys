@@ -37,9 +37,6 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 		billEnd := monthEnd
 		daysInMonth := calcMonthDays(monthStart)
 
-		var amount float64
-		var descRange string
-
 		if contractStart.After(monthStart) {
 			billStart = contractStart
 		}
@@ -47,17 +44,35 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 			billEnd = contractEnd
 		}
 
-		descRange = billStart.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
+		descRange := billStart.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
 
+		var rentAmount float64
+		var mgmtAmount float64
 		if billStart.Equal(monthStart) && billEnd.Equal(monthEnd) {
-			amount = float64(int(contract.RentPrice*100)) / 100
+			rentAmount = float64(int(contract.RentPrice*100)) / 100
 		} else {
-			amount = utils.CalcProratedAmount(contract.RentPrice, billStart, billEnd, daysInMonth)
+			rentAmount = utils.CalcProratedAmount(contract.RentPrice, billStart, billEnd, daysInMonth)
 		}
 
-		if amount <= 0 {
+		if rentAmount <= 0 {
 			continue
 		}
+
+		var roomManagementFee float64
+		var room models.Room
+		if err := db.First(&room, contract.RoomID).Error; err == nil {
+			if room.ManagementFee != nil {
+				roomManagementFee = *room.ManagementFee
+			}
+		}
+
+		if billStart.Equal(monthStart) && billEnd.Equal(monthEnd) {
+			mgmtAmount = float64(int(roomManagementFee*100)) / 100
+		} else {
+			mgmtAmount = utils.CalcProratedAmount(roomManagementFee, billStart, billEnd, daysInMonth)
+		}
+
+		totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
 
 		datePart := now.Format("20060102")
 		var count int64
@@ -71,9 +86,9 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) {
 			BillNo:      billNo,
 			Type:        "income",
 			Subtype:     "租金",
-			Amount:      amount,
+			Amount:      totalAmount,
 			RoomID:      &contract.RoomID,
-			Description: "租金：" + descRange,
+			Description: fmt.Sprintf("租金：%.2f元，管理费：%.2f元（%s）", rentAmount, mgmtAmount, descRange),
 			BillDate:    now.Format("2006-01-02"),
 		}
 		if err := db.Create(&bill).Error; err != nil {

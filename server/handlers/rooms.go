@@ -62,6 +62,7 @@ type UpdateRoomStatusReq struct {
 	TenantName      string   `json:"tenant_name"`
 	TenantPhone     string   `json:"tenant_phone"`
 	RentPrice       float64  `json:"rent_price" binding:"gte=0"`
+	ManagementFee   float64  `json:"management_fee" binding:"gte=0"`
 	Deposit         float64  `json:"deposit" binding:"gte=0"`
 	EarnestMoney    float64  `json:"earnest_money" binding:"gte=0"`
 	StartDate       string   `json:"start_date"`
@@ -115,6 +116,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 			detail.CurrentContract = contract
 		}
 	}
+	go utils.RecordPageView(h.DB, "room_detail", uint(rid), uint(bid), utils.GetRealIP(c))
 	utils.Success(c, gin.H{"room": detail})
 }
 
@@ -446,24 +448,29 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			}
 
 			var rentAmount float64
+			var mgmtAmount float64
 			var rentDesc string
 			if startDate.Day() == 1 && billEnd.Equal(monthEnd) {
 				rentAmount = float64(int(req.RentPrice*100)) / 100
-				rentDesc = "租金：" + monthEnd.Format("2006-01") + "-01 ~ " + billEnd.Format("2006-01-02")
+				mgmtAmount = float64(int(req.ManagementFee*100)) / 100
+				rentDesc = monthEnd.Format("2006-01") + "-01 ~ " + billEnd.Format("2006-01-02")
 			} else {
 				rentAmount = utils.CalcProratedAmount(req.RentPrice, startDate, billEnd, daysInMonth)
-				rentDesc = "租金：" + startDate.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
+				mgmtAmount = utils.CalcProratedAmount(req.ManagementFee, startDate, billEnd, daysInMonth)
+				rentDesc = startDate.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
 			}
+
+			totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
 
 			rentNo := fmt.Sprintf("B%s%05d", datePart, count+1)
 			rentBill := models.Bill{
 				BillNo:      rentNo,
 				Type:        "income",
 				Subtype:     "租金",
-				Amount:      rentAmount,
+				Amount:      totalAmount,
 				BuildingID:  room.BuildingID,
 				RoomID:      &room.ID,
-				Description: rentDesc,
+				Description: fmt.Sprintf("租金：%.2f元，管理费：%.2f元", rentAmount, mgmtAmount) + "（" + rentDesc + "）",
 				BillDate:    now.Format("2006-01-02"),
 				CreatedBy:   uid,
 			}

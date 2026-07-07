@@ -309,4 +309,29 @@ export function getConfig() {
   return api.get('/config')
 }
 
+// ===== 统计 =====
+export function adminGetStatsOverview() {
+  return api.get('/admin/stats/overview')
+}
+
+export function adminGetBuildingStats(id) {
+  return api.get(`/admin/stats/building/${id}`)
+}
+
+export function adminGetStatsTrend(days = 30) {
+  return api.get('/admin/stats/trend', { params: { days } })
+}
+
+export function adminGetPriceReference() {
+  return api.get('/admin/stats/price-reference')
+}
+
+export function buildingGetMyStats() {
+  return api.get('/building/stats/pv')
+}
+
+export function buildingGetMyTrend(days = 30) {
+  return api.get('/building/stats/trend', { params: { days } })
+}
+
 export default api

@@ -45,6 +45,11 @@ const routes = [
         name: 'AdminRecruit',
         component: () => import('../views/RecruitSettings.vue'),
       },
+      {
+        path: 'stats',
+        name: 'AdminStats',
+        component: () => import('../views/AdminStats.vue'),
+      },
     ],
   },
 
@@ -60,6 +65,7 @@ const routes = [
       { path: 'users', name: 'LandlordUsers', component: () => import('../views/UserManage.vue') },
       { path: 'tasks', name: 'LandlordTasks', component: () => import('../views/Tasks.vue') },
       { path: 'settings', name: 'LandlordSettings', component: () => import('../views/BuildingSettings.vue') },
+      { path: 'stats', name: 'LandlordStats', component: () => import('../views/LandlordStats.vue') },
     ],
   },
   { path: '/404', name: 'NotFound', component: () => import('../views/NotFound.vue') },

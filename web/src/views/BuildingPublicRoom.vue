@@ -6,7 +6,7 @@
       @click-left="$router.push(`/building/${buildingId}`)"
     >
       <template #right>
-        <van-icon name="manager" size="20" @click="goToDashboard" />
+        <span class="login-btn" @click="goToDashboard">登录</span>
       </template>
     </van-nav-bar>
 
@@ -201,6 +201,8 @@ function maskPhone(phone) {
 function showContact(landlord) {
   contactLandlord.value = { name: landlord.name, phone: landlord.phone }
   contactVisible.value = true
+  const data = JSON.stringify({ building_id: Number(buildingId.value) })
+  navigator.sendBeacon('/api/stats/landlord-view', new Blob([data], { type: 'application/json' }))
 }
 
 function copyPhone() {
@@ -267,6 +269,15 @@ onMounted(async () => {
   min-height: 100vh;
   background: #f5f6fa;
   padding-bottom: 20px;
+}
+.login-btn {
+  color: #1989fa;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid #1989fa;
+  border-radius: 14px;
+  cursor: pointer;
 }
 .room-swipe {
   height: 320px;

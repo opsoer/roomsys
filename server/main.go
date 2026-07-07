@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,14 +52,15 @@ func main() {
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	logger.Log.Info().Int("max_idle", 10).Int("max_open", 100).Msg("数据库连接池已配置")
 
-	if os.Getenv("GIN_MODE") == "release" {
-		logger.Log.Warn().Msg("生产环境跳过 AutoMigrate，请使用版本化迁移工具管理表结构")
-	} else {
-		if err := models.AutoMigrate(db); err != nil {
-			logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
-		}
-		logger.Log.Info().Msg("数据库迁移完成")
+	if os.Getenv("RESET_DATABASE") == "true" {
+		logger.Log.Warn().Msg("检测到 RESET_DATABASE=true，将删除所有表并重建")
+		resetDatabase(db)
 	}
+
+	if err := models.AutoMigrate(db); err != nil {
+		logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
+	}
+	logger.Log.Info().Msg("数据库迁移完成")
 
 	seedAdmin(db)
 
@@ -109,11 +111,11 @@ func main() {
 		}
 	}()
 
-	// 每天凌晨3点清理超过90天的软删除数据
+	// 每天凌晨3点清理超过90天的软删除数据和page_views
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("软删除清理定时任务 panic，已恢复")
+				logger.Log.Error().Interface("panic", r).Msg("清理定时任务 panic，已恢复")
 			}
 		}()
 		for {
@@ -124,6 +126,12 @@ func main() {
 				logger.Log.Error().Err(err).Msg("软删除数据清理失败")
 			} else {
 				logger.Log.Info().Msg("软删除数据清理完成")
+			}
+			cutoff := time.Now().AddDate(0, 0, -90)
+			if err := db.Where("created_at < ?", cutoff).Delete(&models.PageView{}).Error; err != nil {
+				logger.Log.Error().Err(err).Msg("page_views 清理失败")
+			} else {
+				logger.Log.Info().Msg("page_views 清理完成")
 			}
 		}
 	}()
@@ -191,7 +199,13 @@ func main() {
 		c.Next()
 	})
 
+	r.Use(gzipMiddleware())
+	r.Use(cacheControlMiddleware())
+
 	r.Use(middleware.RateLimitMiddleware())
+
+	// 初始化统计写入器
+	utils.InitStatsWriter(db)
 
 	routes.Setup(r, db, cfg)
 	logger.Log.Info().Str("port", cfg.ServerPort).Msg("服务启动")
@@ -252,6 +266,32 @@ func checkExpiredBuildings(db *gorm.DB) {
 	} else {
 		logger.Log.Debug().Msg("到期公寓检查完成，无到期公寓")
 	}
+}
+
+func resetDatabase(db *gorm.DB) {
+	tables := []interface{}{
+		&models.AuditLog{},
+		&models.RecruitSubmission{},
+		&models.Setting{},
+		&models.Task{},
+		&models.Dividend{},
+		&models.Shareholder{},
+		&models.Bill{},
+		&models.RentalContract{},
+		&models.Tenant{},
+		&models.RoomMedia{},
+		&models.Room{},
+		&models.BuildingLandlord{},
+		&models.Building{},
+		&models.User{},
+		&models.PageView{},
+	}
+	for _, table := range tables {
+		if err := db.Migrator().DropTable(table); err != nil {
+			logger.Log.Warn().Err(err).Msg("删除表失败")
+		}
+	}
+	logger.Log.Info().Msg("所有表已删除，等待 AutoMigrate 重建")
 }
 
 func seedAdmin(db *gorm.DB) {
@@ -327,6 +367,63 @@ func ensureFFmpegCore(uploadDir string) {
 		} else {
 			logger.Log.Info().Str("file", f).Msg("FFmpeg core 文件下载完成")
 		}
+	}
+}
+
+type gzipWriter struct {
+	gin.ResponseWriter
+	writer *gzip.Writer
+}
+
+func (g *gzipWriter) Write(data []byte) (int, error) {
+	return g.writer.Write(data)
+}
+
+var skipGzipPrefixes = []string{"/api/media/", "/api/ffmpeg/"}
+
+func gzipMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+			c.Next()
+			return
+		}
+		// 图片/视频/FFmpeg wasm 已经压缩过，跳过
+		for _, p := range skipGzipPrefixes {
+			if strings.HasPrefix(path, p) {
+				c.Next()
+				return
+			}
+		}
+		gz, err := gzip.NewWriterLevel(c.Writer, gzip.DefaultCompression)
+		if err != nil {
+			c.Next()
+			return
+		}
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Vary", "Accept-Encoding")
+		c.Writer = &gzipWriter{ResponseWriter: c.Writer, writer: gz}
+		c.Next()
+		gz.Close()
+		// 如果响应为空，去掉 Content-Encoding 头防止浏览器误解
+		if c.Writer.Size() == 0 {
+			c.Header("Content-Encoding", "")
+		}
+	}
+}
+
+func cacheControlMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// 哈希文件名的静态资源：缓存 1 年
+		if strings.HasPrefix(path, "/assets/") && strings.Contains(path, "-") {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		// 首页 HTML：不缓存，保证发布后用户拿到最新
+		if path == "/" || path == "" {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		}
+		c.Next()
 	}
 }
 

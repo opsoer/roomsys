@@ -11,6 +11,9 @@
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
           <el-input-number v-model="rentForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
+        <el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
+          <el-input-number v-model="rentForm.management_fee" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
         <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
           <el-input-number v-model="rentForm.deposit" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
@@ -138,7 +141,7 @@ const emit = defineEmits(['save-success'])
 
 const showRentDialog = ref(false)
 const rentSubmitting = ref(false)
-const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, deposit: 0, start_date: '', end_date: '' })
+const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
 const rentFormRef = ref(null)
 
 const showEndDateDialog = ref(false)
@@ -194,7 +197,7 @@ async function handleRent() {
     await buildingUpdateRoomStatus(props.roomId, { status: 'rented', ...rentForm.value })
     ElMessage.success('出租成功')
     showRentDialog.value = false
-    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, deposit: 0, start_date: '', end_date: '' }
+    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' }
     emit('save-success')
   } finally {
     rentSubmitting.value = false
