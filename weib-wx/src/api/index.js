@@ -41,6 +41,7 @@ function request(method, url, data, opts = {}) {
       uni.uploadFile(reqOpts)
       return
     }
+    if (opts.params) reqOpts.data = opts.params
     if (data) reqOpts.data = data
     uni.request(reqOpts)
   })

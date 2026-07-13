@@ -1,0 +1,18 @@
+{
+  "db_host": "127.0.0.1",
+  "db_port": "3306",
+  "db_user": "root",
+  "db_password": "your_db_password",
+  "db_name": "rental",
+  "jwt_secret": "your-jwt-secret",
+  "server_port": "8080",
+  "upload_dir": "./storage/media",
+  "log_level": "info",
+  "log_dir": "./logs",
+  "qiniu_access_key": "",
+  "qiniu_secret_key": "",
+  "qiniu_bucket": "",
+  "qiniu_domain": "",
+  "qiniu_use_https": false,
+  "qiniu_zone": "z2"
+}

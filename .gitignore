@@ -15,9 +15,15 @@ server/rental-server
 !.env.example
 
 # 配置文件（含敏感信息）
-server/config*.json
-server/config*.yaml
-server/config*.yml
+server/config.json
+server/config.yaml
+server/config.yml
+server/config.local.json
+server/config.local.yaml
+server/config.local.yml
+server/config.prod.json
+server/config.prod.yaml
+server/config.prod.yml
 *.local
 
 # 日志
