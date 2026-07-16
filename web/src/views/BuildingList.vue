@@ -16,14 +16,59 @@
       </div>
     </van-sticky>
     <div class="filter-bar">
-      <div class="filter-tab" :class="{ active: sheetOpen }" @click="openSheet">
-        <span>{{ districtText }}</span>
+      <div class="filter-tab" :class="{ active: filterOpen }" @click="filterOpen = true">
+        <span>{{ filterText }}</span>
         <van-icon name="arrow-down" size="12" />
       </div>
       <span class="filter-count">共 {{ buildings.length }} 栋</span>
     </div>
 
-    <van-action-sheet v-model:show="sheetOpen" :actions="sheetActions" @select="onSheetSelect" close-on-click-action cancel-text="取消" />
+    <van-popup v-model:show="filterOpen" position="bottom" round :style="{ height: '60vh' }">
+      <div class="filter-popup">
+        <div class="filter-popup-header">
+          <span class="fp-btn" @click="resetFilter">重置</span>
+          <span class="fp-title">选择位置</span>
+          <span class="fp-btn fp-confirm" @click="confirmFilter">确认</span>
+        </div>
+        <div class="filter-popup-body">
+          <div class="filter-cols">
+            <div class="filter-col">
+              <div class="filter-col-title">区域</div>
+              <div class="filter-col-list">
+                <div class="filter-col-item all-item" :class="{ active: !stepDistrict }" @click="stepDistrict = null; stepStreet = null; stepVillage = ''">
+                  全部深圳市区
+                </div>
+                <div v-for="d in shenzhen" :key="d.value" class="filter-col-item" :class="{ active: stepDistrict?.value === d.value }" @click="stepDistrict = d; stepStreet = null; stepVillage = ''">
+                  {{ d.label }}
+                </div>
+              </div>
+            </div>
+            <div class="filter-col">
+              <div class="filter-col-title">街道</div>
+              <div class="filter-col-list">
+                <div class="filter-col-item all-item" :class="{ active: stepDistrict && !stepStreet }" @click="stepStreet = null; stepVillage = ''">
+                  全部街道
+                </div>
+                <div v-for="s in currentStreets" :key="s.value" class="filter-col-item" :class="{ active: stepStreet?.value === s.value }" @click="stepStreet = s; stepVillage = ''">
+                  {{ s.label }}
+                </div>
+              </div>
+            </div>
+            <div class="filter-col">
+              <div class="filter-col-title">村/小区</div>
+              <div class="filter-col-list">
+                <div class="filter-col-item all-item" :class="{ active: stepStreet && !stepVillage }" @click="stepVillage = ''">
+                  全部村/小区
+                </div>
+                <div v-for="v in currentVillages" :key="v" class="filter-col-item" :class="{ active: stepVillage === v }" @click="stepVillage = v">
+                  {{ v }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </van-popup>
     
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
       <div class="hero-banner">
@@ -77,6 +122,13 @@
             </div>
           </div>
         </div>
+
+        <div v-if="buildings.length < total" style="text-align: center; padding: 12px">
+          <van-button :loading="loadingMore" size="small" plain @click="loadMore">加载更多</van-button>
+        </div>
+        <div v-if="total > 0" style="text-align: center; padding: 0 12px 12px; font-size: 12px; color: #999">
+          共 {{ total }} 栋，已显示 {{ buildings.length }} 栋
+        </div>
       </div>
 
       <div class="home-footer">
@@ -100,28 +152,54 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()
 const buildings = ref([])
-const districts = ref(shenzhen.map(d => d.value))
 const loading = ref(true)
 const refreshing = ref(false)
-const districtFilter = ref('')
-const sheetOpen = ref(false)
+const filterOpen = ref(false)
+const filterDistrict = ref('')
+const filterStreet = ref('')
+const filterVillage = ref('')
+const stepDistrict = ref(null)
+const stepStreet = ref(null)
+const stepVillage = ref('')
+const currentPage = ref(1)
+const total = ref(0)
+const pageSize = 20
+const loadingMore = ref(false)
 
-const districtOptions = computed(() => {
-  const opts = [{ text: '全部区域', value: '' }]
-  for (const d of districts.value) {
-    opts.push({ text: d, value: d })
-  }
-  return opts
+const currentStreets = computed(() => {
+  if (!stepDistrict.value) return []
+  const d = shenzhen.find(x => x.value === stepDistrict.value.value)
+  return d ? d.streets : []
 })
-const districtText = computed(() => {
-  const opt = districtOptions.value.find(o => o.value === districtFilter.value)
-  return opt ? opt.text : '区域'
-})
-const sheetActions = computed(() => districtOptions.value.map(o => ({ name: o.text, value: o.value })))
 
-function openSheet() { sheetOpen.value = true }
-function onSheetSelect(action) {
-  districtFilter.value = action.value
+const currentVillages = computed(() => {
+  if (!stepStreet.value) return []
+  return stepStreet.value.villages || []
+})
+
+const filterText = computed(() => {
+  if (filterVillage.value) return `${filterDistrict.value} ${filterStreet.value} ${filterVillage.value}`
+  if (filterStreet.value) return `${filterDistrict.value} ${filterStreet.value}`
+  if (filterDistrict.value) return filterDistrict.value
+  return '全部位置'
+})
+
+function resetFilter() {
+  stepDistrict.value = null
+  stepStreet.value = null
+  stepVillage.value = ''
+  filterDistrict.value = ''
+  filterStreet.value = ''
+  filterVillage.value = ''
+  filterOpen.value = false
+  fetchBuildings()
+}
+
+function confirmFilter() {
+  filterDistrict.value = stepDistrict.value ? stepDistrict.value.label : ''
+  filterStreet.value = stepStreet.value ? stepStreet.value.label : ''
+  filterVillage.value = stepVillage.value || ''
+  filterOpen.value = false
   fetchBuildings()
 }
 
@@ -129,18 +207,37 @@ function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-async function fetchBuildings() {
-  loading.value = true
+async function fetchBuildings(append = false) {
+  if (!append) {
+    loading.value = true
+    currentPage.value = 1
+  } else {
+    loadingMore.value = true
+  }
   try {
-    const params = {}
-    if (districtFilter.value) params.district = districtFilter.value
+    const params = { page: currentPage.value, page_size: pageSize }
+    if (filterDistrict.value) params.district = filterDistrict.value
+    if (filterStreet.value) params.street = filterStreet.value
+    if (filterVillage.value) params.village = filterVillage.value
     const res = await getBuildings(params)
-    buildings.value = res.data.buildings || []
+    const data = res.data.buildings || []
+    total.value = res.data.total || 0
+    if (append) {
+      buildings.value = [...buildings.value, ...data]
+    } else {
+      buildings.value = data
+    }
   } catch (e) {
     showToast('加载失败')
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
+}
+
+function loadMore() {
+  currentPage.value++
+  fetchBuildings(true)
 }
 
 async function onRefresh() {
@@ -334,6 +431,30 @@ onMounted(async () => {
   color: #aaa;
   font-size: 12px;
 }
+.filter-popup-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px; border-bottom: 1px solid #f0f0f0;
+}
+.filter-popup-body {
+  height: calc(60vh - 53px); overflow: hidden;
+}
+.fp-btn { font-size: 14px; color: #999; cursor: pointer; }
+.fp-confirm { color: #1989fa; font-weight: 600; }
+.fp-title { font-size: 16px; font-weight: 600; color: #1a1a2e; }
+.filter-cols { display: flex; height: 100%; }
+.filter-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #f0f0f0; }
+.filter-col:last-child { border-right: none; }
+.filter-col-title {
+  font-size: 12px; color: #999; text-align: center;
+  padding: 10px 0; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+}
+.filter-col-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.filter-col-item {
+  padding: 12px 8px; font-size: 13px; color: #333; text-align: center;
+  border-bottom: 1px solid #f5f5f5; cursor: pointer; line-height: 1.3;
+}
+.filter-col-item.active { color: #fff; background: #1989fa; font-weight: 600; }
+.all-item { color: #e6a23c; }
 .recruit-banner {
   background: linear-gradient(135deg, #e6a23c, #f56c6c);
   padding: 10px 16px;

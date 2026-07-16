@@ -97,7 +97,7 @@
     </van-dialog>
 
     <!-- 到期信息（公开显示） -->
-    <div v-if="room.end_date" class="room-section">
+    <div v-if="room.end_date && room.status !== 'vacant'" class="room-section">
       <div class="section-title">
         <van-icon name="clock-o" /> 退租信息
       </div>

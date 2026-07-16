@@ -500,6 +500,10 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 
 		h.RoomService.UpdateStatus(room.ID, "rented")
 	} else if req.Status == "vacant" {
+		if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Update("status", "ended").Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("结束合同失败")
+		}
+
 		if req.RefundedDeposit != nil && *req.RefundedDeposit > 0 {
 			now := utils.Now()
 			datePart := now.Format("20060102")

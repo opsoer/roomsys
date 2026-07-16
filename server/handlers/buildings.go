@@ -287,7 +287,7 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	keyword := c.Query("keyword")
 	page, size := utils.ParsePage(c)
-	buildings, total, err := h.BuildingService.List(status, keyword, page, size)
+	buildings, total, err := h.BuildingService.List(status, keyword, "", "", "", page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -298,7 +298,10 @@ func (h *BuildingHandler) List(c *gin.Context) {
 
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	page, size := utils.ParsePage(c)
-	buildings, total, err := h.BuildingService.List("", "", page, size)
+	district := c.Query("district")
+	street := c.Query("street")
+	village := c.Query("village")
+	buildings, total, err := h.BuildingService.List("", "", district, street, village, page, size)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")

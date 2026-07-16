@@ -78,7 +78,7 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	}, nil
 }
 
-func (s *BuildingService) List(status, keyword string, page, size int) ([]BuildingWithStats, int64, error) {
+func (s *BuildingService) List(status, keyword, district, street, village string, page, size int) ([]BuildingWithStats, int64, error) {
 	var buildings []models.Building
 	query := s.DB
 
@@ -99,6 +99,16 @@ func (s *BuildingService) List(status, keyword string, page, size int) ([]Buildi
 	if keyword != "" {
 		query = query.Where("name LIKE ? OR id IN (SELECT building_id FROM building_landlords WHERE phone LIKE ?)",
 			"%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	if district != "" {
+		query = query.Where("district = ?", district)
+	}
+	if street != "" {
+		query = query.Where("street = ?", street)
+	}
+	if village != "" {
+		query = query.Where("village = ?", village)
 	}
 
 	var total int64
