@@ -58,7 +58,7 @@
       </view>
     </view>
 
-    <view v-if="room.end_date" class="room-section">
+    <view v-if="room.end_date && room.status !== 'vacant'" class="room-section">
       <text class="section-title">⏰ 退租信息</text>
       <view class="info-row">
         <text class="info-label">预计退租</text>

@@ -33,7 +33,7 @@
           <text class="rc-number">{{ room.room_number }}</text>
           <text class="rc-info">{{ room.floor }}层 · {{ room.layout }}</text>
           <view v-if="room.rent_price" class="rc-price">¥{{ room.rent_price }}/月</view>
-          <text v-if="room.end_date" class="rc-enddate">退租：{{ room.end_date }}</text>
+          <text v-if="room.end_date && room.status !== 'vacant'" class="rc-enddate">退租：{{ room.end_date }}</text>
         </view>
       </view>
     </view>

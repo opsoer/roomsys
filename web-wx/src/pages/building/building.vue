@@ -94,7 +94,7 @@
               <text v-if="room.electricity_unit_price"> 电¥{{ room.electricity_unit_price }}/度</text>
               <text v-if="room.water_unit_price"> 水¥{{ room.water_unit_price }}/吨</text>
             </view>
-            <text v-if="room.end_date" class="rc-enddate">退租：{{ room.end_date }}</text>
+            <text v-if="room.end_date && room.status !== 'vacant'" class="rc-enddate">退租：{{ room.end_date }}</text>
           </view>
         </view>
       </view>
