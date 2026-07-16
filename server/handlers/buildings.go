@@ -21,8 +21,10 @@ type BuildingHandler struct {
 	BuildingService *services.BuildingService
 }
 
+// defaultContractDurationYears 合同默认期限为 1 年
 const defaultContractDurationYears = 1
 
+// CreateBuildingReq 创建公寓请求参数
 type CreateBuildingReq struct {
 	Name         string `json:"name" binding:"required"`
 	Package      string `json:"package"`

@@ -13,12 +13,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var (
-	apiRateData = make(map[string]*apiRateEntry)
-	apiRateMu   sync.Mutex
-)
+// apiRateData 存储按 IP 统计的 API 请求频率数据
+var apiRateData = make(map[string]*apiRateEntry)
 
+// apiRateMu 保护 apiRateData 的并发安全
+var apiRateMu sync.Mutex
+
+// maxAPIRequests 单个 IP 每分钟允许的最大 API 请求数
 const maxAPIRequests = 60
+
+// apiRateWindow 频率统计的时间窗口（1 分钟）
 const apiRateWindow = 1 * time.Minute
 
 // apiRateEntry 单 IP 的限流记录，包含窗口起始时间和请求计数

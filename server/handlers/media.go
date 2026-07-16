@@ -35,6 +35,7 @@ type MediaHandler struct {
 	MediaService *services.MediaService
 }
 
+// allowedMIMEs 允许上传的文件 MIME 类型及其对应扩展名
 var allowedMIMEs = map[string]string{
 	"image/jpeg":      ".jpg",
 	"image/png":       ".png",
@@ -43,6 +44,7 @@ var allowedMIMEs = map[string]string{
 	"video/quicktime": ".mov",
 }
 
+// maxSizes 不同类型媒体的最大文件大小限制
 var maxSizes = map[string]int64{
 	"image": 10 * 1024 * 1024,
 	"video": 200 * 1024 * 1024,
@@ -147,10 +149,11 @@ func getZone(name string) *storage.Region {
 	}
 }
 
-var (
-	qiniuDomain   string
-	qiniuDomainMu sync.RWMutex
-)
+// qiniuDomain 缓存七牛云存储域名，避免重复查询
+var qiniuDomain string
+
+// qiniuDomainMu 保护 qiniuDomain 的并发读写安全
+var qiniuDomainMu sync.RWMutex
 
 // useQiniu 判断是否配置了七牛云存储
 func (h *MediaHandler) useQiniu() bool {

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/image/draw"
 )
 
+// 图片处理常量配置
 const (
 	MaxImageWidth  = 1600 // 最大图片宽度
 	MaxImageHeight = 1600 // 最大图片高度

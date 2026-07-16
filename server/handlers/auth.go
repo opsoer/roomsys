@@ -17,13 +17,19 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	rateLimitMu   sync.Mutex
-	rateLimitData = make(map[string]*rateLimitEntry)
-)
+// rateLimitMu 保护登录频率限制数据的并发安全
+var rateLimitMu sync.Mutex
 
+// rateLimitData 存储按 IP 统计的登录尝试数据
+var rateLimitData = make(map[string]*rateLimitEntry)
+
+// maxLoginAttempts 单个 IP 在时间窗口内允许的最大登录尝试次数
 const maxLoginAttempts = 10
+
+// rateLimitWindow 登录频率统计的时间窗口（1 分钟）
 const rateLimitWindow = 1 * time.Minute
+
+// cleanupInterval 清理过期登录频率记录的时间间隔
 const cleanupInterval = 5 * time.Minute
 
 // init 启动登录频率限制的定时清理任务

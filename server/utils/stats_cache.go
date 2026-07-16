@@ -12,6 +12,7 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
+// statsCache 统计数据缓存，使用 sync.Map 保证并发安全
 var statsCache sync.Map
 
 // CacheGetOrSet 从缓存获取数据，不存在则调用 fetch 生成并缓存

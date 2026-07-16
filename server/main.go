@@ -388,6 +388,7 @@ func (g *gzipWriter) Write(data []byte) (int, error) {
 	return g.writer.Write(data)
 }
 
+// skipGzipPrefixes 不需要 gzip 压缩的路径前缀（媒体文件和 FFmpeg wasm 已压缩过）
 var skipGzipPrefixes = []string{"/api/media/", "/api/ffmpeg/"}
 
 // gzipMiddleware 返回 Gin 中间件，对符合条件的请求启用 gzip 压缩。

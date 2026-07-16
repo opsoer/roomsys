@@ -18,10 +18,11 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-var (
-	revokedTokens   = make(map[string]time.Time)
-	revokedTokensMu sync.RWMutex
-)
+// revokedTokens 存储已吊销的令牌（键为令牌字符串，值为吊销时间）
+var revokedTokens = make(map[string]time.Time)
+
+// revokedTokensMu 保护 revokedTokens 的并发安全
+var revokedTokensMu sync.RWMutex
 
 // RevokeToken 将指定令牌加入吊销列表
 func RevokeToken(tokenStr string) {

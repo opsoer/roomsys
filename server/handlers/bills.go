@@ -51,6 +51,7 @@ type BillHandler struct {
 	RoomService  *services.RoomService
 }
 
+// CreateBillReq 创建账单请求参数
 type CreateBillReq struct {
 	Type        string  `json:"type" binding:"required"`
 	Subtype     string  `json:"subtype" binding:"required"`

@@ -1,4 +1,4 @@
-// 任务处理器，处理退租/到期清理等后台任务
+// Package handlers 处理退租/到期清理等后台任务的 HTTP 请求
 package handlers
 
 import (

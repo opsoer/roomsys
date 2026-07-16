@@ -1,4 +1,4 @@
-// 工具包，提供时间处理、时区偏移和日期计算功能
+// Package utils 提供时间处理、时区偏移和日期计算功能
 package utils
 
 import (
@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
-var (
-	timeOffset time.Duration // 时间偏移量，用于模拟或时区调整
-	mu         sync.RWMutex
-)
+// timeOffset 全局时间偏移量，用于模拟或时区调整
+var timeOffset time.Duration
+
+// mu 保护 timeOffset 的并发读写安全
+var mu sync.RWMutex
 
 // SetTimeOffset 设置全局时间偏移量
 func SetTimeOffset(d time.Duration) {
@@ -38,6 +39,7 @@ func Until(t time.Time) time.Duration {
 	return t.Sub(Now())
 }
 
+// DateFormat 标准日期格式 "2006-01-02"
 const DateFormat = "2006-01-02"
 
 // ParseDate 按 "2006-01-02" 格式解析日期字符串

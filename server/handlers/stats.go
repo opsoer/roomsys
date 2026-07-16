@@ -1,4 +1,4 @@
-// 统计处理器，提供数据看板、趋势分析等统计功能
+// Package handlers 提供数据看板、趋势分析等统计功能的 HTTP 接口
 package handlers
 
 import (

@@ -1,4 +1,4 @@
-// 设置处理器，处理系统配置的读写请求
+// Package handlers 处理系统配置项的读写请求
 package handlers
 
 import (

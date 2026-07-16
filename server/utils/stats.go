@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// pvChan 页面访问记录缓冲通道，容量 10000，避免阻塞请求
 var pvChan = make(chan models.PageView, 10000)
 
 // InitStatsWriter 启动后台协程，批量写入页面访问记录

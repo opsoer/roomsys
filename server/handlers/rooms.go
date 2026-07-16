@@ -1,4 +1,4 @@
-// 房间处理器，处理房间的增删改查及合同管理等HTTP请求
+// Package handlers 处理房间的增删改查及合同管理等 HTTP 请求
 package handlers
 
 import (

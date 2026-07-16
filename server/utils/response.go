@@ -41,6 +41,7 @@ func ParsePage(c *gin.Context) (page, size int) {
 	return
 }
 
+// 业务状态码定义
 const (
 	CodeSuccess            = 0    // 成功
 	CodeBadRequest         = 400  // 请求参数错误
@@ -100,8 +101,13 @@ func ErrorWithCode(c *gin.Context, httpCode, bizCode int, msg string) {
 	c.JSON(httpCode, APIResponse{Code: bizCode, Message: msg})
 }
 
+// ErrUnauthorized 未授权错误
 var ErrUnauthorized = errors.New("未授权")
+
+// ErrBuildingNotFound 未关联公寓错误
 var ErrBuildingNotFound = errors.New("未关联公寓")
+
+// ErrInvalidBuildingID 无效的公寓 ID 错误
 var ErrInvalidBuildingID = errors.New("无效的公寓ID")
 
 // GetBuildingID 从上下文中获取楼宇 ID

@@ -1,4 +1,4 @@
-// 租金账单处理器，自动创建月度租金账单
+// Package handlers 自动创建月度租金账单，处理按比例分摊计算
 package handlers
 
 import (
