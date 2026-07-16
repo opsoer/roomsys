@@ -1,3 +1,4 @@
+// 系统处理器，处理系统时间模拟等管理功能
 package handlers
 
 import (
@@ -12,20 +13,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// SystemHandler 系统处理器
 type SystemHandler struct {
 	DB              *gorm.DB
 	SettingsService *services.SettingsService
 }
 
+// SetTimeReq 设置模拟时间的请求参数
 type SetTimeReq struct {
 	OffsetSeconds int64 `json:"offset_seconds" binding:"required"`
 }
 
+// TimeResp 时间响应
 type TimeResp struct {
 	SimulatedTime string `json:"simulated_time"`
 	OffsetSeconds int64  `json:"offset_seconds"`
 }
 
+// GetTime 获取当前模拟时间
 func (h *SystemHandler) GetTime(c *gin.Context) {
 	now := utils.Now()
 	offset := utils.GetTimeOffset()
@@ -35,6 +40,7 @@ func (h *SystemHandler) GetTime(c *gin.Context) {
 	})
 }
 
+// SetTime 设置模拟时间偏移（触发合同到期检查）
 func (h *SystemHandler) SetTime(c *gin.Context) {
 	var req SetTimeReq
 	if err := c.ShouldBindJSON(&req); err != nil {

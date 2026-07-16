@@ -1,3 +1,4 @@
+// Package handlers 处理分红相关接口，包括分红计算、结算、股东管理等
 package handlers
 
 import (
@@ -14,11 +15,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// DividendHandler 分红处理器，依赖数据库连接和分红服务
 type DividendHandler struct {
 	DB              *gorm.DB
 	DividendService *services.DividendService
 }
 
+// List 获取分红记录列表
 func (h *DividendHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -36,6 +39,7 @@ func (h *DividendHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"dividends": dividends, "total": total, "page": page, "size": size})
 }
 
+// Calculate 预览计算指定月份的分红金额
 func (h *DividendHandler) Calculate(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -87,10 +91,12 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 	})
 }
 
+// SettleDividendReq 分红结算请求参数
 type SettleDividendReq struct {
 	Month string `json:"month" binding:"required"`
 }
 
+// Settle 执行分红结算，将计算结果持久化到数据库
 func (h *DividendHandler) Settle(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -173,6 +179,7 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 	})
 }
 
+// GetShareholders 获取当前公寓的股东列表
 func (h *DividendHandler) GetShareholders(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -188,11 +195,13 @@ func (h *DividendHandler) GetShareholders(c *gin.Context) {
 	utils.Success(c, gin.H{"shareholders": shareholders})
 }
 
+// CreateShareholderReq 创建股东请求参数
 type CreateShareholderReq struct {
 	Name       string  `json:"name" binding:"required"`
 	ShareRatio float64 `json:"share_ratio" binding:"required"`
 }
 
+// CreateShareholder 创建新股东
 func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -219,6 +228,7 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 	utils.Created(c, "创建成功", gin.H{"shareholder": sh})
 }
 
+// UpdateShareholder 更新股东信息（名称或持股比例）
 func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -254,6 +264,7 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
+// DeleteShareholder 删除指定股东
 func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -274,6 +285,7 @@ func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
+// Predict 预测未来月份的分红金额
 func (h *DividendHandler) Predict(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {

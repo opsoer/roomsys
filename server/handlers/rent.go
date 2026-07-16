@@ -1,3 +1,4 @@
+// 租金账单处理器，自动创建月度租金账单
 package handlers
 
 import (
@@ -11,10 +12,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// calcMonthDays 计算给定月份的天数
 func calcMonthDays(t time.Time) int {
 	return time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
 }
 
+// AutoCreateMonthlyRentBills 自动生成当月所有活跃合同的租金账单
 func AutoCreateMonthlyRentBills(db *gorm.DB) {
 	now := utils.Now()
 	month := now.Format("2006-01")

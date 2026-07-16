@@ -1,3 +1,4 @@
+// Package handlers 处理账单相关接口，包括账单的增删改查、统计导出等
 package handlers
 
 import (
@@ -16,6 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// isMonthSettled 检查指定公寓的某个月份是否已结算分红
 func isMonthSettled(db *gorm.DB, buildingID uint, billDate string) bool {
 	if len(billDate) < 7 {
 		return false
@@ -28,6 +30,7 @@ func isMonthSettled(db *gorm.DB, buildingID uint, billDate string) bool {
 	return count > 0
 }
 
+// appendModification 追加修改记录到备注中，超出最大次数则丢弃旧记录
 func appendModification(desc, modLog string, maxMods int) string {
 	const sep = " | "
 	parts := strings.SplitN(desc, sep, maxMods+1)
@@ -41,6 +44,7 @@ func appendModification(desc, modLog string, maxMods int) string {
 	return base + sep + modLog
 }
 
+// BillHandler 账单处理器，依赖数据库连接和账单服务
 type BillHandler struct {
 	DB           *gorm.DB
 	BillService  *services.BillService
@@ -56,6 +60,7 @@ type CreateBillReq struct {
 	BillDate    string  `json:"bill_date" binding:"required"`
 }
 
+// UpdateBillReq 更新账单请求参数
 type UpdateBillReq struct {
 	Type         string   `json:"type"`
 	Subtype      string   `json:"subtype"`
@@ -66,6 +71,7 @@ type UpdateBillReq struct {
 	ModifyReason string   `json:"modify_reason"`
 }
 
+// List 获取账单列表，支持按类型、子类型、房间、日期范围筛选
 func (h *BillHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -92,6 +98,7 @@ func (h *BillHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"bills": bills, "total": total, "page": page, "size": size})
 }
 
+// Create 创建新账单，校验类型、结算状态和备注
 func (h *BillHandler) Create(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -162,6 +169,7 @@ func (h *BillHandler) Create(c *gin.Context) {
 	utils.Created(c, "创建成功", gin.H{"bill": bill})
 }
 
+// Update 更新账单，需填写修改原因，已结算月份不可修改
 func (h *BillHandler) Update(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -231,6 +239,7 @@ func (h *BillHandler) Update(c *gin.Context) {
 	utils.Success(c, gin.H{"bill": updatedBill})
 }
 
+// Delete 删除指定账单
 func (h *BillHandler) Delete(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -256,6 +265,7 @@ func (h *BillHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
+// Stats 获取账单统计数据，支持按月或年筛选
 func (h *BillHandler) Stats(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -273,6 +283,7 @@ func (h *BillHandler) Stats(c *gin.Context) {
 	utils.Success(c, stats)
 }
 
+// Trend 获取账单趋势数据，支持指定年数
 func (h *BillHandler) Trend(c *gin.Context) {
 	buildingID, exists := c.Get("building_id")
 	if !exists {
@@ -299,6 +310,7 @@ func (h *BillHandler) Trend(c *gin.Context) {
 	utils.Success(c, trend)
 }
 
+// ExportCSV 导出账单列表为CSV文件
 func (h *BillHandler) ExportCSV(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {

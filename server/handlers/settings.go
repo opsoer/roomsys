@@ -1,3 +1,4 @@
+// 设置处理器，处理系统配置的读写请求
 package handlers
 
 import (
@@ -11,11 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// SettingsHandler 设置处理器
 type SettingsHandler struct {
 	DB              *gorm.DB
 	SettingsService *services.SettingsService
 }
 
+// Get 获取指定键的设置值
 func (h *SettingsHandler) Get(c *gin.Context) {
 	key := c.Param("key")
 	setting, err := h.SettingsService.Get(key)
@@ -26,6 +29,7 @@ func (h *SettingsHandler) Get(c *gin.Context) {
 	utils.Success(c, gin.H{"key": setting.Key, "value": setting.Value})
 }
 
+// Update 更新指定键的设置值
 func (h *SettingsHandler) Update(c *gin.Context) {
 	key := c.Param("key")
 	var body struct {

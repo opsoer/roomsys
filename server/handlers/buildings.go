@@ -1,3 +1,4 @@
+// Package handlers 处理公寓楼栋相关接口，包括公寓的增删改查、套餐升级等
 package handlers
 
 import (
@@ -14,6 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// BuildingHandler 公寓处理器，依赖数据库连接和公寓服务
 type BuildingHandler struct {
 	DB             *gorm.DB
 	BuildingService *services.BuildingService
@@ -36,6 +38,7 @@ type CreateBuildingReq struct {
 	} `json:"landlords"`
 }
 
+// UpdateBuildingReq 更新公寓信息请求参数
 type UpdateBuildingReq struct {
 	Name         string `json:"name"`
 	Package      string `json:"package"`
@@ -53,6 +56,7 @@ type UpdateBuildingReq struct {
 	} `json:"landlords"`
 }
 
+// Create 创建新公寓，包含名称查重和房东信息录入
 func (h *BuildingHandler) Create(c *gin.Context) {
 	var req CreateBuildingReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -134,6 +138,7 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	utils.Created(c, "公寓创建成功", gin.H{"building": building})
 }
 
+// Update 更新公寓信息，支持修改名称、地址、封面等
 func (h *BuildingHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -235,6 +240,7 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
+// Delete 删除指定公寓（存在活跃合同时禁止删除）
 func (h *BuildingHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -256,6 +262,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
+// UpgradePackage 升级公寓套餐（basic/full）
 func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -283,6 +290,7 @@ func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 	utils.SuccessWithMsg(c, "升级成功", nil)
 }
 
+// List 获取公寓列表，支持状态和关键词筛选（管理端）
 func (h *BuildingHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	keyword := c.Query("keyword")
@@ -296,6 +304,7 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
+// ListPublic 获取公寓列表（公开端），按地区筛选并记录访问
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	page, size := utils.ParsePage(c)
 	district := c.Query("district")
@@ -311,6 +320,7 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
+// GetPublic 获取公寓详情（公开端），含统计信息并记录访问
 func (h *BuildingHandler) GetPublic(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -328,6 +338,7 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"building": building})
 }
 
+// GetRooms 获取公寓的房间列表，支持楼层、户型、状态筛选
 func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -413,6 +424,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
+// MyBuilding 获取当前管理员所属的公寓信息
 func (h *BuildingHandler) MyBuilding(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -428,6 +440,7 @@ func (h *BuildingHandler) MyBuilding(c *gin.Context) {
 	utils.Success(c, gin.H{"building": building})
 }
 
+// UpdateMyBuilding 更新当前管理员所属的公寓信息
 func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -461,6 +474,7 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
+// MyStats 获取当前管理员所属公寓的统计数据
 func (h *BuildingHandler) MyStats(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {

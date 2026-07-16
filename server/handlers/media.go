@@ -1,3 +1,4 @@
+// Package handlers 处理媒体文件上传、删除、服务等接口，支持本地存储和七牛云存储
 package handlers
 
 import (
@@ -27,6 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// MediaHandler 媒体处理器，依赖数据库连接、配置和媒体服务
 type MediaHandler struct {
 	DB           *gorm.DB
 	Cfg          *config.Config
@@ -46,6 +48,7 @@ var maxSizes = map[string]int64{
 	"video": 200 * 1024 * 1024,
 }
 
+// validatedFile 存储文件验证后的元数据
 type validatedFile struct {
 	MimeType string
 	Ext      string
@@ -54,6 +57,7 @@ type validatedFile struct {
 	Filename string
 }
 
+// validateUploadFile 验证上传文件类型和大小，返回文件元数据和句柄
 func validateUploadFile(c *gin.Context, allowVideo bool) (*validatedFile, multipart.File, *multipart.FileHeader, error) {
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -93,6 +97,7 @@ func validateUploadFile(c *gin.Context, allowVideo bool) (*validatedFile, multip
 	}, file, header, nil
 }
 
+// uploadToStorage 上传文件到存储（七牛云或本地）
 func (h *MediaHandler) uploadToStorage(key string, file io.Reader, size int64) error {
 	if h.useQiniu() {
 		return h.qiniuUpload(key, file, size)
@@ -110,6 +115,7 @@ func (h *MediaHandler) uploadToStorage(key string, file io.Reader, size int64) e
 	return err
 }
 
+// qiniuUploadURL 根据区域返回七牛云上传地址
 func qiniuUploadURL(zone string) string {
 	switch zone {
 	case "z0":
@@ -125,6 +131,7 @@ func qiniuUploadURL(zone string) string {
 	}
 }
 
+// getZone 根据区域名称返回七牛云存储区域配置
 func getZone(name string) *storage.Region {
 	switch name {
 	case "z0":
@@ -145,18 +152,22 @@ var (
 	qiniuDomainMu sync.RWMutex
 )
 
+// useQiniu 判断是否配置了七牛云存储
 func (h *MediaHandler) useQiniu() bool {
 	return h.Cfg.QiniuAccessKey != "" && h.Cfg.QiniuBucket != ""
 }
 
+// qiniuMac 创建七牛云鉴权对象
 func (h *MediaHandler) qiniuMac() *qiniuAuth.Mac {
 	return qiniuAuth.NewMac(h.Cfg.QiniuAccessKey, h.Cfg.QiniuSecretKey)
 }
 
+// qiniuConfig 创建七牛云存储配置
 func (h *MediaHandler) qiniuConfig() storage.Config {
 	return storage.Config{Region: getZone(h.Cfg.QiniuZone), UseHTTPS: h.Cfg.QiniuUseHTTPS}
 }
 
+// qiniuUpload 将文件上传到七牛云存储
 func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) error {
 	putPolicy := storage.PutPolicy{
 		Scope:   h.Cfg.QiniuBucket,
@@ -174,12 +185,14 @@ func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) err
 	return formUploader.Put(context.Background(), &ret, upToken, key, reader, size, &extra)
 }
 
+// qiniuDelete 从七牛云存储删除文件
 func (h *MediaHandler) qiniuDelete(key string) error {
 	cfg := h.qiniuConfig()
 	bucketMgr := storage.NewBucketManager(h.qiniuMac(), &cfg)
 	return bucketMgr.Delete(h.Cfg.QiniuBucket, key)
 }
 
+// getDomain 获取七牛云存储域名（从配置或自动发现）
 func (h *MediaHandler) getDomain() (string, error) {
 	qiniuDomainMu.RLock()
 	d := qiniuDomain
@@ -213,6 +226,7 @@ func (h *MediaHandler) getDomain() (string, error) {
 	return domains[0].Domain, nil
 }
 
+// uploadAndProcess 处理图片（压缩、生成缩略图）并上传
 func (h *MediaHandler) uploadAndProcess(fileData []byte, vf *validatedFile, key string) (processedSize int64, thumbKey string, err error) {
 	processed, thumbnail, pErr := utils.ProcessImageBytes(fileData, vf.Ext)
 	if pErr != nil {
@@ -236,6 +250,7 @@ func (h *MediaHandler) uploadAndProcess(fileData []byte, vf *validatedFile, key 
 	return int64(len(processed)), thumbKey, nil
 }
 
+// deleteFile 从存储中删除文件（七牛云或本地）
 func (h *MediaHandler) deleteFile(key string) {
 	if h.useQiniu() {
 		if err := h.qiniuDelete(key); err != nil {
@@ -249,6 +264,7 @@ func (h *MediaHandler) deleteFile(key string) {
 	}
 }
 
+// Upload 上传媒体文件到房间，支持图片压缩和视频上传
 func (h *MediaHandler) Upload(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -376,6 +392,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		Msg("文件上传成功")
 	utils.Created(c, "上传成功", gin.H{"media": media})
 }
+// Delete 删除指定媒体文件及其缩略图
 func (h *MediaHandler) Delete(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -415,6 +432,7 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
+// UploadCover 上传公寓封面图片
 func (h *MediaHandler) UploadCover(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -474,6 +492,7 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 	utils.Created(c, "封面上传成功", gin.H{"cover_image": key})
 }
 
+// InitUploadReq 初始化上传请求参数（用于七牛云直传）
 type InitUploadReq struct {
 	RoomID   string `json:"room_id" form:"room_id"`
 	Category string `json:"category" form:"category"`
@@ -481,6 +500,7 @@ type InitUploadReq struct {
 	FileSize int64  `json:"file_size" form:"file_size"`
 }
 
+// GetUploadToken 获取七牛云直传的上传令牌
 func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -564,6 +584,7 @@ func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 	})
 }
 
+// ConfirmUploadReq 确认上传请求参数（用于七牛云直传后确认）
 type ConfirmUploadReq struct {
 	Key       string `json:"key" binding:"required"`
 	Type      string `json:"type" binding:"required"`
@@ -572,6 +593,7 @@ type ConfirmUploadReq struct {
 	FileSize  int64  `json:"file_size"`
 }
 
+// ConfirmUpload 确认七牛云直传完成，保存媒体记录
 func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -637,6 +659,7 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 	utils.Created(c, "上传成功", gin.H{"media": media})
 }
 
+// Serve 提供媒体文件服务（支持本地和七牛云重定向）
 func (h *MediaHandler) Serve(c *gin.Context) {
 	filePath := c.Param("filepath")
 	safePath := filepath.Clean(filePath)
@@ -679,6 +702,7 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 	c.File(absPath)
 }
 
+// ReDownloadFFmpeg 重新下载 FFmpeg 核心文件
 func (h *MediaHandler) ReDownloadFFmpeg(c *gin.Context) {
 	dir := filepath.Join(h.Cfg.UploadDir, "ffmpeg")
 	if err := os.MkdirAll(dir, 0750); err != nil {

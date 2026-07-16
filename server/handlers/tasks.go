@@ -1,3 +1,4 @@
+// 任务处理器，处理退租/到期清理等后台任务
 package handlers
 
 import (
@@ -14,15 +15,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// TaskHandler 任务处理器
 type TaskHandler struct {
 	DB          *gorm.DB
 	TaskService *services.TaskService
 }
 
+// ProcessTaskReq 处理退租任务的请求参数
 type ProcessTaskReq struct {
 	RefundedDeposit float64 `json:"refunded_deposit"`
 }
 
+// List 分页获取任务列表
 func (h *TaskHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -41,6 +45,7 @@ func (h *TaskHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"tasks": tasks, "total": total, "page": page, "size": size})
 }
 
+// Process 处理退租任务（退还押金、结束合同、更新房间状态）
 func (h *TaskHandler) Process(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -138,6 +143,7 @@ func (h *TaskHandler) Process(c *gin.Context) {
 	utils.SuccessWithMsg(c, "退租处理完成", nil)
 }
 
+// Complete 将任务标记为已完成
 func (h *TaskHandler) Complete(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -165,6 +171,7 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "任务已完成", nil)
 }
 
+// Delete 删除指定任务
 func (h *TaskHandler) Delete(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -186,6 +193,7 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
 
+// handleDepositRefund 创建押金退还账单
 func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint) error {
 	if refundedDeposit <= 0 {
 		return nil

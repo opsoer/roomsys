@@ -1,3 +1,4 @@
+// 招募处理器，处理房东/租客招募相关HTTP请求
 package handlers
 
 import (
@@ -13,11 +14,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// RecruitHandler 招募处理器
 type RecruitHandler struct {
 	DB             *gorm.DB
 	RecruitService *services.RecruitService
 }
 
+// Submit 提交招募申请
 func (h *RecruitHandler) Submit(c *gin.Context) {
 	var req struct {
 		Phone   string `json:"phone"`
@@ -40,6 +43,7 @@ func (h *RecruitHandler) Submit(c *gin.Context) {
 	utils.SuccessWithMsg(c, "提交成功，我们会尽快联系您", nil)
 }
 
+// List 获取招募申请列表
 func (h *RecruitHandler) List(c *gin.Context) {
 	subs, err := h.RecruitService.List()
 	if err != nil {
@@ -50,6 +54,7 @@ func (h *RecruitHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"submissions": subs})
 }
 
+// Process 将招募标记为已处理
 func (h *RecruitHandler) Process(c *gin.Context) {
 	id := c.Param("id")
 	recruitID, _ := strconv.ParseUint(id, 10, 32)
@@ -61,6 +66,7 @@ func (h *RecruitHandler) Process(c *gin.Context) {
 	utils.SuccessWithMsg(c, "已处理", nil)
 }
 
+// UnprocessedCount 获取未处理的招募数量
 func (h *RecruitHandler) UnprocessedCount(c *gin.Context) {
 	count, err := h.RecruitService.UnprocessedCount()
 	if err != nil {

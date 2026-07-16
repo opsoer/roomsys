@@ -1,3 +1,4 @@
+// 楼栋服务，提供楼栋的增删改查、房东管理及相关统计
 package services
 
 import (
@@ -11,14 +12,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// BuildingService 楼栋服务
 type BuildingService struct {
 	DB *gorm.DB
 }
 
+// NewBuildingService 创建楼栋服务实例
 func NewBuildingService(db *gorm.DB) *BuildingService {
 	return &BuildingService{DB: db}
 }
 
+// BuildingWithStats 楼栋及统计数据
 type BuildingWithStats struct {
 	models.Building
 	Landlords     []models.BuildingLandlord `json:"landlords"`
@@ -28,6 +32,7 @@ type BuildingWithStats struct {
 	ExpiringCount int64                     `json:"expiring_count"`
 }
 
+// GetByID 根据ID获取楼栋
 func (s *BuildingService) GetByID(id uint) (*models.Building, error) {
 	var building models.Building
 	if err := s.DB.First(&building, id).Error; err != nil {
@@ -36,6 +41,7 @@ func (s *BuildingService) GetByID(id uint) (*models.Building, error) {
 	return &building, nil
 }
 
+// GetWithStats 获取楼栋详情及统计数据（房间数、空置数等）
 func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	var building models.Building
 	if err := s.DB.First(&building, id).Error; err != nil {
@@ -78,6 +84,7 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	}, nil
 }
 
+// List 分页查询楼栋列表（支持状态、关键词、区域筛选）
 func (s *BuildingService) List(status, keyword, district, street, village string, page, size int) ([]BuildingWithStats, int64, error) {
 	var buildings []models.Building
 	query := s.DB
@@ -178,16 +185,19 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 	return result, total, nil
 }
 
+// Create 创建楼栋
 func (s *BuildingService) Create(building *models.Building) error {
 	return s.DB.Create(building).Error
 }
 
+// ExistsByName 检查楼栋名称是否已存在
 func (s *BuildingService) ExistsByName(name string) (bool, error) {
 	var count int64
 	err := s.DB.Model(&models.Building{}).Where("name = ?", name).Count(&count).Error
 	return count > 0, err
 }
 
+// GenerateSuggestedName 根据已有名称生成建议的新名称（自动递增后缀）
 func (s *BuildingService) GenerateSuggestedName(baseName string) (string, error) {
 	var names []string
 	if err := s.DB.Model(&models.Building{}).
@@ -208,10 +218,12 @@ func (s *BuildingService) GenerateSuggestedName(baseName string) (string, error)
 	return fmt.Sprintf("%s%d", baseName, maxSuffix+1), nil
 }
 
+// Update 更新楼栋信息
 func (s *BuildingService) Update(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// HasActiveContracts 检查楼栋下是否有活跃合同
 func (s *BuildingService) HasActiveContracts(id uint) (bool, error) {
 	var count int64
 	err := s.DB.Model(&models.RentalContract{}).
@@ -220,6 +232,7 @@ func (s *BuildingService) HasActiveContracts(id uint) (bool, error) {
 	return count > 0, err
 }
 
+// Delete 删除楼栋及所有关联数据（房间、合同、账单、用户等）
 func (s *BuildingService) Delete(id uint) error {
 	has, err := s.HasActiveContracts(id)
 	if err != nil {
@@ -264,20 +277,24 @@ func (s *BuildingService) Delete(id uint) error {
 	})
 }
 
+// UpgradePackage 升级楼栋套餐
 func (s *BuildingService) UpgradePackage(id uint, packageType string) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", id).Update("package", packageType).Error
 }
 
+// GetLandlords 获取楼栋的房东列表
 func (s *BuildingService) GetLandlords(buildingID uint) ([]models.BuildingLandlord, error) {
 	var landlords []models.BuildingLandlord
 	err := s.DB.Where("building_id = ?", buildingID).Find(&landlords).Error
 	return landlords, err
 }
 
+// CreateLandlord 创建房东信息
 func (s *BuildingService) CreateLandlord(landlord *models.BuildingLandlord) error {
 	return s.DB.Create(landlord).Error
 }
 
+// DeleteLandlords 删除楼栋下的所有房东信息
 func (s *BuildingService) DeleteLandlords(buildingID uint) error {
 	return s.DB.Where("building_id = ?", buildingID).Delete(&models.BuildingLandlord{}).Error
 }

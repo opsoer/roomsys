@@ -1,3 +1,4 @@
+// 中间件包，提供认证、授权和权限控制相关中间件
 package middleware
 
 import (
@@ -12,6 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// AuthMiddleware JWT 认证中间件，验证请求头中的 Bearer Token
 func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
@@ -44,6 +46,7 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	}
 }
 
+// AdminOrBuildingAdminMiddleware 管理员或楼管权限中间件
 func AdminOrBuildingAdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleVal, exists := c.Get("role")
@@ -69,6 +72,7 @@ func AdminOrBuildingAdminMiddleware() gin.HandlerFunc {
 	}
 }
 
+// SuperAdminMiddleware 超级管理员权限中间件
 func SuperAdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleVal, exists := c.Get("role")
@@ -94,6 +98,7 @@ func SuperAdminMiddleware() gin.HandlerFunc {
 	}
 }
 
+// FullPackageMiddleware 全套餐权限中间件，检查楼宇是否购买了全功能套餐
 func FullPackageMiddleware(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		buildingID, _ := c.Get("building_id")
@@ -121,6 +126,7 @@ func FullPackageMiddleware(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+// BuildingScopeMiddleware 楼宇数据范围中间件，确保用户只能访问所属楼宇的数据
 func BuildingScopeMiddleware(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleVal, _ := c.Get("role")

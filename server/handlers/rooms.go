@@ -1,3 +1,4 @@
+// 房间处理器，处理房间的增删改查及合同管理等HTTP请求
 package handlers
 
 import (
@@ -17,12 +18,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// RoomHandler 房间处理器
 type RoomHandler struct {
 	DB          *gorm.DB
 	Cfg         *config.Config
 	RoomService *services.RoomService
 }
 
+// hasAuth 检查请求是否包含有效的认证令牌
 func (h *RoomHandler) hasAuth(c *gin.Context) bool {
 	tokenStr := c.GetHeader("Authorization")
 	if tokenStr == "" || !strings.HasPrefix(tokenStr, "Bearer ") {
@@ -33,6 +36,7 @@ func (h *RoomHandler) hasAuth(c *gin.Context) bool {
 	return err == nil
 }
 
+// CreateRoomReq 创建房间请求参数
 type CreateRoomReq struct {
 	RoomNumber           string   `json:"room_number" binding:"required"`
 	Floor                string   `json:"floor" binding:"required"`
@@ -45,6 +49,7 @@ type CreateRoomReq struct {
 	WaterUnitPrice       *float64 `json:"water_unit_price" binding:"required"`
 }
 
+// UpdateRoomReq 更新房间请求参数
 type UpdateRoomReq struct {
 	RoomNumber           string   `json:"room_number"`
 	Floor                string   `json:"floor"`
@@ -57,6 +62,7 @@ type UpdateRoomReq struct {
 	WaterUnitPrice       *float64 `json:"water_unit_price"`
 }
 
+// UpdateRoomStatusReq 更新房间状态请求参数（出租/退租）
 type UpdateRoomStatusReq struct {
 	Status          string   `json:"status" binding:"required"`
 	TenantName      string   `json:"tenant_name"`
@@ -70,11 +76,13 @@ type UpdateRoomStatusReq struct {
 	RefundedDeposit *float64 `json:"refunded_deposit"`
 }
 
+// UpdateContractReq 续租合同请求参数
 type UpdateContractReq struct {
 	EndDate   string  `json:"end_date" binding:"required"`
 	RentPrice float64 `json:"rent_price"`
 }
 
+// GetPublic 获取公开房间详情（含租期状态）
 func (h *RoomHandler) GetPublic(c *gin.Context) {
 	roomID := c.Param("rid")
 	buildingID := c.Param("id")
@@ -120,6 +128,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"room": detail})
 }
 
+// GetActiveContractPublic 获取公开活跃合同信息
 func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	roomID := c.Param("rid")
 	bid, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -147,6 +156,7 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"contract": contract})
 }
 
+// List 分页获取房间列表
 func (h *RoomHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -210,6 +220,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
+// Get 获取单个房间详情
 func (h *RoomHandler) Get(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -237,6 +248,7 @@ func (h *RoomHandler) Get(c *gin.Context) {
 	utils.Success(c, gin.H{"room": detail})
 }
 
+// Create 创建新房间
 func (h *RoomHandler) Create(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -286,6 +298,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 	utils.Created(c, "创建成功", gin.H{"room": room})
 }
 
+// Update 更新房间信息
 func (h *RoomHandler) Update(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -342,6 +355,7 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
+// Delete 删除房间
 func (h *RoomHandler) Delete(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -368,6 +382,7 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
+// UpdateStatus 更新房间状态（出租/退租），同时创建合同和账单
 func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -535,6 +550,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	utils.SuccessWithMsg(c, "状态更新成功", nil)
 }
 
+// GetActiveContract 获取房间当前活跃合同
 func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -551,6 +567,7 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 	utils.Success(c, gin.H{"contract": contract})
 }
 
+// RenewContract 续租合同（延长租期或调整租金）
 func (h *RoomHandler) RenewContract(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)

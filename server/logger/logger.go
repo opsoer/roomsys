@@ -1,3 +1,4 @@
+// logger 包提供基于 zerolog 的日志初始化工具，支持控制台和文件输出。
 package logger
 
 import (
@@ -10,13 +11,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Log 是全局日志实例，通过 Init 初始化后使用。
 var Log zerolog.Logger
 
+// Config 定义日志配置：日志级别和输出目录。
 type Config struct {
 	Level string `json:"log_level"`
 	Dir   string `json:"log_dir"`
 }
 
+// Init 初始化全局日志实例，同时写入控制台和文件。
 func Init(cfg Config) {
 	level, err := zerolog.ParseLevel(cfg.Level)
 	if err != nil {

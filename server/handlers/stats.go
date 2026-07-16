@@ -1,3 +1,4 @@
+// 统计处理器，提供数据看板、趋势分析等统计功能
 package handlers
 
 import (
@@ -12,10 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// StatsHandler 统计处理器
 type StatsHandler struct {
 	DB *gorm.DB
 }
 
+// overviewData 概览统计数据
 type overviewData struct {
 	TotalPV          int64         `json:"total_pv"`
 	TotalUV          int64         `json:"total_uv"`
@@ -27,6 +30,7 @@ type overviewData struct {
 	BuildingRank     []buildingRankItem `json:"building_rank"`
 }
 
+// buildingRankItem 楼栋排行数据项
 type buildingRankItem struct {
 	BuildingID   uint   `json:"building_id"`
 	BuildingName string `json:"building_name"`
@@ -37,12 +41,14 @@ type buildingRankItem struct {
 	LandlordView int64  `json:"landlord_view"`
 }
 
+// trendItem 趋势数据项
 type trendItem struct {
 	Date string `json:"date"`
 	PV   int64  `json:"pv"`
 	UV   int64  `json:"uv"`
 }
 
+// priceRefItem 价格参考数据项
 type priceRefItem struct {
 	District string `json:"district"`
 	Layout   string `json:"layout"`
@@ -52,6 +58,7 @@ type priceRefItem struct {
 	Count    int64   `json:"count"`
 }
 
+// buildingDetailData 楼栋详情统计数据
 type buildingDetailData struct {
 	BuildingID     uint             `json:"building_id"`
 	BuildingName   string           `json:"building_name"`
@@ -62,6 +69,7 @@ type buildingDetailData struct {
 	RoomRank       []roomRankItem   `json:"room_rank"`
 }
 
+// roomRankItem 房间排行数据项
 type roomRankItem struct {
 	RoomID     uint   `json:"room_id"`
 	RoomNumber string `json:"room_number"`
@@ -70,6 +78,7 @@ type roomRankItem struct {
 	Status     string `json:"status"`
 }
 
+// Overview 获取全局概览统计（PV、UV、转化率、空置率、楼栋排行）
 func (h *StatsHandler) Overview(c *gin.Context) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -157,6 +166,7 @@ func (h *StatsHandler) Overview(c *gin.Context) {
 	utils.Success(c, gin.H{"overview": data})
 }
 
+// Trend 获取PV/UV趋势数据
 func (h *StatsHandler) Trend(c *gin.Context) {
 	daysStr := c.DefaultQuery("days", "30")
 	days, err := strconv.Atoi(daysStr)
@@ -194,6 +204,7 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 	utils.Success(c, gin.H{"trend": data})
 }
 
+// PriceReference 获取租金价格参考（按区域和户型分组）
 func (h *StatsHandler) PriceReference(c *gin.Context) {
 	data, err := utils.CacheGetOrSet("stats_price_ref", 5*time.Minute, func() (interface{}, error) {
 		var result []priceRefItem
@@ -220,6 +231,7 @@ func (h *StatsHandler) PriceReference(c *gin.Context) {
 	utils.Success(c, gin.H{"price_reference": data})
 }
 
+// BuildingDetail 获取单个楼栋的详细统计数据
 func (h *StatsHandler) BuildingDetail(c *gin.Context) {
 	idStr := c.Param("id")
 	buildingID, err := strconv.ParseUint(idStr, 10, 32)
@@ -288,6 +300,7 @@ func (h *StatsHandler) BuildingDetail(c *gin.Context) {
 
 // ===== 楼栋管理员 API（自动 scope 到自己的 building_id）=====
 
+// MyBuildingStats 获取当前管理员所属楼栋的统计概览
 func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -354,6 +367,7 @@ func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 	utils.Success(c, gin.H{"stats": data})
 }
 
+// MyBuildingTrend 获取当前管理员所属楼栋的趋势数据
 func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -398,10 +412,12 @@ func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 
 // 公开埋点 API
 
+// landlordViewReq 记录房东浏览的请求参数
 type landlordViewReq struct {
 	BuildingID uint `json:"building_id" binding:"required"`
 }
 
+// RecordLandlordView 记录房东浏览PV（公开埋点）
 func (h *StatsHandler) RecordLandlordView(c *gin.Context) {
 	var req landlordViewReq
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -1,3 +1,4 @@
+// 工具包，提供审计日志记录功能
 package utils
 
 import (
@@ -7,6 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// LogAudit 记录操作审计日志到数据库
 func LogAudit(c *gin.Context, db *gorm.DB, action, resource, resourceID, detail string) {
 	userID, _ := c.Get("user_id")
 	uid, _ := userID.(uint)

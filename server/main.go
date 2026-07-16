@@ -1,3 +1,4 @@
+// main 是应用程序入口，负责初始化配置、数据库、路由并启动 HTTP 服务。
 package main
 
 import (
@@ -25,6 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// main 是程序入口：加载配置、初始化日志、连接数据库、设置定时任务和路由。
 func main() {
 	cfg := config.Load()
 
@@ -212,6 +214,7 @@ func main() {
 	r.Run(":" + cfg.ServerPort)
 }
 
+// requestLogger 返回 Gin 中间件，记录每个 HTTP 请求的方法、路径、状态码和耗时。
 func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -243,6 +246,7 @@ func requestLogger() gin.HandlerFunc {
 	}
 }
 
+// checkExpiredBuildings 检查所有到期公寓，将已过期的状态更新为 expired。
 func checkExpiredBuildings(db *gorm.DB) {
 	var buildings []models.Building
 	db.Where("status = ? AND expired_at IS NOT NULL AND expired_at != ''", "active").Find(&buildings)
@@ -268,6 +272,7 @@ func checkExpiredBuildings(db *gorm.DB) {
 	}
 }
 
+// resetDatabase 删除所有表，供 AutoMigrate 重建。
 func resetDatabase(db *gorm.DB) {
 	tables := []interface{}{
 		&models.AuditLog{},
@@ -294,6 +299,7 @@ func resetDatabase(db *gorm.DB) {
 	logger.Log.Info().Msg("所有表已删除，等待 AutoMigrate 重建")
 }
 
+// seedAdmin 检查是否存在 admin 用户，如不存在则创建，否则重置密码。
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
 	result := db.Where("username = ?", "admin").First(&admin)
@@ -324,6 +330,7 @@ func seedAdmin(db *gorm.DB) {
 	}
 }
 
+// ensureFFmpegCore 确保 FFmpeg WASM 核心文件已下载到上传目录。
 func ensureFFmpegCore(uploadDir string) {
 	dir := filepath.Join(uploadDir, "ffmpeg")
 	if err := os.MkdirAll(dir, 0750); err != nil {
@@ -370,17 +377,20 @@ func ensureFFmpegCore(uploadDir string) {
 	}
 }
 
+// gzipWriter 包装 gin.ResponseWriter，用 gzip 压缩响应体。
 type gzipWriter struct {
 	gin.ResponseWriter
 	writer *gzip.Writer
 }
 
+// Write 使用 gzip.Writer 压缩后写入响应。
 func (g *gzipWriter) Write(data []byte) (int, error) {
 	return g.writer.Write(data)
 }
 
 var skipGzipPrefixes = []string{"/api/media/", "/api/ffmpeg/"}
 
+// gzipMiddleware 返回 Gin 中间件，对符合条件的请求启用 gzip 压缩。
 func gzipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -412,6 +422,7 @@ func gzipMiddleware() gin.HandlerFunc {
 	}
 }
 
+// cacheControlMiddleware 返回 Gin 中间件，设置静态资源的缓存策略。
 func cacheControlMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -427,6 +438,7 @@ func cacheControlMiddleware() gin.HandlerFunc {
 	}
 }
 
+// splitStr 按分隔符分割字符串，并去除空白项。
 func splitStr(s, sep string) []string {
 	var result []string
 	for _, part := range strings.Split(s, sep) {

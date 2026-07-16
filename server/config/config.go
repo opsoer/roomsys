@@ -1,3 +1,4 @@
+// config 包负责加载应用程序配置，支持 JSON 文件和环境变量覆盖。
 package config
 
 import (
@@ -6,6 +7,7 @@ import (
 	"os"
 )
 
+// Config 存储所有应用程序配置项。
 type Config struct {
 	DBHost     string `json:"db_host"`
 	DBPort     string `json:"db_port"`
@@ -27,6 +29,7 @@ type Config struct {
 	QiniuZone      string `json:"qiniu_zone"`
 }
 
+// defaults 返回默认配置值。
 func defaults() *Config {
 	return &Config{
 		DBHost:     "127.0.0.1",
@@ -43,6 +46,7 @@ func defaults() *Config {
 	}
 }
 
+// Load 加载配置：先加载 JSON 文件，再用环境变量覆盖，最后校验必填项。
 func Load() *Config {
 	cfg := defaults()
 
@@ -64,6 +68,7 @@ func Load() *Config {
 	return cfg
 }
 
+// loadFile 从 JSON 文件读取配置并解析到 Config 结构体。
 func loadFile(path string, cfg *Config) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,6 +79,7 @@ func loadFile(path string, cfg *Config) {
 	}
 }
 
+// envOverrides 用环境变量覆盖配置项。
 func envOverrides(cfg *Config) {
 	if v := os.Getenv("DB_HOST"); v != "" {
 		cfg.DBHost = v

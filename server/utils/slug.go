@@ -1,3 +1,4 @@
+// 工具包，提供字符串转拼音 Slug 功能
 package utils
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/mozillazg/go-pinyin"
 )
 
+// Slugify 将中文字符串转换为拼音 slug（小写字母 + 连字符）
 func Slugify(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

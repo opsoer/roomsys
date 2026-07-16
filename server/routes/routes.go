@@ -1,3 +1,4 @@
+// routes 包负责注册所有 HTTP 路由，按公开、平台管理、公寓管理分组。
 package routes
 
 import (
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// Setup 注册所有路由，包括静态文件服务、公开接口、平台管理后台和公寓管理后台。
 func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	r.Static("/assets", cfg.WebDistDir+"/assets")
 	r.StaticFile("/default-image.svg", cfg.WebDistDir+"/default-image.svg")

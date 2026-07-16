@@ -1,3 +1,4 @@
+// 账单服务，提供账单的增删改查和统计分析
 package services
 
 import (
@@ -9,20 +10,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// BillService 账单服务
 type BillService struct {
 	DB *gorm.DB
 }
 
+// NewBillService 创建账单服务实例
 func NewBillService(db *gorm.DB) *BillService {
 	return &BillService{DB: db}
 }
 
+// GetByID 根据ID获取账单
 func (s *BillService) GetByID(id uint) (*models.Bill, error) {
 	var bill models.Bill
 	err := s.DB.Preload("Room").First(&bill, id).Error
 	return &bill, err
 }
 
+// List 分页查询账单列表（支持按类型、日期、房间号筛选）
 func (s *BillService) List(buildingID uint, params map[string]interface{}, page, size int) ([]models.Bill, int64, error) {
 	var bills []models.Bill
 	query := s.DB.Where("building_id = ?", buildingID)
@@ -56,18 +61,22 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}, page,
 	return bills, total, err
 }
 
+// Create 创建账单
 func (s *BillService) Create(bill *models.Bill) error {
 	return s.DB.Create(bill).Error
 }
 
+// Update 更新账单信息
 func (s *BillService) Update(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Bill{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// Delete 删除账单
 func (s *BillService) Delete(id uint) error {
 	return s.DB.Delete(&models.Bill{}, id).Error
 }
 
+// GetStats 统计指定楼栋的收入/支出汇总（按月或年）
 func (s *BillService) GetStats(buildingID uint, month, year string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"total_income":  0.0,
@@ -123,6 +132,7 @@ func (s *BillService) GetStats(buildingID uint, month, year string) (map[string]
 	return result, nil
 }
 
+// GetTrend 获取月度收支趋势及环比增长数据
 func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface{}, error) {
 	now := utils.Now()
 	startDate := now.AddDate(0, -(years - 1), 0).Format("2006-01-01")
@@ -191,6 +201,7 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	}, nil
 }
 
+// GenerateBillNo 生成唯一账单编号
 func (s *BillService) GenerateBillNo(buildingID uint) (string, error) {
 	now := utils.Now()
 	datePart := now.Format("20060102")

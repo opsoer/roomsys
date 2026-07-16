@@ -1,3 +1,4 @@
+// models 包定义所有数据库模型（ORM 映射），以及自动迁移和清理函数。
 package models
 
 import (
@@ -6,6 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// User 表示系统用户（管理员、超级管理员等）。
 type User struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Username     string         `gorm:"uniqueIndex;size:50;not null" json:"username"`
@@ -22,6 +24,7 @@ type User struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// Building 表示公寓楼栋，包含基本信息、套餐、地址等。
 type Building struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Name         string         `gorm:"size:100;not null" json:"name"`
@@ -43,6 +46,7 @@ type Building struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// BuildingLandlord 表示楼栋的房东信息。
 type BuildingLandlord struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	BuildingID uint      `gorm:"index;not null" json:"building_id"`
@@ -51,6 +55,7 @@ type BuildingLandlord struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// Room 表示公寓房间，包含布局、面积、租金定价等。
 type Room struct {
 	ID                 uint           `gorm:"primaryKey" json:"id"`
 	BuildingID         uint           `gorm:"uniqueIndex:idx_building_room;not null" json:"building_id"`
@@ -72,6 +77,7 @@ type Room struct {
 	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// RoomMedia 表示房间的媒体资源（图片、视频等）。
 type RoomMedia struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	RoomID        uint      `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
@@ -85,6 +91,7 @@ type RoomMedia struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// Tenant 表示租客信息。
 type Tenant struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`
 	Name             string         `gorm:"size:50;not null" json:"name"`
@@ -97,6 +104,7 @@ type Tenant struct {
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// RentalContract 表示租赁合同，关联房间和租客。
 type RentalContract struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	RoomID       uint           `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
@@ -118,6 +126,7 @@ type RentalContract struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// Bill 表示账单，支持租金、水电等多种类型的费用记录。
 type Bill struct {
 	ID            uint           `gorm:"primaryKey" json:"id"`
 	BillNo        string         `gorm:"uniqueIndex;size:50;not null" json:"bill_no"`
@@ -138,6 +147,7 @@ type Bill struct {
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// Shareholder 表示楼栋股东及其持股比例。
 type Shareholder struct {
 	ID         uint           `gorm:"primaryKey" json:"id"`
 	BuildingID uint           `gorm:"index;not null" json:"building_id"`
@@ -148,6 +158,7 @@ type Shareholder struct {
 	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// Dividend 表示月度分红记录，按股东计算分红金额。
 type Dividend struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	BuildingID     uint           `gorm:"uniqueIndex:idx_dividend;not null" json:"building_id"`
@@ -166,6 +177,7 @@ type Dividend struct {
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// Task 表示待办任务（维修、退租等）。
 type Task struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	BuildingID  uint           `gorm:"index;not null" json:"building_id"`
@@ -184,12 +196,14 @@ type Task struct {
 	Room        Room           `gorm:"foreignKey:RoomID" json:"room,omitempty"`
 }
 
+// Setting 表示系统配置项（键值对）。
 type Setting struct {
 	Key       string    `gorm:"primaryKey;size:100" json:"key"`
 	Value     string    `gorm:"type:text" json:"value"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// RecruitSubmission 表示招商提交的申请信息。
 type RecruitSubmission struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Phone     string    `gorm:"size:20;not null" json:"phone"`
@@ -199,6 +213,7 @@ type RecruitSubmission struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// AuditLog 表示操作审计日志，记录用户的关键操作。
 type AuditLog struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	UserID     uint      `gorm:"index;not null" json:"user_id"`
@@ -212,6 +227,7 @@ type AuditLog struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// PageView 表示页面浏览量记录，用于统计。
 type PageView struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	PageType   string    `gorm:"size:30;not null;index:idx_pv_query" json:"page_type"`
@@ -221,6 +237,7 @@ type PageView struct {
 	CreatedAt  time.Time `gorm:"index:idx_pv_query;index:idx_pv_cleanup" json:"created_at"`
 }
 
+// AutoMigrate 自动创建或更新所有模型对应的数据库表。
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
@@ -241,6 +258,7 @@ func AutoMigrate(db *gorm.DB) error {
 	)
 }
 
+// CleanupSoftDeleted 清理超过指定天数的软删除记录。
 func CleanupSoftDeleted(db *gorm.DB, days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	tables := []interface{}{

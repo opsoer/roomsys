@@ -1,3 +1,4 @@
+// 分红服务，提供股东管理、分红计算与结算
 package services
 
 import (
@@ -7,32 +8,39 @@ import (
 	"gorm.io/gorm"
 )
 
+// DividendService 分红服务
 type DividendService struct {
 	DB *gorm.DB
 }
 
+// NewDividendService 创建分红服务实例
 func NewDividendService(db *gorm.DB) *DividendService {
 	return &DividendService{DB: db}
 }
 
+// GetShareholders 获取楼栋股东列表
 func (s *DividendService) GetShareholders(buildingID uint) ([]models.Shareholder, error) {
 	var shareholders []models.Shareholder
 	err := s.DB.Where("building_id = ?", buildingID).Find(&shareholders).Error
 	return shareholders, err
 }
 
+// CreateShareholder 创建股东
 func (s *DividendService) CreateShareholder(shareholder *models.Shareholder) error {
 	return s.DB.Create(shareholder).Error
 }
 
+// UpdateShareholder 更新股东信息
 func (s *DividendService) UpdateShareholder(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Shareholder{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// DeleteShareholder 删除股东
 func (s *DividendService) DeleteShareholder(id uint) error {
 	return s.DB.Delete(&models.Shareholder{}, id).Error
 }
 
+// Calculate 计算指定月份的分红（收入-支出=净利润，按比例分配）
 func (s *DividendService) Calculate(buildingID uint, month string) (map[string]interface{}, error) {
 	var bills []models.Bill
 	startDate := month + "-01"
@@ -79,6 +87,7 @@ func (s *DividendService) Calculate(buildingID uint, month string) (map[string]i
 	}, nil
 }
 
+// List 分页查询分红记录
 func (s *DividendService) List(buildingID uint, page, size int) ([]models.Dividend, int64, error) {
 	var dividends []models.Dividend
 	query := s.DB.Where("building_id = ?", buildingID)
@@ -90,10 +99,12 @@ func (s *DividendService) List(buildingID uint, page, size int) ([]models.Divide
 	return dividends, total, err
 }
 
+// Settle 结算分红
 func (s *DividendService) Settle(dividend *models.Dividend) error {
 	return s.DB.Create(dividend).Error
 }
 
+// Predict 预测未来数月的分红收益
 func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]interface{}, error) {
 	var recentBills []models.Bill
 	err := s.DB.Where("building_id = ?", buildingID).

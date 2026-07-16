@@ -1,3 +1,4 @@
+// 工具包，提供账单财务相关查询功能
 package utils
 
 import (
@@ -8,11 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// FinanceRow 财务查询结果行，包含收支类型和金额
 type FinanceRow struct {
 	Type  string
 	Total float64
 }
 
+// QueryMonthlyFinance 查询指定楼宇某月的收支汇总
 func QueryMonthlyFinance(db *gorm.DB, buildingID uint, month string) MonthlyFinanceSummary {
 	var rows []FinanceRow
 	startDate := month + "-01"
@@ -34,6 +37,7 @@ func QueryMonthlyFinance(db *gorm.DB, buildingID uint, month string) MonthlyFina
 	return NewMonthlyFinanceSummary(totalIncome, totalExpense)
 }
 
+// NextMonth 计算给定月份的下一个月，格式 "2006-01"
 func NextMonth(month string) string {
 	t, _ := time.Parse("2006-01", month)
 	return t.AddDate(0, 1, 0).Format("2006-01")

@@ -1,3 +1,4 @@
+// 工具包，提供图片处理功能（缩放、编码、缩略图生成）
 package utils
 
 import (
@@ -16,12 +17,13 @@ import (
 )
 
 const (
-	MaxImageWidth  = 1600
-	MaxImageHeight = 1600
-	ThumbWidth     = 300
-	JPEGQuality    = 65
+	MaxImageWidth  = 1600 // 最大图片宽度
+	MaxImageHeight = 1600 // 最大图片高度
+	ThumbWidth     = 300  // 缩略图宽度
+	JPEGQuality    = 65   // JPEG 压缩质量
 )
 
+// ProcessImageBytes 处理图片字节数据，返回处理后的图片和缩略图
 func ProcessImageBytes(data []byte, ext string) (processed, thumbnail []byte, err error) {
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -43,6 +45,7 @@ func ProcessImageBytes(data []byte, ext string) (processed, thumbnail []byte, er
 	return processed, thumbnail, nil
 }
 
+// ProcessImageNoThumb 处理图片字节数据，不生成缩略图
 func ProcessImageNoThumb(data []byte) ([]byte, error) {
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -52,6 +55,7 @@ func ProcessImageNoThumb(data []byte) ([]byte, error) {
 	return encodeImage(resized, format)
 }
 
+// ProcessImageToFile 从 Reader 读取图片，处理后保存到文件（可选缩略图）
 func ProcessImageToFile(input io.Reader, savePath, thumbPath string) error {
 	img, format, err := image.Decode(input)
 	if err != nil {
@@ -72,6 +76,7 @@ func ProcessImageToFile(input io.Reader, savePath, thumbPath string) error {
 	return nil
 }
 
+// resizeImage 按比例缩放图片至指定最大尺寸
 func resizeImage(img image.Image, maxW, maxH int) image.Image {
 	bounds := img.Bounds()
 	w := bounds.Dx()
@@ -100,6 +105,7 @@ func resizeImage(img image.Image, maxW, maxH int) image.Image {
 	return dst
 }
 
+// encodeImage 将图片按指定格式编码为字节数据
 func encodeImage(img image.Image, format string) ([]byte, error) {
 	var buf bytes.Buffer
 	format = strings.ToLower(format)
@@ -116,6 +122,7 @@ func encodeImage(img image.Image, format string) ([]byte, error) {
 	}
 }
 
+// saveImageToFile 将图片编码并保存到指定文件路径
 func saveImageToFile(img image.Image, path, format string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -137,6 +144,7 @@ func saveImageToFile(img image.Image, path, format string) error {
 	}
 }
 
+// IsImageType 判断 MIME 类型是否为图片类型
 func IsImageType(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }

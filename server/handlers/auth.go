@@ -1,3 +1,4 @@
+// Package handlers 处理用户认证相关接口，包括登录、用户管理、令牌刷新等
 package handlers
 
 import (
@@ -25,10 +26,12 @@ const maxLoginAttempts = 10
 const rateLimitWindow = 1 * time.Minute
 const cleanupInterval = 5 * time.Minute
 
+// init 启动登录频率限制的定时清理任务
 func init() {
 	go cleanupLoginAttempts()
 }
 
+// cleanupLoginAttempts 定期清理过期的登录频率限制记录
 func cleanupLoginAttempts() {
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
@@ -44,6 +47,7 @@ func cleanupLoginAttempts() {
 	}
 }
 
+// checkLoginRateLimit 检查指定IP的登录频率是否超限
 func checkLoginRateLimit(ip string) bool {
 	rateLimitMu.Lock()
 	defer rateLimitMu.Unlock()
@@ -64,22 +68,26 @@ func checkLoginRateLimit(ip string) bool {
 	return true
 }
 
+// rateLimitEntry 登录频率限制条目，记录窗口起始时间和请求次数
 type rateLimitEntry struct {
 	windowStart time.Time
 	count       int
 }
 
+// AuthHandler 认证处理器，依赖数据库连接、配置和认证服务
 type AuthHandler struct {
 	DB           *gorm.DB
 	Cfg          *config.Config
 	AuthService  *services.AuthService
 }
 
+// LoginReq 登录请求参数
 type LoginReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// Login 处理用户登录，验证用户名密码并返回令牌
 func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
 	if !checkLoginRateLimit(ip) {
@@ -145,11 +153,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// CreateAdminReq 创建公寓管理员请求参数
 type CreateAdminReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// CreateAdmin 创建公寓管理员（超级管理员专用）
 func (h *AuthHandler) CreateAdmin(c *gin.Context) {
 	var req CreateAdminReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -177,12 +187,14 @@ func (h *AuthHandler) CreateAdmin(c *gin.Context) {
 	utils.Created(c, "公寓管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role}})
 }
 
+// CreateBuildingAdminReq 创建指定公寓的管理员请求参数
 type CreateBuildingAdminReq struct {
 	Username   string `json:"username" binding:"required"`
 	Password   string `json:"password" binding:"required"`
 	BuildingID uint   `json:"building_id" binding:"required"`
 }
 
+// CreateBuildingAdmin 创建指定公寓的管理员（超级管理员专用）
 func (h *AuthHandler) CreateBuildingAdmin(c *gin.Context) {
 	var req CreateBuildingAdminReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -217,11 +229,13 @@ func (h *AuthHandler) CreateBuildingAdmin(c *gin.Context) {
 	utils.Created(c, "公寓管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "building_id": req.BuildingID}})
 }
 
+// CreateRegularAdminReq 创建普通管理员请求参数
 type CreateRegularAdminReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// CreateRegularAdmin 创建当前公寓的普通管理员
 func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil || bid == 0 {
@@ -256,10 +270,12 @@ func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 	utils.Created(c, "管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role}})
 }
 
+// RefreshTokenReq 刷新令牌请求参数
 type RefreshTokenReq struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+// RefreshToken 使用刷新令牌获取新的访问令牌
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshTokenReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -288,6 +304,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	utils.Success(c, gin.H{"token": token})
 }
 
+// ListUsers 获取所有用户列表（超级管理员专用）
 func (h *AuthHandler) ListUsers(c *gin.Context) {
 	users, err := h.AuthService.ListUsers()
 	if err != nil {
@@ -299,6 +316,7 @@ func (h *AuthHandler) ListUsers(c *gin.Context) {
 	utils.Success(c, gin.H{"users": users})
 }
 
+// ListBuildingUsers 获取当前公寓的用户列表
 func (h *AuthHandler) ListBuildingUsers(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -315,11 +333,13 @@ func (h *AuthHandler) ListBuildingUsers(c *gin.Context) {
 	utils.Success(c, gin.H{"users": users})
 }
 
+// UpdateUserReq 更新用户信息请求参数
 type UpdateUserReq struct {
 	Role     string `json:"role"`
 	Password string `json:"password"`
 }
 
+// UpdateUser 更新指定用户的角色或密码
 func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	id := c.Param("id")
 	userID, err := strconv.ParseUint(id, 10, 32)
@@ -365,6 +385,7 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
+// DeleteUser 删除指定用户（不允许删除超级管理员）
 func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 	userID, err := strconv.ParseUint(id, 10, 32)

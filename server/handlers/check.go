@@ -1,3 +1,4 @@
+// Package handlers 提供后台定时检查任务，如自动更新到期合同状态
 package handlers
 
 import (
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// AutoCheckExpiringContracts 自动检查到期合同，更新房间状态并创建退租任务
 func AutoCheckExpiringContracts(db *gorm.DB) {
 	now := utils.Now()
 	expireThreshold := now.AddDate(0, 0, 30)

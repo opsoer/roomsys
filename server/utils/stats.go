@@ -1,3 +1,4 @@
+// 工具包，提供页面浏览统计和批量写入功能
 package utils
 
 import (
@@ -13,10 +14,12 @@ import (
 
 var pvChan = make(chan models.PageView, 10000)
 
+// InitStatsWriter 启动后台协程，批量写入页面访问记录
 func InitStatsWriter(db *gorm.DB) {
 	go pvBatchWriter(db)
 }
 
+// pvBatchWriter 后台批量写入协程，每 10 秒或积累 100 条时写入一次
 func pvBatchWriter(db *gorm.DB) {
 	batch := make([]models.PageView, 0, 100)
 	ticker := time.NewTicker(10 * time.Second)
@@ -39,6 +42,7 @@ func pvBatchWriter(db *gorm.DB) {
 	}
 }
 
+// flushPVBatch 将一批页面访问记录写入数据库
 func flushPVBatch(db *gorm.DB, batch []models.PageView) {
 	if len(batch) == 0 {
 		return
@@ -48,6 +52,7 @@ func flushPVBatch(db *gorm.DB, batch []models.PageView) {
 	}
 }
 
+// RecordPageView 向管道发送一条页面访问记录
 func RecordPageView(db *gorm.DB, pageType string, resourceID uint, buildingID uint, ip string) {
 	select {
 	case pvChan <- models.PageView{
@@ -61,6 +66,7 @@ func RecordPageView(db *gorm.DB, pageType string, resourceID uint, buildingID ui
 	}
 }
 
+// GetRealIP 从请求头中获取真实客户端 IP（优先 X-Forwarded-For / X-Real-IP）
 func GetRealIP(c *gin.Context) string {
 	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
