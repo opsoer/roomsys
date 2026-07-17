@@ -25,7 +25,7 @@ type overviewData struct {
 	TodayPV          int64         `json:"today_pv"`
 	TodayUV          int64         `json:"today_uv"`
 	TotalLandlordView int64        `json:"total_landlord_view"`
-	ConversionRate   float64       `json:"conversion_rate"`
+	PhoneRate        float64       `json:"phone_rate"`
 	VacancyRate      float64       `json:"vacancy_rate"`
 	BuildingRank     []buildingRankItem `json:"building_rank"`
 }
@@ -43,9 +43,10 @@ type buildingRankItem struct {
 
 // trendItem 趋势数据项
 type trendItem struct {
-	Date string `json:"date"`
-	PV   int64  `json:"pv"`
-	UV   int64  `json:"uv"`
+	Date         string `json:"date"`
+	PV           int64  `json:"pv"`
+	UV           int64  `json:"uv"`
+	LandlordView int64  `json:"landlord_view"`
 }
 
 // priceRefItem 价格参考数据项
@@ -65,7 +66,7 @@ type buildingDetailData struct {
 	PV             int64            `json:"pv"`
 	UV             int64            `json:"uv"`
 	LandlordView   int64            `json:"landlord_view"`
-	ConversionRate float64          `json:"conversion_rate"`
+	PhoneRate      float64          `json:"phone_rate"`
 	RoomRank       []roomRankItem   `json:"room_rank"`
 }
 
@@ -93,13 +94,9 @@ func (h *StatsHandler) Overview(c *gin.Context) {
 		h.DB.Model(&models.PageView{}).Where("created_at >= ?", todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.TodayUV)
 		h.DB.Model(&models.PageView{}).Where("page_type = ?", "landlord_view").Select("COUNT(*)").Scan(&result.TotalLandlordView)
 
-		// 转化率：本月新合同 / 本月房间详情PV
-		var newContracts int64
-		h.DB.Model(&models.RentalContract{}).Where("created_at >= ? AND status = ?", monthStart, "active").Select("COUNT(*)").Scan(&newContracts)
-		var roomPV int64
-		h.DB.Model(&models.PageView{}).Where("page_type = ? AND created_at >= ?", "room_detail", monthStart).Select("COUNT(*)").Scan(&roomPV)
-		if roomPV > 0 {
-			result.ConversionRate = float64(newContracts) / float64(roomPV) * 100
+		// 获电率：房东获取数 / 总浏览量 * 100
+		if result.TotalPV > 0 {
+			result.PhoneRate = float64(result.TotalLandlordView) / float64(result.TotalPV) * 100
 		}
 
 		// 空置率
@@ -176,10 +173,13 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	cacheKey := "stats_trend_" + daysStr
 
-	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
+		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		var result []trendItem
 		rows, err := h.DB.Raw(`
-			SELECT DATE(created_at) as date, COUNT(*) as pv, COUNT(DISTINCT ip) as uv
+			SELECT DATE(created_at) as date,
+			       COUNT(*) as pv,
+			       COUNT(DISTINCT ip) as uv,
+			       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
 			FROM page_views
 			WHERE created_at >= ?
 			GROUP BY DATE(created_at)
@@ -191,7 +191,7 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 		defer rows.Close()
 		for rows.Next() {
 			var item trendItem
-			if err := rows.Scan(&item.Date, &item.PV, &item.UV); err == nil {
+			if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
 				result = append(result, item)
 			}
 		}
@@ -262,13 +262,9 @@ func (h *StatsHandler) BuildingDetail(c *gin.Context) {
 		Where("page_type = ? AND building_id = ?", "landlord_view", buildingID).
 		Select("COUNT(*)").Scan(&result.LandlordView)
 
-	// 转化率
-	var newContracts int64
-	h.DB.Model(&models.RentalContract{}).Where("building_id = ? AND created_at >= ? AND status = ?", buildingID, monthStart, "active").Select("COUNT(*)").Scan(&newContracts)
-	var roomPV int64
-	h.DB.Model(&models.PageView{}).Where("page_type = ? AND building_id = ? AND created_at >= ?", "room_detail", buildingID, monthStart).Select("COUNT(*)").Scan(&roomPV)
-	if roomPV > 0 {
-		result.ConversionRate = float64(newContracts) / float64(roomPV) * 100
+	// 获电率
+	if result.PV > 0 {
+		result.PhoneRate = float64(result.LandlordView) / float64(result.PV) * 100
 	}
 
 	// 房间排行
@@ -318,7 +314,7 @@ func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 			TodayPV        int64          `json:"today_pv"`
 			TodayUV        int64          `json:"today_uv"`
 			LandlordView   int64          `json:"landlord_view"`
-			ConversionRate float64        `json:"conversion_rate"`
+			PhoneRate      float64        `json:"phone_rate"`
 			RoomRank       []roomRankItem `json:"room_rank"`
 		}
 		var s myStats
@@ -330,12 +326,8 @@ func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 		h.DB.Model(&models.PageView{}).Where("(page_type = ? OR page_type = ?) AND building_id = ? AND created_at >= ?", "building_detail", "room_detail", bid, todayStart).Select("COUNT(DISTINCT ip)").Scan(&s.TodayUV)
 		h.DB.Model(&models.PageView{}).Where("page_type = ? AND building_id = ?", "landlord_view", bid).Select("COUNT(*)").Scan(&s.LandlordView)
 
-		var newContracts int64
-		h.DB.Model(&models.RentalContract{}).Where("building_id = ? AND created_at >= ? AND status = ?", bid, monthStart, "active").Select("COUNT(*)").Scan(&newContracts)
-		var roomPV int64
-		h.DB.Model(&models.PageView{}).Where("page_type = ? AND building_id = ? AND created_at >= ?", "room_detail", bid, monthStart).Select("COUNT(*)").Scan(&roomPV)
-		if roomPV > 0 {
-			s.ConversionRate = float64(newContracts) / float64(roomPV) * 100
+		if s.PV > 0 {
+			s.PhoneRate = float64(s.LandlordView) / float64(s.PV) * 100
 		}
 
 		rows, err := h.DB.Raw(`
@@ -382,22 +374,25 @@ func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	cacheKey := "my_trend_" + strconv.Itoa(int(bid)) + "_" + daysStr
 
-	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
+		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		var result []trendItem
 		rows, err := h.DB.Raw(`
-			SELECT DATE(created_at) as date, COUNT(*) as pv, COUNT(DISTINCT ip) as uv
+			SELECT DATE(created_at) as date,
+			       COUNT(*) as pv,
+			       COUNT(DISTINCT ip) as uv,
+			       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
 			FROM page_views
-			WHERE (page_type = ? OR page_type = ?) AND building_id = ? AND created_at >= ?
+			WHERE (page_type IN ('building_detail','room_detail','landlord_view')) AND building_id = ? AND created_at >= ?
 			GROUP BY DATE(created_at)
 			ORDER BY date
-		`, "building_detail", "room_detail", bid, cutoff).Rows()
+		`, bid, cutoff).Rows()
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var item trendItem
-			if err := rows.Scan(&item.Date, &item.PV, &item.UV); err == nil {
+			if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
 				result = append(result, item)
 			}
 		}

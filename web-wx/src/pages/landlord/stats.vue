@@ -8,7 +8,7 @@
       <view class="stat-card red"><text class="stat-value">{{ formatNum(stats?.landlord_view) }}</text><text class="stat-label">房东获取</text></view>
       <view class="stat-card green"><text class="stat-value">{{ formatNum(stats?.today_pv) }}</text><text class="stat-label">今日浏览</text></view>
       <view class="stat-card purple"><text class="stat-value">{{ formatNum(stats?.today_uv) }}</text><text class="stat-label">今日访客</text></view>
-      <view class="stat-card cyan"><text class="stat-value">{{ stats?.conversion_rate != null ? stats.conversion_rate.toFixed(1) + '%' : '-' }}</text><text class="stat-label">看房转化率</text></view>
+      <view class="stat-card cyan"><text class="stat-value">{{ stats?.phone_rate != null ? stats.phone_rate.toFixed(1) + '%' : '-' }}</text><text class="stat-label">获电率</text></view>
     </view>
 
     <view class="card-section">

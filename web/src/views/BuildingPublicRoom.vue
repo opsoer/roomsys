@@ -6,7 +6,7 @@
       @click-left="$router.push(`/building/${buildingId}`)"
     >
       <template #right>
-        <span class="login-btn" @click="goToDashboard">登录</span>
+        <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
       </template>
     </van-nav-bar>
 
@@ -175,6 +175,7 @@ import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const buildingId = computed(() => route.params.bid)
 const roomId = computed(() => route.params.id)
 const room = ref(null)

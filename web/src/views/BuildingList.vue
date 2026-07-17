@@ -7,11 +7,14 @@
       </div>
       <div class="top-bar">
         <div class="top-bar-left" @click="scrollToTop">
-          <span class="top-logo">☀️</span>
+          <span class="top-logo">
+            <span class="house-big">🏠</span>
+            <span class="house-small">🏠</span>
+          </span>
           <span class="top-title">圳好租</span>
         </div>
         <div class="top-bar-right">
-          <span class="login-btn" @click="goToDashboard">登录</span>
+          <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
         </div>
       </div>
     </van-sticky>
@@ -270,7 +273,21 @@ onMounted(async () => {
   gap: 8px;
 }
 .top-logo {
-  font-size: 24px;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+.house-big {
+  position: relative;
+  z-index: 1;
+  font-size: 28px;
+  margin-right: -6px;
+}
+.house-small {
+  position: relative;
+  z-index: 0;
+  font-size: 20px;
+  transform: translateY(2px);
 }
 .top-title {
   font-size: 18px;

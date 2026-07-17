@@ -3,7 +3,10 @@
     <div class="login-bg"></div>
     <div class="login-content">
       <div class="login-brand">
-        <div class="login-logo">☀️</div>
+        <div class="login-logo">
+          <span class="house-big">🏠</span>
+          <span class="house-small">🏠</span>
+        </div>
         <h1 class="login-title">圳好租</h1>
         <p class="login-desc">深圳公寓租赁管理平台</p>
       </div>
@@ -109,8 +112,23 @@ async function handleLogin() {
   margin-bottom: 36px;
 }
 .login-logo {
-  font-size: 56px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
   margin-bottom: 12px;
+}
+.login-logo .house-big {
+  position: relative;
+  z-index: 1;
+  font-size: 56px;
+  margin-right: -10px;
+}
+.login-logo .house-small {
+  position: relative;
+  z-index: 0;
+  font-size: 42px;
+  transform: translateY(4px);
 }
 .login-title {
   font-size: 32px;
