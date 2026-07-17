@@ -78,6 +78,7 @@ ehthumbs.db
 *.pptx
 
 # 项目非代码文档
+README.md
 回归检查报告.md
 缺陷
 设计文档/
