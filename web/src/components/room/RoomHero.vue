@@ -41,7 +41,7 @@ defineProps({
 defineEmits(['fullscreen', 'delete-media', 'edit', 'delete-room'])
 
 function statusTag(s) {
-  return s === 'vacant' ? 'success' : s === 'rented' ? 'danger' : s === 'expiring' ? 'warning' : 'info'
+  return s === 'vacant' ? 'success' : s === 'reserved' ? 'primary' : s === 'rented' ? 'danger' : s === 'expiring' ? 'warning' : 'info'
 }
 </script>
 

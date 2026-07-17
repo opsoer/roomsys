@@ -10,6 +10,7 @@ export const SUBTYPE_EXPENSE = ['物业费', '维修费', '清洁费', '税费',
 export const ROOM_STATUS_OPTIONS = [
   { label: '全部', value: '' },
   { label: '未出租', value: 'vacant' },
+  { label: '已预订', value: 'reserved' },
   { label: '已出租', value: 'rented' },
   { label: '即将退租', value: 'expiring' },
 ]

@@ -21,7 +21,7 @@
 
     <div v-if="currentContract && isAdmin" class="sidebar-card">
       <div class="sidebar-card-header">
-        <h4 class="sidebar-title" style="margin:0">当前租约</h4>
+        <h4 class="sidebar-title" style="margin:0">{{ room.status === 'reserved' ? '预订信息' : '当前租约' }}</h4>
         <el-button v-if="room.status === 'rented' || room.status === 'expiring'" size="small" text type="primary" @click="$emit('renew')">
           修改退租时间
         </el-button>
@@ -50,6 +50,10 @@
         <span class="sidebar-label">押金</span>
         <span class="sidebar-val price-warn">{{ currentContract.deposit?.toFixed(2) }} 元</span>
       </div>
+      <div v-if="room.status === 'reserved'" class="sidebar-row">
+        <span class="sidebar-label">定金</span>
+        <span class="sidebar-val price-warn">{{ currentContract.earnest_money?.toFixed(2) }} 元</span>
+      </div>
     </div>
 
     <div v-if="isAdmin" class="sidebar-card">
@@ -57,6 +61,15 @@
       <div class="sidebar-actions">
         <el-button v-if="room.status === 'vacant'" type="success" @click="$emit('rent')" style="width:100%">
           设为已出租
+        </el-button>
+        <el-button v-if="room.status === 'vacant'" type="primary" plain @click="$emit('reserve')" style="width:100%;margin-left:0">
+          交定金/预订
+        </el-button>
+        <el-button v-if="room.status === 'reserved'" type="success" @click="$emit('confirm-sign')" style="width:100%">
+          确认签约入住
+        </el-button>
+        <el-button v-if="room.status === 'reserved'" type="warning" plain @click="$emit('cancel-reserve')" style="width:100%;margin-left:0">
+          取消预订
         </el-button>
         <el-button v-if="room.status === 'rented' || room.status === 'expiring' || room.status === 'expired'" type="warning" @click="$emit('vacant')" style="width:100%">
           设为未出租
@@ -134,7 +147,7 @@ const props = defineProps({
   isAdmin: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['renew', 'rent', 'vacant', 'upload-success'])
+const emit = defineEmits(['renew', 'rent', 'vacant', 'reserve', 'confirm-sign', 'cancel-reserve', 'upload-success'])
 
 const imageCount = computed(() => {
   const media = props.room?.media || []

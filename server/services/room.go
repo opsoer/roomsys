@@ -34,8 +34,9 @@ func (s *RoomService) GetWithContract(id uint) (*models.Room, *models.RentalCont
 	}
 
 	var contract models.RentalContract
-	err := s.DB.Where("room_id = ? AND status = ?", id, "active").
+	err := s.DB.Where("room_id = ? AND status IN ?", id, []string{"active", "reserved"}).
 		Preload("Tenant").
+		Order("CASE status WHEN 'active' THEN 0 ELSE 1 END").
 		First(&contract).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return &room, nil, err
@@ -47,10 +48,17 @@ func (s *RoomService) GetWithContract(id uint) (*models.Room, *models.RentalCont
 	return &room, &contract, nil
 }
 
-// List 分页获取楼栋下的房间列表
-func (s *RoomService) List(buildingID uint, page, size int) ([]models.Room, int64, error) {
+// List 分页获取楼栋下的房间列表，支持楼层和户型筛选
+func (s *RoomService) List(buildingID uint, page, size int, floor, layout string) ([]models.Room, int64, error) {
 	var rooms []models.Room
 	query := s.DB.Where("building_id = ?", buildingID)
+
+	if floor != "" {
+		query = query.Where("floor = ?", floor)
+	}
+	if layout != "" {
+		query = query.Where("layout = ?", layout)
+	}
 
 	var total int64
 	if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
@@ -103,10 +111,23 @@ func (s *RoomService) CreateMedia(media *models.RoomMedia) error {
 	return s.DB.Create(media).Error
 }
 
-// GetActiveContract 获取房间的活跃合同（含租客信息）
+// GetActiveContract 获取房间的活跃或已预订合同（含租客信息），活跃优先
 func (s *RoomService) GetActiveContract(roomID uint) (*models.RentalContract, error) {
 	var contract models.RentalContract
-	err := s.DB.Where("room_id = ? AND status = ?", roomID, "active").
+	err := s.DB.Where("room_id = ? AND status IN ?", roomID, []string{"active", "reserved"}).
+		Preload("Tenant").
+		Order("CASE status WHEN 'active' THEN 0 ELSE 1 END").
+		First(&contract).Error
+	if err != nil {
+		return nil, err
+	}
+	return &contract, nil
+}
+
+// GetReservedContract 获取房间的已预订（定金）合同（含租客信息）
+func (s *RoomService) GetReservedContract(roomID uint) (*models.RentalContract, error) {
+	var contract models.RentalContract
+	err := s.DB.Where("room_id = ? AND status = ?", roomID, "reserved").
 		Preload("Tenant").
 		First(&contract).Error
 	if err != nil {

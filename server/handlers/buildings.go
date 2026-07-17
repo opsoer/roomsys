@@ -350,7 +350,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	}
 	requestedStatus := c.Query("status")
 	page, size := utils.ParsePage(c)
-	query := h.DB.Where("building_id = ?", buildingID)
+	query := h.DB.Where("building_id = ? AND status != ?", buildingID, "reserved")
 	if floor := c.Query("floor"); floor != "" {
 		query = query.Where("floor = ?", floor)
 	}

@@ -62,7 +62,7 @@ type UpdateRoomReq struct {
 	WaterUnitPrice       *float64 `json:"water_unit_price"`
 }
 
-// UpdateRoomStatusReq 更新房间状态请求参数（出租/退租）
+// UpdateRoomStatusReq 更新房间状态请求参数（出租/退租/预订/取消预订）
 type UpdateRoomStatusReq struct {
 	Status          string   `json:"status" binding:"required"`
 	TenantName      string   `json:"tenant_name"`
@@ -156,7 +156,7 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"contract": contract})
 }
 
-// List 分页获取房间列表
+// List 分页获取房间列表，支持楼层、户型、状态筛选
 func (h *RoomHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
 	if err != nil {
@@ -165,7 +165,11 @@ func (h *RoomHandler) List(c *gin.Context) {
 	}
 
 	page, size := utils.ParsePage(c)
-	rooms, total, err := h.RoomService.List(bid, page, size)
+	floor := c.Query("floor")
+	layout := c.Query("layout")
+	requestedStatus := c.Query("status")
+
+	rooms, total, err := h.RoomService.List(bid, page, size, floor, layout)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -217,6 +221,18 @@ func (h *RoomHandler) List(c *gin.Context) {
 		r.Status = utils.DynamicRoomStatus(r.Status, endDate)
 		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: endDate})
 	}
+
+	if requestedStatus != "" {
+		var filtered []RoomWithThumbnail
+		for _, r := range result {
+			if r.Status == requestedStatus {
+				filtered = append(filtered, r)
+			}
+		}
+		result = filtered
+		total = int64(len(filtered))
+	}
+
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
@@ -403,43 +419,84 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	if req.Status != "rented" && req.Status != "vacant" {
-		utils.Error(c, http.StatusBadRequest, "无效的状态值，仅支持 rented 或 vacant")
+	if req.Status != "rented" && req.Status != "vacant" && req.Status != "reserved" {
+		utils.Error(c, http.StatusBadRequest, "无效的状态值，仅支持 rented、vacant 或 reserved")
 		return
 	}
 
 	userID, _ := c.Get("user_id")
 	uid, _ := userID.(uint)
 
+	if req.Status == "reserved" {
+		h.reserveRoom(c, room, &req)
+		return
+	}
+
 	if req.Status == "rented" {
+		var earnestDeducted float64
+		var reservedContract *models.RentalContract
+		if room.Status == "reserved" {
+			if rc, err := h.RoomService.GetReservedContract(room.ID); err == nil {
+				reservedContract = rc
+				earnestDeducted = rc.EarnestMoney
+			}
+		}
+
 		if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Update("status", "ended").Error; err != nil {
 			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("结束旧合同失败")
 		}
 
-		tenant := models.Tenant{
-			Name:  req.TenantName,
-			Phone: req.TenantPhone,
-		}
-		if err := h.RoomService.CreateTenant(&tenant); err != nil {
-			logger.Log.Error().Err(err).Msg("创建租客失败")
-			utils.Error(c, http.StatusInternalServerError, "创建失败")
-			return
-		}
+		var contract models.RentalContract
+		if reservedContract != nil {
+			contract = *reservedContract
+			updates := map[string]interface{}{
+				"rent_price":     req.RentPrice,
+				"management_fee": req.ManagementFee,
+				"deposit":        req.Deposit,
+				"start_date":     req.StartDate,
+				"end_date":       req.EndDate,
+				"status":         "active",
+			}
+			if req.TenantName != "" {
+				h.DB.Model(&models.Tenant{}).Where("id = ?", contract.TenantID).
+					Updates(map[string]interface{}{"name": req.TenantName, "phone": req.TenantPhone})
+			}
+			if err := h.RoomService.UpdateContract(contract.ID, updates); err != nil {
+				logger.Log.Error().Err(err).Msg("确认签约更新合同失败")
+				utils.Error(c, http.StatusInternalServerError, "确认签约失败")
+				return
+			}
+			contract.RentPrice = req.RentPrice
+			contract.Deposit = req.Deposit
+			contract.StartDate = req.StartDate
+			contract.EndDate = req.EndDate
+			contract.Status = "active"
+		} else {
+			tenant := models.Tenant{
+				Name:  req.TenantName,
+				Phone: req.TenantPhone,
+			}
+			if err := h.RoomService.CreateTenant(&tenant); err != nil {
+				logger.Log.Error().Err(err).Msg("创建租客失败")
+				utils.Error(c, http.StatusInternalServerError, "创建失败")
+				return
+			}
 
-		contract := models.RentalContract{
-			RoomID:     room.ID,
-			BuildingID: room.BuildingID,
-			TenantID:   tenant.ID,
-			RentPrice:  req.RentPrice,
-			Deposit:    req.Deposit,
-			StartDate:  req.StartDate,
-			EndDate:    req.EndDate,
-			Status:     "active",
-		}
-		if err := h.RoomService.CreateContract(&contract); err != nil {
-			logger.Log.Error().Err(err).Msg("创建合同失败")
-			utils.Error(c, http.StatusInternalServerError, "创建失败")
-			return
+			contract = models.RentalContract{
+				RoomID:     room.ID,
+				BuildingID: room.BuildingID,
+				TenantID:   tenant.ID,
+				RentPrice:  req.RentPrice,
+				Deposit:    req.Deposit,
+				StartDate:  req.StartDate,
+				EndDate:    req.EndDate,
+				Status:     "active",
+			}
+			if err := h.RoomService.CreateContract(&contract); err != nil {
+				logger.Log.Error().Err(err).Msg("创建合同失败")
+				utils.Error(c, http.StatusInternalServerError, "创建失败")
+				return
+			}
 		}
 
 		now := utils.Now()
@@ -496,25 +553,62 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		}
 
 		if req.Deposit > 0 {
-			depositNo := fmt.Sprintf("B%s%05d", datePart, count+1)
-			depositBill := models.Bill{
-				BillNo:      depositNo,
-				Type:        "income",
-				Subtype:     "押金",
-				Amount:      req.Deposit,
-				BuildingID:  room.BuildingID,
-				RoomID:      &room.ID,
-				Description: "押金：出租押金",
-				BillDate:    now.Format("2006-01-02"),
-				CreatedBy:   uid,
+			actualDeposit := req.Deposit - earnestDeducted
+			if actualDeposit < 0 {
+				actualDeposit = 0
 			}
-			if err := h.DB.Create(&depositBill).Error; err != nil {
-				logger.Log.Error().Err(err).Msg("创建出租押金账单失败")
+			desc := "押金：出租押金"
+			if earnestDeducted > 0 {
+				desc = fmt.Sprintf("押金：应收%.2f元，抵扣定金%.2f元，实收%.2f元", req.Deposit, earnestDeducted, actualDeposit)
+			}
+			if actualDeposit > 0 {
+				depositNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+				depositBill := models.Bill{
+					BillNo:      depositNo,
+					Type:        "income",
+					Subtype:     "押金",
+					Amount:      actualDeposit,
+					BuildingID:  room.BuildingID,
+					RoomID:      &room.ID,
+					Description: desc,
+					BillDate:    now.Format("2006-01-02"),
+					CreatedBy:   uid,
+				}
+				if err := h.DB.Create(&depositBill).Error; err != nil {
+					logger.Log.Error().Err(err).Msg("创建出租押金账单失败")
+				}
+				count++
 			}
 		}
 
+		if earnestDeducted > 0 {
+			earnestNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+			earnestBill := models.Bill{
+				BillNo:      earnestNo,
+				Type:        "income",
+				Subtype:     "定金",
+				Amount:      earnestDeducted,
+				BuildingID:  room.BuildingID,
+				RoomID:      &room.ID,
+				Description: "定金：签约入住，定金抵扣押金",
+				BillDate:    now.Format("2006-01-02"),
+				CreatedBy:   uid,
+			}
+			if err := h.DB.Create(&earnestBill).Error; err != nil {
+				logger.Log.Error().Err(err).Msg("创建定金收入账单失败")
+			}
+			count++
+		}
+
+		h.DB.Where("room_id = ? AND type = ? AND status = ?", room.ID, "reserved_overdue", "pending").
+			Delete(&models.Task{})
 		h.RoomService.UpdateStatus(room.ID, "rented")
 	} else if req.Status == "vacant" {
+		if room.Status == "reserved" {
+			h.cancelReservation(c, room, &req)
+			return
+		}
+
 		if err := h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Update("status", "ended").Error; err != nil {
 			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("结束合同失败")
 		}
@@ -548,6 +642,118 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	}
 
 	utils.SuccessWithMsg(c, "状态更新成功", nil)
+}
+
+// reserveRoom 交定金预订房间（vacant → reserved），仅记录预约信息与定金，不创建账单
+func (h *RoomHandler) reserveRoom(c *gin.Context, room *models.Room, req *UpdateRoomStatusReq) {
+	if room.Status != "vacant" {
+		utils.Error(c, http.StatusBadRequest, "仅空置房间可交定金预订")
+		return
+	}
+	if req.TenantName == "" {
+		utils.Error(c, http.StatusBadRequest, "请填写租客姓名")
+		return
+	}
+	if req.EarnestMoney <= 0 {
+		utils.Error(c, http.StatusBadRequest, "定金金额必须大于0")
+		return
+	}
+
+	tenant := models.Tenant{
+		Name:  req.TenantName,
+		Phone: req.TenantPhone,
+	}
+	if err := h.RoomService.CreateTenant(&tenant); err != nil {
+		logger.Log.Error().Err(err).Msg("创建租客失败")
+		utils.Error(c, http.StatusInternalServerError, "预订失败")
+		return
+	}
+
+	contract := models.RentalContract{
+		RoomID:        room.ID,
+		BuildingID:    room.BuildingID,
+		TenantID:      tenant.ID,
+		RentPrice:     req.RentPrice,
+		ManagementFee: req.ManagementFee,
+		Deposit:       req.Deposit,
+		EarnestMoney:  req.EarnestMoney,
+		StartDate:     req.StartDate,
+		EndDate:       req.EndDate,
+		Status:        "reserved",
+	}
+	if err := h.RoomService.CreateContract(&contract); err != nil {
+		logger.Log.Error().Err(err).Msg("创建预订合同失败")
+		utils.Error(c, http.StatusInternalServerError, "预订失败")
+		return
+	}
+
+	h.RoomService.UpdateStatus(room.ID, "reserved")
+	utils.SuccessWithMsg(c, "预订成功", nil)
+}
+
+// cancelReservation 取消预订（reserved → vacant），按退还金额与定金差额记违约收入/支出
+func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *UpdateRoomStatusReq) {
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(uint)
+
+	contract, err := h.RoomService.GetReservedContract(room.ID)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("查询预订合同失败")
+		utils.Error(c, http.StatusNotFound, "无预订记录")
+		return
+	}
+
+	earnest := contract.EarnestMoney
+	refunded := 0.0
+	if req.RefundedDeposit != nil {
+		refunded = *req.RefundedDeposit
+	}
+	if refunded < 0 {
+		utils.Error(c, http.StatusBadRequest, "退还金额不能为负数")
+		return
+	}
+
+	diff := float64(int((earnest-refunded)*100)) / 100
+	if diff != 0 {
+		now := utils.Now()
+		datePart := now.Format("20060102")
+		var count int64
+		h.DB.Model(&models.Bill{}).
+			Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+			Count(&count)
+
+		bill := models.Bill{
+			BillNo:      fmt.Sprintf("B%s%05d", datePart, count+1),
+			BuildingID:  room.BuildingID,
+			RoomID:      &room.ID,
+			Subtype:     "定金违约",
+			BillDate:    now.Format("2006-01-02"),
+			CreatedBy:   uid,
+			Description: fmt.Sprintf("定金违约：收定金%.2f元，退还%.2f元", earnest, refunded),
+		}
+		if diff > 0 {
+			bill.Type = "income"
+			bill.Amount = diff
+			bill.Description += fmt.Sprintf("，扣留%.2f元", diff)
+		} else {
+			bill.Type = "expense"
+			bill.Amount = -diff
+			bill.Description += fmt.Sprintf("，多退%.2f元", -diff)
+		}
+		if err := h.DB.Create(&bill).Error; err != nil {
+			logger.Log.Error().Err(err).Msg("创建定金违约账单失败")
+			utils.Error(c, http.StatusInternalServerError, "创建违约账单失败")
+			return
+		}
+	}
+
+	if err := h.RoomService.UpdateContract(contract.ID, map[string]interface{}{"status": "cancelled"}); err != nil {
+		logger.Log.Error().Err(err).Msg("取消预订合同失败")
+	}
+	h.DB.Where("room_id = ? AND type = ? AND status = ?", room.ID, "reserved_overdue", "pending").
+		Delete(&models.Task{})
+	h.RoomService.UpdateStatus(room.ID, "vacant")
+	utils.SuccessWithMsg(c, "已取消预订", nil)
 }
 
 // GetActiveContract 获取房间当前活跃合同

@@ -191,6 +191,7 @@ onMounted(fetchRooms)
 .rc-placeholder { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 36px; }
 .rc-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; padding: 2px 8px; border-radius: 4px; color: #fff; }
 .tag-vacant { background: #67c23a; }
+.tag-reserved { background: #409eff; }
 .tag-rented { background: #f56c6c; }
 .tag-expiring { background: #e6a23c; }
 .room-card-body { padding: 10px 12px 12px; }

@@ -171,6 +171,7 @@ const loadingMore = ref(false)
 const statusOptions = [
   { text: '全部', value: '' },
   { text: '未出租', value: 'vacant' },
+  { text: '已预订', value: 'reserved' },
   { text: '已出租', value: 'rented' },
   { text: '即将退租', value: 'expiring' },
 ]

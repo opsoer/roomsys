@@ -110,9 +110,10 @@ type RentalContract struct {
 	RoomID       uint           `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"room_id"`
 	BuildingID   uint           `gorm:"index;not null" json:"building_id"`
 	TenantID     uint           `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"tenant_id"`
-	RentPrice    float64        `gorm:"type:decimal(10,2);not null" json:"rent_price"`
-	Deposit      float64        `gorm:"type:decimal(10,2)" json:"deposit"`
-	EarnestMoney float64        `gorm:"type:decimal(10,2)" json:"earnest_money"`
+	RentPrice     float64       `gorm:"type:decimal(10,2);not null" json:"rent_price"`
+	ManagementFee float64       `gorm:"type:decimal(10,2)" json:"management_fee"`
+	Deposit       float64       `gorm:"type:decimal(10,2)" json:"deposit"`
+	EarnestMoney  float64       `gorm:"type:decimal(10,2)" json:"earnest_money"`
 	RentDay      uint           `gorm:"default:1" json:"rent_day"`
 	PaymentCycle string         `gorm:"size:10;default:'monthly'" json:"payment_cycle"`
 	ContractFile string         `gorm:"size:500" json:"contract_file"`

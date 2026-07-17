@@ -19,6 +19,7 @@ export function maskPhone(phone) {
 export function statusLabel(status) {
   const labels = {
     vacant: '未出租',
+    reserved: '已预订',
     rented: '已出租',
     expiring: '即将退租',
     expired: '已过期',
@@ -29,6 +30,7 @@ export function statusLabel(status) {
 export function statusTagType(status) {
   const types = {
     vacant: 'success',
+    reserved: 'primary',
     rented: 'danger',
     expiring: 'warning',
     expired: 'danger',

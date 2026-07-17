@@ -47,6 +47,9 @@
               <el-button v-if="task.status === 'pending' && task.type === 'expired_room'" type="primary" size="small" @click="openProcessDialog(task)">
                 处理退租
               </el-button>
+              <el-button v-if="task.status === 'pending' && task.type === 'reserved_overdue' && task.room" type="primary" size="small" @click="$router.push(`/landlord/rooms/${task.room.id}`)">
+                去处理预订
+              </el-button>
             </div>
           </div>
         </div>

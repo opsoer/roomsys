@@ -30,6 +30,100 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showReserveDialog" title="交定金 / 预订" width="500px">
+      <el-form ref="reserveFormRef" :model="reserveForm" label-width="100px">
+        <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
+          <el-input v-model="reserveForm.tenant_name" />
+        </el-form-item>
+        <el-form-item label="联系电话" prop="tenant_phone">
+          <el-input v-model="reserveForm.tenant_phone" />
+        </el-form-item>
+        <el-form-item label="定金金额" prop="earnest_money" :rules="[{ required: true, message: '请输入定金金额' }, { validator: (_, v) => v > 0, message: '定金必须大于0' }]">
+          <el-input-number v-model="reserveForm.earnest_money" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-divider>约定信息（正式签约时可微调）</el-divider>
+        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
+          <el-input-number v-model="reserveForm.rent_price" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="管理费" prop="management_fee">
+          <el-input-number v-model="reserveForm.management_fee" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
+          <el-input-number v-model="reserveForm.deposit" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="预计起租" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
+          <el-date-picker v-model="reserveForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="预计结束" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
+          <el-date-picker v-model="reserveForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+      </el-form>
+      <div class="reserve-hint">交定金阶段不产生账单，正式签约入住后定金将抵扣押金</div>
+      <template #footer>
+        <el-button @click="showReserveDialog = false">取消</el-button>
+        <el-button type="primary" :loading="reserveSubmitting" @click="handleReserve">确定预订</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showConfirmSignDialog" title="确认签约入住" width="500px">
+      <el-form ref="signFormRef" :model="signForm" label-width="100px">
+        <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
+          <el-input v-model="signForm.tenant_name" />
+        </el-form-item>
+        <el-form-item label="联系电话" prop="tenant_phone">
+          <el-input v-model="signForm.tenant_phone" />
+        </el-form-item>
+        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
+          <el-input-number v-model="signForm.rent_price" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="管理费" prop="management_fee">
+          <el-input-number v-model="signForm.management_fee" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
+          <el-input-number v-model="signForm.deposit" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
+          <el-date-picker v-model="signForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="结束日期" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
+          <el-date-picker v-model="signForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+      </el-form>
+      <div class="reserve-hint">
+        已收定金 <strong>{{ Number(earnestMoney).toFixed(2) }}</strong> 元，将抵扣押金；
+        实收押金 <strong>{{ Math.max(0, (signForm.deposit || 0) - earnestMoney).toFixed(2) }}</strong> 元
+      </div>
+      <template #footer>
+        <el-button @click="showConfirmSignDialog = false">取消</el-button>
+        <el-button type="primary" :loading="signSubmitting" @click="handleConfirmSign">确认签约</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showCancelReserveDialog" title="取消预订" width="450px">
+      <div class="vacate-deposit-info">
+        <div class="vacate-row">
+          <span>已收定金</span>
+          <span class="vacate-amount">{{ Number(earnestMoney).toFixed(2) }} 元</span>
+        </div>
+        <p class="vacate-hint">请填写实际退还给租客的定金金额，系统将按差额自动记账</p>
+      </div>
+      <el-form ref="cancelFormRef" :model="cancelForm" label-width="100px">
+        <el-form-item label="退还定金" prop="refunded_deposit">
+          <el-input-number v-model="cancelForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
+        </el-form-item>
+      </el-form>
+      <div v-if="earnestMoney - cancelForm.refunded_deposit > 0" class="vacate-deduction-note">
+        扣留违约金 <strong>{{ (earnestMoney - cancelForm.refunded_deposit).toFixed(2) }}</strong> 元，将创建定金违约收入账单
+      </div>
+      <div v-else-if="cancelForm.refunded_deposit - earnestMoney > 0" class="vacate-deduction-note">
+        多退 <strong>{{ (cancelForm.refunded_deposit - earnestMoney).toFixed(2) }}</strong> 元，将创建定金违约支出账单
+      </div>
+      <template #footer>
+        <el-button @click="showCancelReserveDialog = false">取消</el-button>
+        <el-button type="warning" :loading="cancelSubmitting" @click="handleCancelReserve">确定取消预订</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="showEndDateDialog" title="修改退租时间" width="420px">
       <el-form ref="endDateFormRef" :model="endDateForm" label-width="100px">
         <el-form-item label="退租日期" prop="end_date" :rules="[{ required: true, message: '请选择退租日期' }]">
@@ -144,6 +238,23 @@ const rentSubmitting = ref(false)
 const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
 const rentFormRef = ref(null)
 
+const showReserveDialog = ref(false)
+const reserveSubmitting = ref(false)
+const reserveForm = ref({ tenant_name: '', tenant_phone: '', earnest_money: 0, rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
+const reserveFormRef = ref(null)
+
+const showConfirmSignDialog = ref(false)
+const signSubmitting = ref(false)
+const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
+const signFormRef = ref(null)
+
+const showCancelReserveDialog = ref(false)
+const cancelSubmitting = ref(false)
+const cancelForm = ref({ refunded_deposit: 0 })
+const cancelFormRef = ref(null)
+
+const earnestMoney = computed(() => props.currentContract?.earnest_money || 0)
+
 const showEndDateDialog = ref(false)
 const endDateSubmitting = ref(false)
 const endDateForm = ref({ end_date: '', rent_price: 0 })
@@ -183,6 +294,78 @@ function openVacant() {
 function openEdit() {
   editForm.value = { ...props.editInitData }
   showEditDialog.value = true
+}
+
+function openReserve() {
+  reserveForm.value = { tenant_name: '', tenant_phone: '', earnest_money: 0, rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' }
+  showReserveDialog.value = true
+}
+
+function openConfirmSign() {
+  const ct = props.currentContract || {}
+  signForm.value = {
+    tenant_name: ct.tenant?.name || '',
+    tenant_phone: ct.tenant?.phone || '',
+    rent_price: ct.rent_price || 0,
+    management_fee: ct.management_fee || 0,
+    deposit: ct.deposit || 0,
+    start_date: ct.start_date || '',
+    end_date: ct.end_date || '',
+  }
+  showConfirmSignDialog.value = true
+}
+
+function openCancelReserve() {
+  cancelForm.value = { refunded_deposit: 0 }
+  showCancelReserveDialog.value = true
+}
+
+async function handleReserve() {
+  const valid = await reserveFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  if (reserveForm.value.start_date && reserveForm.value.end_date && reserveForm.value.end_date <= reserveForm.value.start_date) {
+    ElMessage.error('结束日期必须大于起租日期')
+    return
+  }
+  reserveSubmitting.value = true
+  try {
+    await buildingUpdateRoomStatus(props.roomId, { status: 'reserved', ...reserveForm.value })
+    ElMessage.success('预订成功')
+    showReserveDialog.value = false
+    emit('save-success')
+  } finally {
+    reserveSubmitting.value = false
+  }
+}
+
+async function handleConfirmSign() {
+  const valid = await signFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  if (signForm.value.start_date && signForm.value.end_date && signForm.value.end_date <= signForm.value.start_date) {
+    ElMessage.error('结束日期必须大于起租日期')
+    return
+  }
+  signSubmitting.value = true
+  try {
+    await buildingUpdateRoomStatus(props.roomId, { status: 'rented', ...signForm.value })
+    ElMessage.success('已确认签约')
+    showConfirmSignDialog.value = false
+    emit('save-success')
+  } finally {
+    signSubmitting.value = false
+  }
+}
+
+async function handleCancelReserve() {
+  cancelSubmitting.value = true
+  try {
+    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
+    ElMessage.success('已取消预订')
+    showCancelReserveDialog.value = false
+    emit('save-success')
+  } finally {
+    cancelSubmitting.value = false
+  }
 }
 
 async function handleRent() {
@@ -245,7 +428,7 @@ async function handleEdit() {
   }
 }
 
-defineExpose({ openRent, openRenew, openVacant, openEdit })
+defineExpose({ openRent, openRenew, openVacant, openEdit, openReserve, openConfirmSign, openCancelReserve })
 </script>
 
 <style scoped>
@@ -276,5 +459,13 @@ defineExpose({ openRent, openRenew, openVacant, openEdit })
   border-radius: 6px;
   font-size: 13px;
   color: #f56c6c;
+}
+.reserve-hint {
+  background: #ecf5ff;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #409eff;
+  margin-top: 8px;
 }
 </style>

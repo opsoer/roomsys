@@ -188,6 +188,7 @@ onMounted(async () => {
 .room-meta { font-size: 13px; color: #999; display: block; margin-top: 4px; }
 .status-badge { font-size: 12px; padding: 4px 12px; border-radius: 20px; color: #fff; font-weight: 500; }
 .badge-vacant { background: #67c23a; }
+.badge-reserved { background: #409eff; }
 .badge-rented { background: #f56c6c; }
 .badge-expiring { background: #e6a23c; }
 .section-title { font-size: 15px; font-weight: 600; color: #333; display: block; margin-bottom: 12px; }

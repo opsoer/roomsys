@@ -21,7 +21,9 @@
       </div>
 
       <RoomSidebar :room="room" :landlords="landlords" :current-contract="currentContract" :is-admin="isAdmin"
-        @renew="openRenewDialog" @rent="openRentDialog" @vacant="handleVacant" @upload-success="fetchRoom" />
+        @renew="openRenewDialog" @rent="openRentDialog" @vacant="handleVacant"
+        @reserve="openReserveDialog" @confirm-sign="openConfirmSignDialog" @cancel-reserve="handleCancelReserve"
+        @upload-success="fetchRoom" />
     </div>
 
     <RoomDialogs ref="dialogsRef" :room-id="route.params.id" :current-contract="currentContract"
@@ -141,6 +143,18 @@ function openRenewDialog() {
 
 function handleVacant() {
   dialogsRef.value?.openVacant()
+}
+
+function openReserveDialog() {
+  dialogsRef.value?.openReserve()
+}
+
+function openConfirmSignDialog() {
+  dialogsRef.value?.openConfirmSign()
+}
+
+function handleCancelReserve() {
+  dialogsRef.value?.openCancelReserve()
 }
 
 function openEditDialog() {

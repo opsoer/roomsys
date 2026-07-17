@@ -6,6 +6,7 @@
         <el-select v-model="statusFilter" placeholder="筛选状态" clearable style="width: 120px" @change="fetchRooms">
           <el-option label="全部" value="" />
           <el-option label="未出租" value="vacant" />
+          <el-option label="已预订" value="reserved" />
           <el-option label="已出租" value="rented" />
           <el-option label="即将退租" value="expiring" />
         </el-select>
@@ -220,6 +221,7 @@ onMounted(fetchRooms)
 .room-card-placeholder { height: 100%; display: flex; align-items: center; justify-content: center; }
 .room-card-tag { position: absolute; top: 12px; left: 12px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #fff; }
 .tag-vacant { background: rgba(103,194,58,0.85); }
+.tag-reserved { background: rgba(64,158,255,0.85); }
 .tag-rented { background: rgba(245,108,108,0.85); }
 .tag-expiring { background: rgba(230,162,60,0.85); }
 .room-card-body { padding: 16px; }

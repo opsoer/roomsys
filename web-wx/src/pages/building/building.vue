@@ -151,6 +151,7 @@ const sheetActions = ref([])
 const statusOptions = [
   { text: '全部', value: '' },
   { text: '未出租', value: 'vacant' },
+  { text: '已预订', value: 'reserved' },
   { text: '已出租', value: 'rented' },
   { text: '即将退租', value: 'expiring' },
 ]
@@ -318,6 +319,7 @@ onMounted(async () => {
 .ph-icon { font-size: 36px; }
 .rc-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; padding: 2px 8px; border-radius: 4px; color: #fff; font-weight: 500; }
 .tag-vacant { background: #67c23a; }
+.tag-reserved { background: #409eff; }
 .tag-rented { background: #f56c6c; }
 .tag-expiring { background: #e6a23c; }
 .tag-expired { background: #909399; }
