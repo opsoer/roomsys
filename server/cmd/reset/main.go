@@ -22,7 +22,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("1. 删除所有表...")
+	fmt.Println("1. 删除除数据面板(page_views)外的所有业务表...")
 	db.Migrator().DropTable(
 		&models.AuditLog{},
 		&models.RecruitSubmission{},
@@ -47,7 +47,13 @@ func main() {
 	}
 	fmt.Println("   完成")
 
-	fmt.Println("3. 创建默认超级管理员...")
+	fmt.Println("3. 清空数据面板统计(page_views)数据...")
+	if err := db.Where("1 = 1").Delete(&models.PageView{}).Error; err != nil {
+		panic(err)
+	}
+	fmt.Println("   完成")
+
+	fmt.Println("4. 创建默认超级管理员...")
 	password := "admin123"
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	admin := models.User{
@@ -60,7 +66,7 @@ func main() {
 	}
 	fmt.Printf("   超级管理员: admin / %s\n", password)
 
-	fmt.Println("4. 清理媒体文件...")
+	fmt.Println("5. 清理媒体文件...")
 	mediaDir := cfg.UploadDir
 	if mediaDir == "" {
 		mediaDir = "./storage/media"
