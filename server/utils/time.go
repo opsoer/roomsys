@@ -34,11 +34,6 @@ func Now() time.Time {
 	return time.Now().Add(timeOffset)
 }
 
-// Until 计算距目标时间的剩余时长
-func Until(t time.Time) time.Duration {
-	return t.Sub(Now())
-}
-
 // DateFormat 标准日期格式 "2006-01-02"
 const DateFormat = "2006-01-02"
 
@@ -60,23 +55,6 @@ func LastDayOfMonth(t time.Time) time.Time {
 // MonthStr 返回 "2006-01" 格式的月份字符串
 func MonthStr(t time.Time) string {
 	return t.Format("2006-01")
-}
-
-// MonthBoundary 月份起止边界，包含首日、末日和月份字符串
-type MonthBoundary struct {
-	FirstDay time.Time
-	LastDay  time.Time
-	Month    string
-}
-
-// GetMonthBoundary 获取指定日期所在月份的起止边界
-func GetMonthBoundary(t time.Time) MonthBoundary {
-	first := FirstDayOfMonth(t)
-	return MonthBoundary{
-		FirstDay: first,
-		LastDay:  LastDayOfMonth(t),
-		Month:    MonthStr(t),
-	}
 }
 
 // CalcProratedAmount 按天计算按比例分摊的租金金额

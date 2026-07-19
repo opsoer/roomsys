@@ -94,18 +94,6 @@ func (s *RoomService) UpdateStatus(id uint, status string) error {
 	return s.DB.Model(&models.Room{}).Where("id = ?", id).Update("status", status).Error
 }
 
-// GetMedia 根据ID获取房间媒体资源
-func (s *RoomService) GetMedia(id uint) (*models.RoomMedia, error) {
-	var media models.RoomMedia
-	err := s.DB.First(&media, id).Error
-	return &media, err
-}
-
-// DeleteMedia 删除房间媒体资源
-func (s *RoomService) DeleteMedia(id uint) error {
-	return s.DB.Delete(&models.RoomMedia{}, id).Error
-}
-
 // CreateMedia 创建房间媒体资源
 func (s *RoomService) CreateMedia(media *models.RoomMedia) error {
 	return s.DB.Create(media).Error
@@ -155,16 +143,6 @@ func (s *RoomService) CreateContract(contract *models.RentalContract) error {
 // UpdateContract 更新租赁合同信息
 func (s *RoomService) UpdateContract(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.RentalContract{}).Where("id = ?", id).Updates(updates).Error
-}
-
-// EndContract 结束合同（标记为ended）
-func (s *RoomService) EndContract(id uint) error {
-	return s.DB.Model(&models.RentalContract{}).Where("id = ?", id).Update("status", "ended").Error
-}
-
-// CreateTenant 创建租客信息
-func (s *RoomService) CreateTenant(tenant *models.Tenant) error {
-	return s.DB.Create(tenant).Error
 }
 
 // GetRoomsWithExpiringContract 获取即将到期合同的房间列表

@@ -103,10 +103,6 @@ export function getPublicRoom(buildingId, roomId) {
   return request('GET', `/buildings/${buildingId}/rooms/${roomId}`)
 }
 
-export function getPublicRoomContract(buildingId, roomId) {
-  return request('GET', `/buildings/${buildingId}/rooms/${roomId}/contract`)
-}
-
 // ===== 平台管理员 =====
 export function adminCreateBuilding(data) {
   return request('POST', '/admin/buildings', data)
@@ -130,14 +126,6 @@ export function adminUpgradePackage(id, data) {
 
 export function adminCreateBuildingAdmin(data) {
   return request('POST', '/admin/auth/create-building-admin', data)
-}
-
-export function adminGetSystemTime() {
-  return request('GET', '/admin/system/time')
-}
-
-export function adminSetSystemTime(offsetSeconds) {
-  return request('POST', '/admin/system/time', { offset_seconds: offsetSeconds })
 }
 
 export function adminUpdateUser(id, data) {
@@ -205,23 +193,11 @@ export function buildingUpdateBill(id, data) {
   return request('PUT', `/building/bills/${id}`, data)
 }
 
-export function buildingDeleteBill(id) {
-  return request('DELETE', `/building/bills/${id}`)
-}
-
 export function buildingGetBillStats(month, year) {
   const params = {}
   if (month != null) params.month = month
   if (year != null) params.year = year
   return request('GET', '/building/bills/stats', null, { params })
-}
-
-export function buildingGetBillTrend(params) {
-  return request('GET', '/building/bills/trend', null, { params })
-}
-
-export function buildingGetDividendPredict(params) {
-  return request('GET', '/building/dividends/predict', null, { params })
 }
 
 export function buildingGetDividends(page = 1, pageSize = 20) {
@@ -277,16 +253,8 @@ export function submitRecruit(data) {
   return request('POST', '/recruit/submit', data)
 }
 
-export function getUnprocessedRecruitCount() {
-  return request('GET', '/admin/recruit/unprocessed-count')
-}
-
 export function buildingUploadMedia(roomId, filePath, formData, onProgress) {
   return uploadFile(`/building/rooms/${roomId}/media`, filePath, formData, onProgress)
-}
-
-export function getConfig() {
-  return request('GET', '/config')
 }
 
 // ===== 统计 =====
@@ -298,20 +266,12 @@ export function adminGetBuildingStats(id) {
   return request('GET', `/admin/stats/building/${id}`)
 }
 
-export function adminGetStatsTrend(days = 30) {
-  return request('GET', '/admin/stats/trend', null, { params: { days } })
-}
-
 export function adminGetPriceReference() {
-  return request('GET', '/admin/stats/price-reference')
+  return request('GET', '/building/stats/price-reference')
 }
 
 export function buildingGetMyStats() {
   return request('GET', '/building/stats/pv')
-}
-
-export function buildingGetMyTrend(days = 30) {
-  return request('GET', '/building/stats/trend', null, { params: { days } })
 }
 
 export default { login, getBuildings }

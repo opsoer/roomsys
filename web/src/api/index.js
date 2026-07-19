@@ -100,14 +100,6 @@ export function getPublicRoom(buildingId, roomId) {
   return api.get(`/buildings/${buildingId}/rooms/${roomId}`)
 }
 
-export function getPublicRoomContract(buildingId, roomId) {
-  return api.get(`/buildings/${buildingId}/rooms/${roomId}/contract`)
-}
-
-export function getDistricts() {
-  return api.get('/buildings/districts')
-}
-
 // ===== 平台管理员 =====
 export function adminCreateBuilding(data) {
   return api.post('/admin/buildings', data)
@@ -216,10 +208,6 @@ export function buildingUpdateBill(id, data) {
   return api.put(`/building/bills/${id}`, data)
 }
 
-export function buildingDeleteBill(id) {
-  return api.delete(`/building/bills/${id}`)
-}
-
 export function buildingGetBillStats(month, year) {
   const params = {}
   if (month != null) params.month = month
@@ -311,10 +299,6 @@ export function confirmMediaUpload(roomId, data) {
 
 export function reDownloadFFmpeg() {
   return uploadApi.post('/building/ffmpeg/re-download')
-}
-
-export function getConfig() {
-  return api.get('/config')
 }
 
 // ===== 统计 =====

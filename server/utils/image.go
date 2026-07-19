@@ -6,9 +6,6 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"rental-server/logger"
@@ -54,27 +51,6 @@ func ProcessImageNoThumb(data []byte) ([]byte, error) {
 	}
 	resized := resizeImage(img, MaxImageWidth, MaxImageHeight)
 	return encodeImage(resized, format)
-}
-
-// ProcessImageToFile 从 Reader 读取图片，处理后保存到文件（可选缩略图）
-func ProcessImageToFile(input io.Reader, savePath, thumbPath string) error {
-	img, format, err := image.Decode(input)
-	if err != nil {
-		return err
-	}
-
-	resized := resizeImage(img, MaxImageWidth, MaxImageHeight)
-	if err := saveImageToFile(resized, savePath, format); err != nil {
-		return err
-	}
-
-	if thumbPath != "" {
-		thumb := resizeImage(img, ThumbWidth, 0)
-		if err := saveImageToFile(thumb, thumbPath, "jpeg"); err != nil {
-			logger.Log.Warn().Err(err).Msg("生成缩略图失败")
-		}
-	}
-	return nil
 }
 
 // resizeImage 按比例缩放图片至指定最大尺寸
@@ -123,29 +99,3 @@ func encodeImage(img image.Image, format string) ([]byte, error) {
 	}
 }
 
-// saveImageToFile 将图片编码并保存到指定文件路径
-func saveImageToFile(img image.Image, path, format string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	format = strings.ToLower(format)
-	switch format {
-	case "jpeg", "jpg":
-		return jpeg.Encode(f, img, &jpeg.Options{Quality: JPEGQuality})
-	case "png":
-		return png.Encode(f, img)
-	default:
-		return jpeg.Encode(f, img, &jpeg.Options{Quality: JPEGQuality})
-	}
-}
-
-// IsImageType 判断 MIME 类型是否为图片类型
-func IsImageType(mimeType string) bool {
-	return strings.HasPrefix(mimeType, "image/")
-}

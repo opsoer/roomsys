@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
 
 	"rental-server/config"
 	"rental-server/models"
@@ -44,14 +42,4 @@ func seedAdmin(db *gorm.DB) {
 		db.Create(&admin)
 		fmt.Printf("已创建默认超级管理员: admin / %s\n", password)
 	}
-}
-
-func generateRandomPassword(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-	result := make([]byte, length)
-	for i := range result {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		result[i] = charset[n.Int64()]
-	}
-	return string(result)
 }
