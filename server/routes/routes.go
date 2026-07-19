@@ -103,6 +103,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
+		platform.POST("/system/run-tasks", systemH.RunTasks)
 
 		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc}
 		platform.GET("/recruit/list", recruitH.List)
@@ -144,6 +145,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.PUT("/rooms/:id/status", roomH.UpdateStatus)
 		building.GET("/rooms/:id/contract", roomH.GetActiveContract)
 		building.PUT("/rooms/:id/contract", roomH.RenewContract)
+		building.POST("/rooms/:id/prepay", roomH.PrepayContract)
 
 		// 媒体管理
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}

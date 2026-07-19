@@ -21,9 +21,9 @@
 
     <div v-if="currentContract && isAdmin" class="sidebar-card">
       <div class="sidebar-card-header">
-        <h4 class="sidebar-title" style="margin:0">{{ room.status === 'reserved' ? '预订信息' : '当前租约' }}</h4>
+        <h4 class="sidebar-title" style="margin:0">{{ room.status === 'reserved' ? '预订信息（已交定金）' : '当前租约' }}</h4>
         <el-button v-if="room.status === 'rented' || room.status === 'expiring'" size="small" text type="primary" @click="$emit('renew')">
-          修改退租时间
+          续租
         </el-button>
       </div>
       <div class="sidebar-row">
@@ -56,23 +56,60 @@
       </div>
     </div>
 
+    <div v-if="futureReservation && isAdmin && room.status !== 'reserved'" class="sidebar-card" style="border-color: #409eff">
+      <div class="sidebar-card-header">
+        <h4 class="sidebar-title" style="margin:0;color:#409eff">下一租客 · 已交定金预订</h4>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">租客</span>
+        <span class="sidebar-val">{{ futureReservation.tenant?.name || '-' }}</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">电话</span>
+        <span class="sidebar-val">{{ futureReservation.tenant?.phone || '-' }}</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">预计起租</span>
+        <span class="sidebar-val">{{ futureReservation.start_date }}</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">预计结束</span>
+        <span class="sidebar-val">{{ futureReservation.end_date || '未设置' }}</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">月租金</span>
+        <span class="sidebar-val price-primary">{{ futureReservation.rent_price?.toFixed(2) }} 元</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">押金</span>
+        <span class="sidebar-val price-warn">{{ futureReservation.deposit?.toFixed(2) }} 元</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">定金</span>
+        <span class="sidebar-val price-warn">{{ futureReservation.earnest_money?.toFixed(2) }} 元</span>
+      </div>
+    </div>
+
     <div v-if="isAdmin" class="sidebar-card">
       <h4 class="sidebar-title">状态操作</h4>
       <div class="sidebar-actions">
-        <el-button v-if="room.status === 'vacant'" type="success" @click="$emit('rent')" style="width:100%">
-          设为已出租
+        <el-button v-if="room.status === 'vacant'" type="success" @click="$emit('rent')">
+          签合同出租
         </el-button>
-        <el-button v-if="room.status === 'vacant'" type="primary" plain @click="$emit('reserve')" style="width:100%;margin-left:0">
-          交定金/预订
+        <el-button v-if="room.status === 'vacant'" type="primary" plain @click="$emit('reserve')">
+          交定金预订
         </el-button>
-        <el-button v-if="room.status === 'reserved'" type="success" @click="$emit('confirm-sign')" style="width:100%">
-          确认签约入住
+        <el-button v-if="room.status === 'reserved'" type="success" @click="$emit('confirm-sign')">
+          确认签约（收齐押租金）
         </el-button>
-        <el-button v-if="room.status === 'reserved'" type="warning" plain @click="$emit('cancel-reserve')" style="width:100%;margin-left:0">
-          取消预订
+        <el-button v-if="room.status === 'reserved'" type="warning" plain @click="$emit('cancel-reserve')">
+          取消预订（退/扣定金）
         </el-button>
-        <el-button v-if="room.status === 'rented' || room.status === 'expiring' || room.status === 'expired'" type="warning" @click="$emit('vacant')" style="width:100%">
-          设为未出租
+        <el-button v-if="(room.status === 'rented' || room.status === 'expiring') && !futureReservation" type="primary" plain @click="$emit('reserve')">
+          交定金预订（未来）
+        </el-button>
+        <el-button v-if="room.status === 'rented' || room.status === 'expiring' || room.status === 'expired'" type="warning" @click="$emit('vacant')">
+          办理退租
         </el-button>
       </div>
     </div>
@@ -144,6 +181,7 @@ const props = defineProps({
   room: { type: Object, required: true },
   landlords: { type: Array, default: () => [] },
   currentContract: { type: Object, default: null },
+  futureReservation: { type: Object, default: null },
   isAdmin: { type: Boolean, default: false },
 })
 
@@ -355,6 +393,7 @@ onUnmounted(() => {
 .price-primary { color: #67c23a; font-weight: 600; }
 .price-warn { color: #e6a23c; font-weight: 600; }
 .sidebar-actions { display: flex; flex-direction: column; gap: 8px; }
+.sidebar-actions .el-button { width: 100%; margin-left: 0 !important; }
 .upload-actions { display: flex; flex-direction: column; gap: 8px; }
 
 @media (max-width: 768px) {

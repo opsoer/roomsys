@@ -114,6 +114,7 @@ type RentalContract struct {
 	ManagementFee float64       `gorm:"type:decimal(10,2)" json:"management_fee"`
 	Deposit       float64       `gorm:"type:decimal(10,2)" json:"deposit"`
 	EarnestMoney  float64       `gorm:"type:decimal(10,2)" json:"earnest_money"`
+	Prepaid       bool           `gorm:"default:false" json:"prepaid"`
 	RentDay      uint           `gorm:"default:1" json:"rent_day"`
 	PaymentCycle string         `gorm:"size:10;default:'monthly'" json:"payment_cycle"`
 	ContractFile string         `gorm:"size:500" json:"contract_file"`

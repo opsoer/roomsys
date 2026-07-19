@@ -21,7 +21,8 @@ type SystemHandler struct {
 
 // SetTimeReq 设置模拟时间的请求参数
 type SetTimeReq struct {
-	OffsetSeconds int64 `json:"offset_seconds" binding:"required"`
+	OffsetSeconds *int64 `json:"offset_seconds"`
+	TargetTime    string `json:"target_time"`
 }
 
 // TimeResp 时间响应
@@ -40,7 +41,7 @@ func (h *SystemHandler) GetTime(c *gin.Context) {
 	})
 }
 
-// SetTime 设置模拟时间偏移（触发合同到期检查）
+// SetTime 设置模拟时间（偏移模式或指定时间模式）
 func (h *SystemHandler) SetTime(c *gin.Context) {
 	var req SetTimeReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -48,16 +49,29 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.OffsetSeconds < -43200 || req.OffsetSeconds > 43200 {
-		logger.Log.Warn().Int64("offset_seconds", req.OffsetSeconds).Msg("设置时间偏移超出范围")
-		utils.Error(c, http.StatusBadRequest, "时间偏移量必须在 -720 到 720 分钟之间")
+
+	var offsetSeconds int64
+	if req.TargetTime != "" {
+		layout := "2006-01-02 15:04:05"
+		target, err := time.ParseInLocation(layout, req.TargetTime, time.Local)
+		if err != nil {
+			logger.Log.Warn().Str("target_time", req.TargetTime).Msg("指定时间格式错误")
+			utils.Error(c, http.StatusBadRequest, "时间格式错误，请使用 YYYY-MM-DD HH:mm:ss")
+			return
+		}
+		offsetSeconds = int64(target.Sub(time.Now()).Seconds())
+	} else if req.OffsetSeconds != nil {
+		offsetSeconds = *req.OffsetSeconds
+	} else {
+		utils.Error(c, http.StatusBadRequest, "请提供 offset_seconds 或 target_time")
 		return
 	}
+
 	userID, _ := utils.GetUserID(c)
-	utils.SetTimeOffset(time.Duration(req.OffsetSeconds) * time.Second)
+	utils.SetTimeOffset(time.Duration(offsetSeconds) * time.Second)
 	logger.Log.Info().
 		Uint("user_id", userID).
-		Int64("offset_seconds", req.OffsetSeconds).
+		Int64("offset_seconds", offsetSeconds).
 		Msg("模拟时间已更新，触发合同到期检查")
 	AutoCheckExpiringContracts(h.DB)
 	now := utils.Now()
@@ -66,4 +80,16 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		SimulatedTime: now.Format(time.RFC3339),
 		OffsetSeconds: int64(offset.Seconds()),
 	})
+}
+
+// RunTasks 手动触发所有定时任务（合同到期检查 + 月度租金账单生成）。
+// 便于在调整系统时间后无需等待定时器即可立即看到结果。
+func (h *SystemHandler) RunTasks(c *gin.Context) {
+	userID, _ := utils.GetUserID(c)
+	logger.Log.Info().Uint("user_id", userID).Msg("手动触发全部定时任务")
+
+	AutoCheckExpiringContracts(h.DB)
+	AutoCreateMonthlyRentBills(h.DB)
+
+	utils.SuccessWithMsg(c, "已手动执行全部定时任务（到期检查 / 月度租金生成）", nil)
 }

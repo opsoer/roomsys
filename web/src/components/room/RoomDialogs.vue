@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-dialog v-model="showRentDialog" title="设为已出租" width="500px">
+    <el-dialog v-model="showRentDialog" title="签合同出租" width="500px">
       <el-form ref="rentFormRef" :model="rentForm" label-width="100px">
         <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
           <el-input v-model="rentForm.tenant_name" />
@@ -30,7 +30,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showReserveDialog" title="交定金 / 预订" width="500px">
+    <el-dialog v-model="showReserveDialog" :title="isFutureReserve ? '交定金预订（未来）' : '交定金预订'" width="500px">
       <el-form ref="reserveFormRef" :model="reserveForm" label-width="100px">
         <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
           <el-input v-model="reserveForm.tenant_name" />
@@ -58,14 +58,13 @@
           <el-date-picker v-model="reserveForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
       </el-form>
-      <div class="reserve-hint">交定金阶段不产生账单，正式签约入住后定金将抵扣押金</div>
       <template #footer>
         <el-button @click="showReserveDialog = false">取消</el-button>
         <el-button type="primary" :loading="reserveSubmitting" @click="handleReserve">确定预订</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showConfirmSignDialog" title="确认签约入住" width="500px">
+    <el-dialog v-model="showConfirmSignDialog" title="确认签约（收齐押租金）" width="500px">
       <el-form ref="signFormRef" :model="signForm" label-width="100px">
         <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
           <el-input v-model="signForm.tenant_name" />
@@ -89,34 +88,31 @@
           <el-date-picker v-model="signForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
       </el-form>
-      <div class="reserve-hint">
-        已收定金 <strong>{{ Number(earnestMoney).toFixed(2) }}</strong> 元，将抵扣押金；
-        实收押金 <strong>{{ Math.max(0, (signForm.deposit || 0) - earnestMoney).toFixed(2) }}</strong> 元
-      </div>
       <template #footer>
         <el-button @click="showConfirmSignDialog = false">取消</el-button>
-        <el-button type="primary" :loading="signSubmitting" @click="handleConfirmSign">确认签约</el-button>
+        <el-button type="primary" :loading="signSubmitting" @click="handleConfirmSign">确认签约并收款</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showCancelReserveDialog" title="取消预订" width="450px">
+    <el-dialog v-model="showCancelReserveDialog" title="取消预订（退/扣定金）" width="450px">
       <div class="vacate-deposit-info">
         <div class="vacate-row">
           <span>已收定金</span>
           <span class="vacate-amount">{{ Number(earnestMoney).toFixed(2) }} 元</span>
         </div>
-        <p class="vacate-hint">请填写实际退还给租客的定金金额，系统将按差额自动记账</p>
+        <p class="vacate-hint">请填写实际退还给租客的定金金额（定金不退请填 0；房东违约赔付请填超过定金的金额），系统将按差额自动记账</p>
       </div>
       <el-form ref="cancelFormRef" :model="cancelForm" label-width="100px">
-        <el-form-item label="退还定金" prop="refunded_deposit">
+        <el-form-item label="退还定金" prop="refunded_deposit"
+          :rules="[{ required: true, message: '请填写退还给定金的金额（不退填0）' }]">
           <el-input-number v-model="cancelForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
       </el-form>
       <div v-if="earnestMoney - cancelForm.refunded_deposit > 0" class="vacate-deduction-note">
-        扣留违约金 <strong>{{ (earnestMoney - cancelForm.refunded_deposit).toFixed(2) }}</strong> 元，将创建定金违约收入账单
+        租客违约/不租，扣留定金 <strong>{{ (earnestMoney - cancelForm.refunded_deposit).toFixed(2) }}</strong> 元，将创建定金违约收入账单
       </div>
       <div v-else-if="cancelForm.refunded_deposit - earnestMoney > 0" class="vacate-deduction-note">
-        多退 <strong>{{ (cancelForm.refunded_deposit - earnestMoney).toFixed(2) }}</strong> 元，将创建定金违约支出账单
+        房东违约/主动多退，额外赔付 <strong>{{ (cancelForm.refunded_deposit - earnestMoney).toFixed(2) }}</strong> 元，将创建定金违约支出账单
       </div>
       <template #footer>
         <el-button @click="showCancelReserveDialog = false">取消</el-button>
@@ -124,7 +120,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showEndDateDialog" title="修改退租时间" width="420px">
+    <el-dialog v-model="showEndDateDialog" title="续租" width="420px">
       <el-form ref="endDateFormRef" :model="endDateForm" label-width="100px">
         <el-form-item label="退租日期" prop="end_date" :rules="[{ required: true, message: '请选择退租日期' }]">
           <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择退租日期" style="width:100%" />
@@ -139,17 +135,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showVacateDialog" title="设为未出租" width="450px">
+    <el-dialog v-model="showVacateDialog" title="办理退租" width="450px">
       <div>
         <div v-if="currentContract?.deposit" class="vacate-deposit-info">
           <div class="vacate-row">
             <span>原押金</span>
             <span class="vacate-amount">{{ currentContract.deposit.toFixed(2) }} 元</span>
           </div>
-          <p class="vacate-hint">如因卫生或家具损坏需扣除部分押金，请填写实际退还金额</p>
+          <p class="vacate-hint">请填写实际退还给租客的押金金额（全额退还请填原押金；因卫生/损坏扣减请填扣减后金额；不退还请填 0）</p>
         </div>
         <el-form ref="vacateFormRef" :model="vacateForm" label-width="100px">
-          <el-form-item label="退还押金" prop="refunded_deposit">
+          <el-form-item label="退还押金" prop="refunded_deposit"
+            :rules="[{ required: true, message: '请填写退还给租客的押金金额（不退还填0）' }]">
             <el-input-number v-model="vacateForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
           </el-form-item>
         </el-form>
@@ -228,6 +225,7 @@ const layoutOptions = LAYOUT_OPTIONS
 const props = defineProps({
   roomId: { type: [String, Number], required: true },
   currentContract: { type: Object, default: null },
+  roomStatus: { type: String, default: '' },
   editInitData: { type: Object, default: () => ({}) },
 })
 
@@ -235,25 +233,27 @@ const emit = defineEmits(['save-success'])
 
 const showRentDialog = ref(false)
 const rentSubmitting = ref(false)
-const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
+const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
 const rentFormRef = ref(null)
 
 const showReserveDialog = ref(false)
 const reserveSubmitting = ref(false)
-const reserveForm = ref({ tenant_name: '', tenant_phone: '', earnest_money: 0, rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
+const reserveForm = ref({ tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
 const reserveFormRef = ref(null)
 
 const showConfirmSignDialog = ref(false)
 const signSubmitting = ref(false)
-const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
+const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
 const signFormRef = ref(null)
 
 const showCancelReserveDialog = ref(false)
 const cancelSubmitting = ref(false)
-const cancelForm = ref({ refunded_deposit: 0 })
+const cancelForm = ref({ refunded_deposit: null })
 const cancelFormRef = ref(null)
 
 const earnestMoney = computed(() => props.currentContract?.earnest_money || 0)
+
+const isFutureReserve = computed(() => props.roomStatus === 'rented' || props.roomStatus === 'expiring')
 
 const showEndDateDialog = ref(false)
 const endDateSubmitting = ref(false)
@@ -262,7 +262,7 @@ const endDateFormRef = ref(null)
 
 const showVacateDialog = ref(false)
 const vacateSubmitting = ref(false)
-const vacateForm = ref({ refunded_deposit: 0 })
+const vacateForm = ref({ refunded_deposit: null })
 const vacateFormRef = ref(null)
 
 const vacateDeduction = computed(() => {
@@ -277,6 +277,7 @@ const editForm = ref({})
 const editFormRef = ref(null)
 
 function openRent() {
+  rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' }
   showRentDialog.value = true
 }
 
@@ -286,8 +287,7 @@ function openRenew() {
 }
 
 function openVacant() {
-  const deposit = props.currentContract?.deposit || 0
-  vacateForm.value.refunded_deposit = deposit
+  vacateForm.value = { refunded_deposit: null }
   showVacateDialog.value = true
 }
 
@@ -297,7 +297,7 @@ function openEdit() {
 }
 
 function openReserve() {
-  reserveForm.value = { tenant_name: '', tenant_phone: '', earnest_money: 0, rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' }
+  reserveForm.value = { tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' }
   showReserveDialog.value = true
 }
 
@@ -306,9 +306,9 @@ function openConfirmSign() {
   signForm.value = {
     tenant_name: ct.tenant?.name || '',
     tenant_phone: ct.tenant?.phone || '',
-    rent_price: ct.rent_price || 0,
-    management_fee: ct.management_fee || 0,
-    deposit: ct.deposit || 0,
+    rent_price: ct.rent_price || null,
+    management_fee: ct.management_fee || null,
+    deposit: ct.deposit || null,
     start_date: ct.start_date || '',
     end_date: ct.end_date || '',
   }
@@ -357,6 +357,8 @@ async function handleConfirmSign() {
 }
 
 async function handleCancelReserve() {
+  const valid = await cancelFormRef.value.validate().catch(() => false)
+  if (!valid) return
   cancelSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
@@ -403,6 +405,8 @@ async function handleUpdateEndDate() {
 }
 
 async function confirmVacate() {
+  const valid = await vacateFormRef.value.validate().catch(() => false)
+  if (!valid) return
   vacateSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit })

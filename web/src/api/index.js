@@ -137,8 +137,12 @@ export function adminGetSystemTime() {
   return api.get('/admin/system/time')
 }
 
-export function adminSetSystemTime(offsetSeconds) {
-  return api.post('/admin/system/time', { offset_seconds: offsetSeconds })
+export function adminSetSystemTime(params) {
+  return api.post('/admin/system/time', params)
+}
+
+export function adminRunTasks() {
+  return api.post('/admin/system/run-tasks')
 }
 
 export function adminUpdateUser(id, data) {
@@ -184,6 +188,10 @@ export function buildingUpdateRoomStatus(id, data) {
 
 export function buildingRenewContract(id, data) {
   return api.put(`/building/rooms/${id}/contract`, data)
+}
+
+export function buildingPrepayContract(id, data) {
+  return api.post(`/building/rooms/${id}/prepay`, data)
 }
 
 export function buildingDeleteMedia(roomId, mediaId) {

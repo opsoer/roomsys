@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// AutoCheckExpiringContracts 自动检查到期合同，更新房间状态并创建退租任务
+// AutoCheckExpiringContracts 自动检查到期合同，创建退租待办任务
 func AutoCheckExpiringContracts(db *gorm.DB) {
 	now := utils.Now()
 	expireThreshold := now.AddDate(0, 0, 30)
@@ -29,23 +29,9 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 			continue
 		}
 
-		newStatus := "rented"
-		if now.After(endDate) {
-			newStatus = "expired"
-		} else if expireThreshold.After(endDate) {
-			newStatus = "expiring"
-		}
+		isExpired := now.After(endDate)
 
-		if newStatus != contract.Room.Status {
-			db.Model(&contract.Room).Update("status", newStatus)
-			logger.Log.Info().
-				Uint("room_id", contract.Room.ID).
-				Str("old_status", contract.Room.Status).
-				Str("new_status", newStatus).
-				Msg("自动更新房间状态")
-		}
-
-		if newStatus == "expired" {
+		if isExpired {
 			var existingTask models.Task
 			result := db.Where("room_id = ? AND type = ? AND status = ?",
 				contract.RoomID, "expired_room", "pending").First(&existingTask)
@@ -69,7 +55,9 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 	AutoCheckOverdueReservations(db)
 }
 
-// AutoCheckOverdueReservations 检查已交定金但到约定入住日仍未确认签约的预订，创建待办任务提醒房东
+// AutoCheckOverdueReservations 检查已交定金但到约定入住日仍未确认签约的预订，创建待办任务提醒房东。
+// 注意：仅对“房间当前为空置（vacant）的预订”建任务；若房间仍在租（rented/expiring/expired），
+// 说明该 reserved 合同只是“未来预订”，老租客尚未退租，不应误报为到入住日未签约。
 func AutoCheckOverdueReservations(db *gorm.DB) {
 	now := utils.Now()
 
@@ -81,6 +69,10 @@ func AutoCheckOverdueReservations(db *gorm.DB) {
 		Find(&contracts)
 
 	for _, contract := range contracts {
+		// 房间仍在出租中，说明这是“未来预订”，跳过，不创建超时任务
+		if contract.Room.ID != 0 && contract.Room.Status != "vacant" {
+			continue
+		}
 		var existingTask models.Task
 		result := db.Where("room_id = ? AND type = ? AND status = ?",
 			contract.RoomID, "reserved_overdue", "pending").First(&existingTask)

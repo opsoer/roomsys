@@ -28,6 +28,7 @@
           <el-menu-item v-if="isBuildingAdmin && isFullPackage" index="/landlord/tasks">
             <el-icon><List /></el-icon>
             <span class="nav-text">代办事项</span>
+            <span v-if="pendingTaskCount" class="task-badge desktop-badge">{{ pendingTaskCount }}</span>
           </el-menu-item>
           <el-menu-item v-if="isBuildingAdmin" index="/landlord/users">
             <el-icon><User /></el-icon>
@@ -62,7 +63,10 @@
     <!-- 移动端布局 -->
     <div v-else class="mobile-layout">
       <div class="mobile-header">
-        <van-icon name="bars" size="22" @click="showMobileMenu = true" />
+        <div style="position:relative;display:inline-block">
+          <van-icon name="bars" size="22" @click="showMobileMenu = true" />
+          <span v-if="pendingTaskCount" class="task-badge mobile-header-badge">{{ pendingTaskCount }}</span>
+        </div>
         <h2 class="mobile-title" @click="goToBuildingPage">
           🏠 {{ buildingName || '公寓管理' }}
         </h2>
@@ -110,12 +114,16 @@
             />
             <van-cell
               v-if="isBuildingAdmin && isFullPackage"
-              title="代办事项"
               icon="todo-o"
               :to="'/landlord/tasks'"
               @click="showMobileMenu = false"
               :class="{ 'menu-active': $route.path.startsWith('/landlord/tasks') }"
-            />
+            >
+              <template #title>
+                <span>代办事项</span>
+                <span v-if="pendingTaskCount" class="task-badge sidebar-badge">{{ pendingTaskCount }}</span>
+              </template>
+            </van-cell>
             <van-cell
               v-if="isBuildingAdmin"
               title="管理员管理"
@@ -154,7 +162,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import { getBuildingInfo } from '../api'
+import { getBuildingInfo, buildingGetTasks } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
 import MobileUserMenu from '../components/common/MobileUserMenu.vue'
@@ -166,6 +174,18 @@ const authStore = useAuthStore()
 const buildingName = ref('')
 const buildingPackage = ref('basic')
 const { isMobile } = useMobile()
+const pendingTaskCount = ref(0)
+let taskPollTimer = null
+
+async function fetchPendingTaskCount() {
+  if (!isBuildingAdmin.value || !isFullPackage.value) return
+  try {
+    const res = await buildingGetTasks('pending', 1, 1)
+    pendingTaskCount.value = res.data.total || 0
+  } catch (e) {
+    console.warn('获取待办数量失败:', e)
+  }
+}
 
 const username = ref(authStore.username)
 const loggedIn = computed(() => authStore.isLoggedIn)
@@ -208,7 +228,13 @@ onMounted(() => {
   } catch {
     ElMessage.error('获取公寓信息失败')
   }
+  await fetchPendingTaskCount()
+  taskPollTimer = setInterval(fetchPendingTaskCount, 30000)
   })()
+})
+
+onUnmounted(() => {
+  if (taskPollTimer) clearInterval(taskPollTimer)
 })
 </script>
 
@@ -306,5 +332,27 @@ onMounted(() => {
   color: #666;
 }
 
+.task-badge {
+  background: #f56c6c;
+  color: #fff;
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 9px;
+  line-height: 18px;
+  min-width: 18px;
+  text-align: center;
+  font-weight: 600;
+}
+.mobile-header-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+}
+.desktop-badge {
+  margin-left: 4px;
+}
+.sidebar-badge {
+  margin-left: 8px;
+}
 
 </style>

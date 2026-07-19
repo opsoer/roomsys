@@ -28,11 +28,11 @@
 
     <!-- Status Actions -->
     <view class="action-card">
-      <button v-if="room.status === 'vacant'" class="action-btn success" @click="openRentDialog">设为已出租</button>
-      <button v-if="room.status === 'vacant'" class="action-btn primary" @click="openReserveDialog">交定金/预订</button>
-      <button v-if="room.status === 'reserved'" class="action-btn success" @click="openConfirmSignDialog">确认签约入住</button>
-      <button v-if="room.status === 'reserved'" class="action-btn warning" @click="openCancelReserveDialog">取消预订</button>
-      <button v-if="room.status === 'rented' || room.status === 'expiring'" class="action-btn warning" @click="openVacantDialog">设为未出租</button>
+      <button v-if="room.status === 'vacant'" class="action-btn success" @click="openRentDialog">签合同出租</button>
+      <button v-if="room.status === 'vacant'" class="action-btn primary" @click="openReserveDialog">交定金预订</button>
+      <button v-if="room.status === 'reserved'" class="action-btn success" @click="openConfirmSignDialog">定金转签约</button>
+      <button v-if="room.status === 'reserved'" class="action-btn warning" @click="openCancelReserveDialog">取消预订（退/扣定金）</button>
+      <button v-if="room.status === 'rented' || room.status === 'expiring'" class="action-btn warning" @click="openVacantDialog">办理退租</button>
       <button v-if="room.status === 'rented' || room.status === 'expiring'" class="action-btn primary" @click="openRenewDialog">修改退租时间</button>
     </view>
 
@@ -63,7 +63,7 @@
     <!-- Dialogs (rent, renew, vacant, edit) -->
     <view v-if="showRentDialog" class="overlay" @click="showRentDialog = false">
       <scroll-view scroll-y class="dialog-panel" @click.stop>
-        <text class="dialog-title">设为已出租</text>
+        <text class="dialog-title">签合同出租</text>
         <view class="form-group"><text class="form-label">租客姓名</text><input class="form-input" v-model="rentForm.tenant_name" /></view>
         <view class="form-group"><text class="form-label">联系电话</text><input class="form-input" v-model="rentForm.tenant_phone" /></view>
         <view class="form-group"><text class="form-label">月租金</text><input class="form-input" v-model="rentForm.rent_price" type="digit" /></view>
@@ -79,9 +79,9 @@
 
     <view v-if="showVacantDialog" class="overlay" @click="showVacantDialog = false">
       <view class="small-dialog" @click.stop>
-        <text class="dialog-title">设为未出租</text>
-        <text v-if="currentContract?.deposit" class="deposit-info">原押金：¥{{ currentContract.deposit.toFixed(2) }}</text>
-        <view class="form-group"><text class="form-label">退还押金</text><input class="form-input" v-model="vacateForm.refunded_deposit" type="digit" /></view>
+        <text class="dialog-title">办理退租</text>
+        <text v-if="currentContract?.deposit" class="deposit-info">原押金：¥{{ currentContract.deposit.toFixed(2) }}（请填写实际退还金额，不退还填0）</text>
+        <view class="form-group"><text class="form-label">退还押金</text><input class="form-input" v-model="vacateForm.refunded_deposit" type="digit" placeholder="必填" /></view>
         <view class="dialog-actions">
           <button class="dialog-btn cancel" @click="showVacantDialog = false">取消</button>
           <button class="dialog-btn confirm" :disabled="vacateSubmitting" @click="handleVacant">{{ vacateSubmitting ? '提交中...' : '确定退租' }}</button>
@@ -103,7 +103,7 @@
 
     <view v-if="showReserveDialog" class="overlay" @click="showReserveDialog = false">
       <scroll-view scroll-y class="dialog-panel" @click.stop>
-        <text class="dialog-title">交定金 / 预订</text>
+        <text class="dialog-title">交定金预订</text>
         <view class="form-group"><text class="form-label">租客姓名</text><input class="form-input" v-model="reserveForm.tenant_name" /></view>
         <view class="form-group"><text class="form-label">联系电话</text><input class="form-input" v-model="reserveForm.tenant_phone" /></view>
         <view class="form-group"><text class="form-label">定金金额</text><input class="form-input" v-model="reserveForm.earnest_money" type="digit" /></view>
@@ -122,7 +122,7 @@
 
     <view v-if="showConfirmSignDialog" class="overlay" @click="showConfirmSignDialog = false">
       <scroll-view scroll-y class="dialog-panel" @click.stop>
-        <text class="dialog-title">确认签约入住</text>
+        <text class="dialog-title">定金转签约（确认入住）</text>
         <view class="form-group"><text class="form-label">租客姓名</text><input class="form-input" v-model="signForm.tenant_name" /></view>
         <view class="form-group"><text class="form-label">联系电话</text><input class="form-input" v-model="signForm.tenant_phone" /></view>
         <view class="form-group"><text class="form-label">月租金</text><input class="form-input" v-model="signForm.rent_price" type="digit" /></view>
@@ -140,9 +140,9 @@
 
     <view v-if="showCancelReserveDialog" class="overlay" @click="showCancelReserveDialog = false">
       <view class="small-dialog" @click.stop>
-        <text class="dialog-title">取消预订</text>
-        <text class="deposit-info">已收定金：¥{{ Number(earnestMoney).toFixed(2) }}</text>
-        <view class="form-group"><text class="form-label">退还定金</text><input class="form-input" v-model="cancelForm.refunded_deposit" type="digit" /></view>
+        <text class="dialog-title">取消预订（退/扣定金）</text>
+        <text class="deposit-info">已收定金：¥{{ Number(earnestMoney).toFixed(2) }}（请填写实际退还金额，不退填0，房东赔付填超过定金金额）</text>
+        <view class="form-group"><text class="form-label">退还定金</text><input class="form-input" v-model="cancelForm.refunded_deposit" type="digit" placeholder="必填" /></view>
         <view class="dialog-actions">
           <button class="dialog-btn cancel" @click="showCancelReserveDialog = false">取消</button>
           <button class="dialog-btn confirm" :disabled="cancelSubmitting" @click="handleCancelReserve">{{ cancelSubmitting ? '提交中...' : '确定取消' }}</button>
@@ -200,7 +200,7 @@ const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, deposit
 
 const showVacantDialog = ref(false)
 const vacateSubmitting = ref(false)
-const vacateForm = ref({ refunded_deposit: 0 })
+const vacateForm = ref({ refunded_deposit: '' })
 
 const showRenewDialog = ref(false)
 const renewSubmitting = ref(false)
@@ -216,7 +216,7 @@ const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, managem
 
 const showCancelReserveDialog = ref(false)
 const cancelSubmitting = ref(false)
-const cancelForm = ref({ refunded_deposit: 0 })
+const cancelForm = ref({ refunded_deposit: '' })
 
 const earnestMoney = computed(() => currentContract.value?.earnest_money || 0)
 
@@ -305,7 +305,7 @@ async function fetchRoom() {
 }
 
 function openRentDialog() { rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, deposit: 0, start_date: '', end_date: '' }; showRentDialog.value = true }
-function openVacantDialog() { vacateForm.value.refunded_deposit = currentContract.value?.deposit || 0; showVacantDialog.value = true }
+function openVacantDialog() { vacateForm.value = { refunded_deposit: '' }; showVacantDialog.value = true }
 function openRenewDialog() { renewForm.value = { end_date: '', rent_price: currentContract.value?.rent_price || 0 }; showRenewDialog.value = true }
 function openEditDialog() { showEditDialog.value = true }
 
@@ -323,7 +323,7 @@ function openConfirmSignDialog() {
   showConfirmSignDialog.value = true
 }
 function openCancelReserveDialog() {
-  cancelForm.value = { refunded_deposit: 0 }
+  cancelForm.value = { refunded_deposit: '' }
   showCancelReserveDialog.value = true
 }
 
@@ -350,9 +350,13 @@ async function handleConfirmSign() {
 }
 
 async function handleCancelReserve() {
+  if (cancelForm.value.refunded_deposit === '' || cancelForm.value.refunded_deposit === null || cancelForm.value.refunded_deposit === undefined) {
+    uni.showToast({ title: '请填写退还定金金额（不退填0）', icon: 'none' })
+    return
+  }
   cancelSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(roomId.value, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
+    await buildingUpdateRoomStatus(roomId.value, { status: 'vacant', refunded_deposit: Number(cancelForm.value.refunded_deposit) })
     uni.showToast({ title: '已取消预订', icon: 'success' })
     showCancelReserveDialog.value = false
     await fetchRoom()
@@ -372,9 +376,13 @@ async function handleRent() {
 }
 
 async function handleVacant() {
+  if (vacateForm.value.refunded_deposit === '' || vacateForm.value.refunded_deposit === null || vacateForm.value.refunded_deposit === undefined) {
+    uni.showToast({ title: '请填写退还押金金额（不退填0）', icon: 'none' })
+    return
+  }
   vacateSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(roomId.value, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit })
+    await buildingUpdateRoomStatus(roomId.value, { status: 'vacant', refunded_deposit: Number(vacateForm.value.refunded_deposit) })
     uni.showToast({ title: '已设为未出租', icon: 'success' })
     showVacantDialog.value = false
     await fetchRoom()

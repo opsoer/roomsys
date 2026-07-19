@@ -175,3 +175,24 @@ func (s *RoomService) GetRoomsWithExpiringContract(buildingID uint, days int) ([
 		Find(&rooms).Error
 	return rooms, err
 }
+
+// GetFutureReservation 获取房间的未来的预定合同（房间有其他 active 合同的情况下）
+func (s *RoomService) GetFutureReservation(roomID uint) (*models.RentalContract, error) {
+	var contract models.RentalContract
+	err := s.DB.Where("room_id = ? AND status = ?", roomID, "reserved").
+		Preload("Tenant").
+		First(&contract).Error
+	if err != nil {
+		return nil, err
+	}
+	return &contract, nil
+}
+
+// HasFutureReservation 检查房间是否有未来预定
+func (s *RoomService) HasFutureReservation(roomID uint) bool {
+	var count int64
+	s.DB.Model(&models.RentalContract{}).
+		Where("room_id = ? AND status = ?", roomID, "reserved").
+		Count(&count)
+	return count > 0
+}

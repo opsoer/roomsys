@@ -20,13 +20,13 @@
           @fullscreen="showFullscreen" @delete-media="handleDeleteMedia" />
       </div>
 
-      <RoomSidebar :room="room" :landlords="landlords" :current-contract="currentContract" :is-admin="isAdmin"
+      <RoomSidebar :room="room" :landlords="landlords" :current-contract="currentContract" :future-reservation="futureReservation" :is-admin="isAdmin"
         @renew="openRenewDialog" @rent="openRentDialog" @vacant="handleVacant"
         @reserve="openReserveDialog" @confirm-sign="openConfirmSignDialog" @cancel-reserve="handleCancelReserve"
         @upload-success="fetchRoom" />
     </div>
 
-    <RoomDialogs ref="dialogsRef" :room-id="route.params.id" :current-contract="currentContract"
+    <RoomDialogs ref="dialogsRef" :room-id="route.params.id" :current-contract="currentContract" :room-status="room?.status"
       :edit-init-data="editForm" @save-success="fetchRoom" />
   </div>
 </template>
@@ -50,6 +50,7 @@ const coverImage = ref(null)
 const galleryImages = ref([])
 const videos = ref([])
 const currentContract = ref(null)
+const futureReservation = ref(null)
 const landlords = ref([])
 const loading = ref(true)
 const dialogsRef = ref(null)
@@ -93,6 +94,7 @@ async function fetchRoom() {
     }
     videos.value = media.filter(m => m.type === 'video')
     currentContract.value = res.data.room.current_contract || null
+    futureReservation.value = res.data.room.future_reservation || null
     editForm.value = {
       room_number: room.value.room_number,
       floor: room.value.floor,
