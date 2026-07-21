@@ -55,6 +55,47 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 	AutoCheckOverdueReservations(db)
 }
 
+// CheckExpiredBuildings 检查所有到期公寓，将已过期的状态更新为 expired。
+func CheckExpiredBuildings(db *gorm.DB) {
+	var buildings []models.Building
+	db.Where("status = ? AND expired_at IS NOT NULL AND expired_at != ''", "active").Find(&buildings)
+	now := utils.Now()
+	expiredCount := 0
+	for _, b := range buildings {
+		if expDate, err := time.Parse("2006-01-02", b.ExpiredAt); err == nil {
+			if now.After(expDate) {
+				db.Model(&b).Update("status", "expired")
+				expiredCount++
+				logger.Log.Info().
+					Uint("building_id", b.ID).
+					Str("name", b.Name).
+					Str("expired_at", b.ExpiredAt).
+					Msg("公寓已到期，状态更新为 expired")
+			}
+		}
+	}
+	if expiredCount > 0 {
+		logger.Log.Info().Int("count", expiredCount).Msg("到期公寓检查完成")
+	} else {
+		logger.Log.Debug().Msg("到期公寓检查完成，无到期公寓")
+	}
+}
+
+// AutoCleanupData 清理超过90天的软删除数据和 page_views 记录。
+func AutoCleanupData(db *gorm.DB) {
+	if err := models.CleanupSoftDeleted(db, 90); err != nil {
+		logger.Log.Error().Err(err).Msg("软删除数据清理失败")
+	} else {
+		logger.Log.Info().Msg("软删除数据清理完成")
+	}
+	cutoff := time.Now().AddDate(0, 0, -90)
+	if err := db.Where("created_at < ?", cutoff).Delete(&models.PageView{}).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("page_views 清理失败")
+	} else {
+		logger.Log.Info().Msg("page_views 清理完成")
+	}
+}
+
 // AutoCheckOverdueReservations 检查已交定金但到约定入住日仍未确认签约的预订，创建待办任务提醒房东。
 // 注意：仅对“房间当前为空置（vacant）的预订”建任务；若房间仍在租（rented/expiring/expired），
 // 说明该 reserved 合同只是“未来预订”，老租客尚未退租，不应误报为到入住日未签约。

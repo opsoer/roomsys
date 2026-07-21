@@ -68,7 +68,7 @@ func main() {
 
 	// 启动时自动创建当月租金账单
 	handlers.AutoCreateMonthlyRentBills(db)
-	// 定时任务：每月1号自动创建租金账单
+	// 每天凌晨3点自动检查并创建漏掉的租金账单（幂等，不会重复创建）
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -77,12 +77,8 @@ func main() {
 		}()
 		for {
 			now := utils.Now()
-			next := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
-			dur := next.Sub(now)
-			if dur <= 0 {
-				dur = time.Hour
-			}
-			time.Sleep(dur)
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+			time.Sleep(next.Sub(now))
 			handlers.AutoCreateMonthlyRentBills(db)
 		}
 	}()
@@ -95,7 +91,7 @@ func main() {
 			}
 		}()
 		for {
-			checkExpiredBuildings(db)
+			handlers.CheckExpiredBuildings(db)
 			time.Sleep(6 * time.Hour)
 		}
 	}()
@@ -124,17 +120,7 @@ func main() {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
 			time.Sleep(next.Sub(now))
-			if err := models.CleanupSoftDeleted(db, 90); err != nil {
-				logger.Log.Error().Err(err).Msg("软删除数据清理失败")
-			} else {
-				logger.Log.Info().Msg("软删除数据清理完成")
-			}
-			cutoff := time.Now().AddDate(0, 0, -90)
-			if err := db.Where("created_at < ?", cutoff).Delete(&models.PageView{}).Error; err != nil {
-				logger.Log.Error().Err(err).Msg("page_views 清理失败")
-			} else {
-				logger.Log.Info().Msg("page_views 清理完成")
-			}
+			handlers.AutoCleanupData(db)
 		}
 	}()
 
@@ -243,32 +229,6 @@ func requestLogger() gin.HandlerFunc {
 			Str("ip", clientIP).
 			Dur("latency", latency).
 			Msg("")
-	}
-}
-
-// checkExpiredBuildings 检查所有到期公寓，将已过期的状态更新为 expired。
-func checkExpiredBuildings(db *gorm.DB) {
-	var buildings []models.Building
-	db.Where("status = ? AND expired_at IS NOT NULL AND expired_at != ''", "active").Find(&buildings)
-	now := utils.Now()
-	expiredCount := 0
-	for _, b := range buildings {
-		if expDate, err := time.Parse("2006-01-02", b.ExpiredAt); err == nil {
-			if now.After(expDate) {
-				db.Model(&b).Update("status", "expired")
-				expiredCount++
-				logger.Log.Info().
-					Uint("building_id", b.ID).
-					Str("name", b.Name).
-					Str("expired_at", b.ExpiredAt).
-					Msg("公寓已到期，状态更新为 expired")
-			}
-		}
-	}
-	if expiredCount > 0 {
-		logger.Log.Info().Int("count", expiredCount).Msg("到期公寓检查完成")
-	} else {
-		logger.Log.Debug().Msg("到期公寓检查完成，无到期公寓")
 	}
 }
 

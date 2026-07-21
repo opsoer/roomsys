@@ -82,7 +82,7 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 	})
 }
 
-// RunTasks 手动触发所有定时任务（合同到期检查 + 月度租金账单生成）。
+// RunTasks 手动触发所有定时任务。
 // 便于在调整系统时间后无需等待定时器即可立即看到结果。
 func (h *SystemHandler) RunTasks(c *gin.Context) {
 	userID, _ := utils.GetUserID(c)
@@ -90,6 +90,9 @@ func (h *SystemHandler) RunTasks(c *gin.Context) {
 
 	AutoCheckExpiringContracts(h.DB)
 	AutoCreateMonthlyRentBills(h.DB)
+	CheckExpiredBuildings(h.DB)
+	utils.CleanupRevokedTokens()
+	AutoCleanupData(h.DB)
 
-	utils.SuccessWithMsg(c, "已手动执行全部定时任务（到期检查 / 月度租金生成）", nil)
+	utils.SuccessWithMsg(c, "已手动执行全部定时任务（到期检查 / 月度租金 / 公寓到期 / 令牌清理 / 数据清理）", nil)
 }
