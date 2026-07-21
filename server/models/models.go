@@ -58,8 +58,8 @@ type BuildingLandlord struct {
 // Room 表示公寓房间，包含布局、面积、租金定价等。
 type Room struct {
 	ID                 uint           `gorm:"primaryKey" json:"id"`
-	BuildingID         uint           `gorm:"uniqueIndex:idx_building_room;not null" json:"building_id"`
-	RoomNumber         string         `gorm:"uniqueIndex:idx_building_room;size:20;not null" json:"room_number"`
+	BuildingID         uint           `gorm:"index:idx_building_room;not null" json:"building_id"`
+	RoomNumber         string         `gorm:"index:idx_building_room;size:20;not null" json:"room_number"`
 	Floor              string         `gorm:"size:10;not null" json:"floor"`
 	Layout             string         `gorm:"size:20;not null" json:"layout"`
 	Area               float64        `gorm:"type:decimal(8,2)" json:"area"`
@@ -241,6 +241,10 @@ type PageView struct {
 
 // AutoMigrate 自动创建或更新所有模型对应的数据库表。
 func AutoMigrate(db *gorm.DB) error {
+	// Room 的唯一索引改为普通索引（允许软删除后重建同号房间）
+	if db.Migrator().HasIndex(&Room{}, "idx_building_room") {
+		db.Migrator().DropIndex(&Room{}, "idx_building_room")
+	}
 	return db.AutoMigrate(
 		&User{},
 		&Building{},

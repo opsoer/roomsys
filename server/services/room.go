@@ -2,6 +2,8 @@
 package services
 
 import (
+	"errors"
+
 	"rental-server/models"
 
 	"gorm.io/gorm"
@@ -71,6 +73,13 @@ func (s *RoomService) List(buildingID uint, page, size int, floor, layout string
 
 // Create 创建房间
 func (s *RoomService) Create(room *models.Room) error {
+	var count int64
+	s.DB.Model(&models.Room{}).
+		Where("building_id = ? AND room_number = ?", room.BuildingID, room.RoomNumber).
+		Count(&count)
+	if count > 0 {
+		return errors.New("房间号已存在")
+	}
 	return s.DB.Create(room).Error
 }
 

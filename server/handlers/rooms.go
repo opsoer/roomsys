@@ -308,7 +308,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.RoomService.Create(&room); err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") {
+		if err.Error() == "房间号已存在" {
 			utils.Error(c, http.StatusConflict, "房间号已存在")
 			return
 		}
