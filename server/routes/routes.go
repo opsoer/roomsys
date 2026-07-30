@@ -3,7 +3,6 @@ package routes
 
 import (
 	"path/filepath"
-	"time"
 
 	"rental-server/config"
 	"rental-server/handlers"
@@ -23,15 +22,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	r.NoRoute(func(c *gin.Context) {
 		c.File(cfg.WebDistDir + "/index.html")
 	})
-
-	go func() {
-		handlers.AutoCheckExpiringContracts(db)
-		ticker := time.NewTicker(30 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			handlers.AutoCheckExpiringContracts(db)
-		}
-	}()
 
 	buildingSvc := services.NewBuildingService(db)
 	roomSvc := services.NewRoomService(db)

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"rental-server/logger"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -40,15 +42,28 @@ func IsTokenRevoked(tokenStr string) bool {
 }
 
 // CleanupRevokedTokens 清理已过期超过 30 天的吊销记录
-func CleanupRevokedTokens() {
+func CleanupRevokedTokens() string {
+	logger.Log.Info().Int("before_count", len(revokedTokens)).Msg("CleanupRevokedTokens: 开始执行")
+
 	revokedTokensMu.Lock()
 	defer revokedTokensMu.Unlock()
 	now := time.Now()
+	cleaned := 0
 	for token, t := range revokedTokens {
 		if now.Sub(t) > 720*time.Hour {
 			delete(revokedTokens, token)
+			cleaned++
 		}
 	}
+
+	result := ""
+	if cleaned > 0 {
+		result = fmt.Sprintf("令牌清理: 清除 %d 条过期吊销记录", cleaned)
+	} else {
+		result = "令牌清理: 无过期记录"
+	}
+	logger.Log.Info().Int("cleaned", cleaned).Int("remaining", len(revokedTokens)).Msg("CleanupRevokedTokens: 执行完毕")
+	return result
 }
 
 // GenerateToken 生成 JWT 访问令牌，有效期 72 小时

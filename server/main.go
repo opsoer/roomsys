@@ -124,6 +124,23 @@ func main() {
 		}
 	}()
 
+	// 启动时检查到期合同
+	handlers.AutoCheckExpiringContracts(db)
+	// 每天凌晨3点自动检查到期合同
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Log.Error().Interface("panic", r).Msg("合同检查定时任务 panic，已恢复")
+			}
+		}()
+		for {
+			now := utils.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+			time.Sleep(next.Sub(now))
+			handlers.AutoCheckExpiringContracts(db)
+		}
+	}()
+
 	if err := os.MkdirAll(cfg.UploadDir, 0750); err != nil {
 		logger.Log.Fatal().Err(err).Str("dir", cfg.UploadDir).Msg("创建上传目录失败")
 	}

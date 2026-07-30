@@ -55,7 +55,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminGetBuildings, adminDeleteBuilding, adminGetSystemTime, adminSetSystemTime, adminRunTasks } from '../api'
 import AdminBuildingList from '../components/admin/AdminBuildingList.vue'
 import AdminBuildingDialogs from '../components/admin/AdminBuildingDialogs.vue'
@@ -196,8 +196,13 @@ async function handleResetTime() {
 async function handleRunTasks() {
   runTasksLoading.value = true
   try {
-    await adminRunTasks()
-    ElMessage.success('已手动执行全部定时任务')
+    const res = await adminRunTasks()
+    const results = res.data.results || []
+    ElMessageBox.alert(
+      results.map(r => `<div style="padding:4px 0">${r}</div>`).join(''),
+      '定时任务执行结果',
+      { dangerouslyUseHTMLString: true, confirmButtonText: '确定' }
+    )
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '执行失败')
   } finally {

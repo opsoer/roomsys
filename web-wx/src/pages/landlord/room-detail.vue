@@ -328,6 +328,10 @@ function openCancelReserveDialog() {
 }
 
 async function handleReserve() {
+  if (reserveForm.value.management_fee === '' || reserveForm.value.management_fee === null || reserveForm.value.management_fee === undefined) {
+    uni.showToast({ title: '请填写管理费', icon: 'none' })
+    return
+  }
   reserveSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(roomId.value, { status: 'reserved', ...reserveForm.value })
@@ -339,6 +343,10 @@ async function handleReserve() {
 }
 
 async function handleConfirmSign() {
+  if (signForm.value.management_fee === '' || signForm.value.management_fee === null || signForm.value.management_fee === undefined) {
+    uni.showToast({ title: '请填写管理费', icon: 'none' })
+    return
+  }
   signSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(roomId.value, { status: 'rented', ...signForm.value })

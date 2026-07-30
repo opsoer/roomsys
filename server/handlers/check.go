@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"fmt"
 	"time"
 
 	"rental-server/logger"
@@ -12,9 +13,11 @@ import (
 )
 
 // AutoCheckExpiringContracts 自动检查到期合同，创建退租待办任务
-func AutoCheckExpiringContracts(db *gorm.DB) {
+func AutoCheckExpiringContracts(db *gorm.DB) string {
 	now := utils.Now()
 	expireThreshold := now.AddDate(0, 0, 30)
+
+	logger.Log.Info().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("AutoCheckExpiringContracts: 开始执行")
 
 	var contracts []models.RentalContract
 	db.Where("status = ? AND end_date != '' AND end_date <= ?",
@@ -23,6 +26,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 		Limit(100).
 		Find(&contracts)
 
+	taskCount := 0
 	for _, contract := range contracts {
 		endDate, err := time.Parse("2006-01-02", contract.EndDate)
 		if err != nil {
@@ -44,6 +48,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 					RoomID:     &contract.RoomID,
 				}
 				db.Create(&task)
+				taskCount++
 				logger.Log.Info().
 					Uint("room_id", contract.RoomID).
 					Uint("building_id", contract.BuildingID).
@@ -52,11 +57,15 @@ func AutoCheckExpiringContracts(db *gorm.DB) {
 		}
 	}
 
-	AutoCheckOverdueReservations(db)
+	result := fmt.Sprintf("合同检查: 创建 %d 条退租待办", taskCount)
+	logger.Log.Info().Int("task_count", taskCount).Msg("AutoCheckExpiringContracts: 执行完毕")
+
+	overdueResult := AutoCheckOverdueReservations(db)
+	return result + "，" + overdueResult
 }
 
 // CheckExpiredBuildings 检查所有到期公寓，将已过期的状态更新为 expired。
-func CheckExpiredBuildings(db *gorm.DB) {
+func CheckExpiredBuildings(db *gorm.DB) string {
 	var buildings []models.Building
 	db.Where("status = ? AND expired_at IS NOT NULL AND expired_at != ''", "active").Find(&buildings)
 	now := utils.Now()
@@ -74,33 +83,38 @@ func CheckExpiredBuildings(db *gorm.DB) {
 			}
 		}
 	}
-	if expiredCount > 0 {
-		logger.Log.Info().Int("count", expiredCount).Msg("到期公寓检查完成")
-	} else {
-		logger.Log.Debug().Msg("到期公寓检查完成，无到期公寓")
-	}
+	result := fmt.Sprintf("公寓到期: %d 栋已到期", expiredCount)
+	logger.Log.Info().Int("count", expiredCount).Msg("到期公寓检查完成")
+	return result
 }
 
 // AutoCleanupData 清理超过90天的软删除数据和 page_views 记录。
-func AutoCleanupData(db *gorm.DB) {
+func AutoCleanupData(db *gorm.DB) string {
+	cleanupResult := ""
 	if err := models.CleanupSoftDeleted(db, 90); err != nil {
 		logger.Log.Error().Err(err).Msg("软删除数据清理失败")
+		cleanupResult = "软删除: 失败"
 	} else {
 		logger.Log.Info().Msg("软删除数据清理完成")
+		cleanupResult = "软删除: 完成"
 	}
 	cutoff := time.Now().AddDate(0, 0, -90)
-	if err := db.Where("created_at < ?", cutoff).Delete(&models.PageView{}).Error; err != nil {
-		logger.Log.Error().Err(err).Msg("page_views 清理失败")
+	pvResult := db.Where("created_at < ?", cutoff).Delete(&models.PageView{}).Error
+	if pvResult != nil {
+		logger.Log.Error().Err(pvResult).Msg("page_views 清理失败")
+		cleanupResult += "，PageView: 失败"
 	} else {
 		logger.Log.Info().Msg("page_views 清理完成")
+		cleanupResult += "，PageView: 完成"
 	}
+	return "数据清理: " + cleanupResult
 }
 
 // AutoCheckOverdueReservations 检查已交定金但到约定入住日仍未确认签约的预订，创建待办任务提醒房东。
-// 注意：仅对“房间当前为空置（vacant）的预订”建任务；若房间仍在租（rented/expiring/expired），
-// 说明该 reserved 合同只是“未来预订”，老租客尚未退租，不应误报为到入住日未签约。
-func AutoCheckOverdueReservations(db *gorm.DB) {
+func AutoCheckOverdueReservations(db *gorm.DB) string {
 	now := utils.Now()
+
+	logger.Log.Info().Msg("AutoCheckOverdueReservations: 开始执行")
 
 	var contracts []models.RentalContract
 	db.Where("status = ? AND start_date != '' AND start_date <= ?",
@@ -109,11 +123,8 @@ func AutoCheckOverdueReservations(db *gorm.DB) {
 		Limit(100).
 		Find(&contracts)
 
+	taskCount := 0
 	for _, contract := range contracts {
-		// 房间仍在出租中，说明这是“未来预订”，跳过，不创建超时任务
-		if contract.Room.ID != 0 && contract.Room.Status != "vacant" {
-			continue
-		}
 		var existingTask models.Task
 		result := db.Where("room_id = ? AND type = ? AND status = ?",
 			contract.RoomID, "reserved_overdue", "pending").First(&existingTask)
@@ -127,10 +138,15 @@ func AutoCheckOverdueReservations(db *gorm.DB) {
 				Description: "该房间已收取定金并到达约定入住日期，请及时确认签约或取消预订",
 			}
 			db.Create(&task)
+			taskCount++
 			logger.Log.Info().
 				Uint("room_id", contract.RoomID).
 				Uint("building_id", contract.BuildingID).
 				Msg("创建预订超时待办任务")
 		}
 	}
+
+	result := fmt.Sprintf("预订超时: 创建 %d 条待办", taskCount)
+	logger.Log.Info().Int("task_count", taskCount).Msg("AutoCheckOverdueReservations: 执行完毕")
+	return result
 }

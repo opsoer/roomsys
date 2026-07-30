@@ -68,7 +68,7 @@ type UpdateRoomStatusReq struct {
 	TenantName      string   `json:"tenant_name"`
 	TenantPhone     string   `json:"tenant_phone"`
 	RentPrice       float64  `json:"rent_price" binding:"gte=0"`
-	ManagementFee   float64  `json:"management_fee" binding:"gte=0"`
+	ManagementFee   *float64 `json:"management_fee"`
 	Deposit         float64  `json:"deposit" binding:"gte=0"`
 	EarnestMoney    float64  `json:"earnest_money" binding:"gte=0"`
 	StartDate       string   `json:"start_date"`
@@ -439,6 +439,10 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	}
 
 	if req.Status == "rented" {
+		if req.ManagementFee == nil {
+			utils.Error(c, http.StatusBadRequest, "请填写管理费")
+			return
+		}
 		var reservedContract *models.RentalContract
 		if room.Status == "reserved" {
 			if rc, err := h.RoomService.GetReservedContract(room.ID); err == nil {
@@ -464,7 +468,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			contract = *reservedContract
 			updates := map[string]interface{}{
 				"rent_price":     req.RentPrice,
-				"management_fee": req.ManagementFee,
+				"management_fee": *req.ManagementFee,
 				"deposit":        req.Deposit,
 				"start_date":     req.StartDate,
 				"end_date":       req.EndDate,
@@ -549,11 +553,11 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 				var rentDesc string
 				if startDate.Day() == 1 && billEnd.Equal(monthEnd) {
 					rentAmount = float64(int(req.RentPrice*100)) / 100
-					mgmtAmount = float64(int(req.ManagementFee*100)) / 100
+					mgmtAmount = float64(int(*req.ManagementFee*100)) / 100
 					rentDesc = monthEnd.Format("2006-01") + "-01 ~ " + billEnd.Format("2006-01-02")
 				} else {
 					rentAmount = utils.CalcProratedAmount(req.RentPrice, startDate, billEnd, daysInMonth)
-					mgmtAmount = utils.CalcProratedAmount(req.ManagementFee, startDate, billEnd, daysInMonth)
+					mgmtAmount = utils.CalcProratedAmount(*req.ManagementFee, startDate, billEnd, daysInMonth)
 					rentDesc = startDate.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
 				}
 
@@ -637,6 +641,9 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			return
 		}
 
+		var originalDeposit float64
+		h.DB.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", room.ID, "active").Select("deposit").Scan(&originalDeposit)
+
 		tx := h.DB.Begin()
 		if tx.Error != nil {
 			utils.Error(c, http.StatusInternalServerError, "服务器错误")
@@ -658,6 +665,12 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 				Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
 				Count(&count)
 
+			deducted := originalDeposit - *req.RefundedDeposit
+			desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, *req.RefundedDeposit)
+			if deducted > 0 {
+				desc += fmt.Sprintf("（扣除%.2f元）", deducted)
+			}
+
 			bill := models.Bill{
 				BillNo:      fmt.Sprintf("B%s%05d", datePart, count+1),
 				Type:        "expense",
@@ -665,7 +678,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 				Amount:      *req.RefundedDeposit,
 				BuildingID:  room.BuildingID,
 				RoomID:      &room.ID,
-				Description: "押金退还：退租押金支出（已退款）",
+				Description: desc,
 				BillDate:    now.Format("2006-01-02"),
 				PaidStatus:  "paid",
 				CreatedBy:   uid,
@@ -718,6 +731,10 @@ func (h *RoomHandler) reserveRoom(c *gin.Context, room *models.Room, req *Update
 		utils.Error(c, http.StatusBadRequest, "定金金额必须大于0")
 		return
 	}
+	if req.ManagementFee == nil {
+		utils.Error(c, http.StatusBadRequest, "请填写管理费")
+		return
+	}
 
 	isFutureReservation := room.Status == "rented" || room.Status == "expiring" || room.Status == "expired"
 
@@ -759,7 +776,7 @@ func (h *RoomHandler) reserveRoom(c *gin.Context, room *models.Room, req *Update
 		BuildingID:    room.BuildingID,
 		TenantID:      tenant.ID,
 		RentPrice:     req.RentPrice,
-		ManagementFee: req.ManagementFee,
+		ManagementFee: *req.ManagementFee,
 		Deposit:       req.Deposit,
 		EarnestMoney:  req.EarnestMoney,
 		StartDate:     req.StartDate,

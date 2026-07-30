@@ -88,11 +88,13 @@ func (h *SystemHandler) RunTasks(c *gin.Context) {
 	userID, _ := utils.GetUserID(c)
 	logger.Log.Info().Uint("user_id", userID).Msg("手动触发全部定时任务")
 
-	AutoCheckExpiringContracts(h.DB)
-	AutoCreateMonthlyRentBills(h.DB)
-	CheckExpiredBuildings(h.DB)
-	utils.CleanupRevokedTokens()
-	AutoCleanupData(h.DB)
+	results := []string{
+		AutoCheckExpiringContracts(h.DB),
+		AutoCreateMonthlyRentBills(h.DB),
+		CheckExpiredBuildings(h.DB),
+		utils.CleanupRevokedTokens(),
+		AutoCleanupData(h.DB),
+	}
 
-	utils.SuccessWithMsg(c, "已手动执行全部定时任务（到期检查 / 月度租金 / 公寓到期 / 令牌清理 / 数据清理）", nil)
+	utils.Success(c, gin.H{"results": results})
 }

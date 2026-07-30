@@ -108,7 +108,10 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		}
 	}()
 
-	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid); err != nil {
+	var originalDeposit float64
+	tx.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", *task.RoomID, "active").Select("deposit").Scan(&originalDeposit)
+
+	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid, originalDeposit); err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("创建押金退还账单失败")
 		utils.Error(c, http.StatusInternalServerError, "创建退还账单失败")
@@ -194,7 +197,7 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 }
 
 // handleDepositRefund 创建押金退还账单
-func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint) error {
+func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint, originalDeposit float64) error {
 	if refundedDeposit <= 0 {
 		return nil
 	}
@@ -207,6 +210,12 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 		Count(&count)
 	billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
 
+	deducted := originalDeposit - refundedDeposit
+	desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, refundedDeposit)
+	if deducted > 0 {
+		desc += fmt.Sprintf("（扣除%.2f元）", deducted)
+	}
+
 	billDate := now.Format("2006-01-02")
 	bill := models.Bill{
 		BuildingID:  buildingID,
@@ -215,7 +224,7 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 		Subtype:     "押金退还",
 		Amount:      refundedDeposit,
 		RoomID:      &room.ID,
-		Description: "押金退还：退租押金支出",
+		Description: desc,
 		BillDate:    billDate,
 		CreatedBy:   userID,
 	}

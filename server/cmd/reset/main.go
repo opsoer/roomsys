@@ -38,6 +38,7 @@ func main() {
 		&models.BuildingLandlord{},
 		&models.Building{},
 		&models.User{},
+		&models.PageView{},
 	)
 	fmt.Println("   完成")
 

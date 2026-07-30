@@ -45,9 +45,9 @@
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
           <el-input-number v-model="reserveForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
-        <el-form-item label="管理费" prop="management_fee">
-          <el-input-number v-model="reserveForm.management_fee" :min="0" :precision="2" style="width:100%" />
-        </el-form-item>
+		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
+		  <el-input-number v-model="reserveForm.management_fee" :min="0" :precision="2" style="width:100%" />
+		</el-form-item>
         <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
           <el-input-number v-model="reserveForm.deposit" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
@@ -75,10 +75,10 @@
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
           <el-input-number v-model="signForm.rent_price" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
-        <el-form-item label="管理费" prop="management_fee">
-          <el-input-number v-model="signForm.management_fee" :min="0" :precision="2" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
+		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
+		  <el-input-number v-model="signForm.management_fee" :min="0" :precision="2" style="width:100%" />
+		</el-form-item>
+		<el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
           <el-input-number v-model="signForm.deposit" :min="0" :precision="2" style="width:100%" />
         </el-form-item>
         <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
