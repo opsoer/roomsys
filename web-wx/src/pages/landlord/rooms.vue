@@ -32,7 +32,10 @@
         <view class="room-card-body">
           <text class="rc-number">{{ room.room_number }}</text>
           <text class="rc-info">{{ room.floor }}层 · {{ room.layout }}</text>
-          <view v-if="room.rent_price" class="rc-price">¥{{ room.rent_price }}/月</view>
+          <view class="rc-price-row">
+            <text v-if="room.rent_price" class="rc-price">¥{{ room.rent_price }}/月</text>
+            <text v-if="room.management_fee != null" class="rc-mgmt">{{ room.management_fee ? '管理费¥' + room.management_fee + '/月' : '无管理费' }}</text>
+          </view>
           <text v-if="room.end_date && room.status !== 'vacant'" class="rc-enddate">退租：{{ room.end_date }}</text>
         </view>
       </view>
@@ -198,6 +201,8 @@ onMounted(fetchRooms)
 .rc-number { font-size: 15px; font-weight: 600; color: #1a1a2e; display: block; }
 .rc-info { font-size: 12px; color: #888; display: block; margin-top: 4px; }
 .rc-price { font-size: 14px; color: #e6a23c; font-weight: 700; margin-top: 4px; }
+.rc-price-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.rc-mgmt { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; line-height: 18px; margin-top: 4px; }
 .rc-enddate { font-size: 11px; color: #e6a23c; display: block; margin-top: 4px; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 .pagination button { background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; padding: 6px 14px; font-size: 13px; }

@@ -61,6 +61,7 @@
           </p>
           <div class="room-card-price-row" v-if="room.rent_price || room.deposit_months != null">
             <span v-if="room.rent_price" class="room-card-price">¥{{ room.rent_price }}/月</span>
+            <span v-if="room.management_fee != null" class="room-card-mgmt">{{ room.management_fee ? '管理费¥' + room.management_fee + '/月' : '无管理费' }}</span>
             <span v-if="room.deposit_months != null" class="room-card-deposit">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
           </div>
           <p class="room-card-utilities" v-if="room.electricity_unit_price || room.water_unit_price">
@@ -229,6 +230,7 @@ onMounted(fetchRooms)
 .room-card-info { font-size: 13px; color: #888; }
 .room-card-price-row { margin-top: 6px; display: flex; align-items: center; gap: 8px; }
 .room-card-price { font-size: 16px; color: #e6a23c; font-weight: 700; }
+.room-card-mgmt { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; }
 .room-card-deposit { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; }
 .room-card-utilities { margin-top: 2px; font-size: 12px; color: #999; }
 .room-card-enddate { margin-top: 6px; font-size: 12px; color: #e6a23c; font-weight: 600; }
