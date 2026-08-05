@@ -34,7 +34,7 @@
           <text class="rc-info">{{ room.floor }}层 · {{ room.layout }}</text>
           <view class="rc-price-row">
             <text v-if="room.rent_price" class="rc-price">¥{{ room.rent_price }}/月</text>
-            <text v-if="room.management_fee != null" class="rc-mgmt">{{ room.management_fee ? '管理费¥' + room.management_fee + '/月' : '无管理费' }}</text>
+            <text v-if="mgmtFee(room) != null" class="rc-mgmt">{{ mgmtFee(room) ? '管理费¥' + mgmtFee(room) + '/月' : '无管理费' }}</text>
           </view>
           <text v-if="room.end_date && room.status !== 'vacant'" class="rc-enddate">退租：{{ room.end_date }}</text>
         </view>
@@ -136,6 +136,10 @@ function onFilterSelect(val) {
 }
 
 function navTo(url) { uni.navigateTo({ url }) }
+
+function mgmtFee(room) {
+  return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
+}
 
 async function fetchRooms() {
   loading.value = true

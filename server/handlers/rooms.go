@@ -181,16 +181,21 @@ func (h *RoomHandler) List(c *gin.Context) {
 		roomIDs[i] = r.ID
 	}
 	var contracts []models.RentalContract
-	h.DB.Where("room_id IN ? AND status = ?", roomIDs, "active").Find(&contracts)
-	contractMap := make(map[uint]string)
+	h.DB.Where("room_id IN ? AND status IN ?", roomIDs, []string{"active", "reserved"}).
+		Order("CASE status WHEN 'active' THEN 0 ELSE 1 END").
+		Find(&contracts)
+	contractMap := make(map[uint]models.RentalContract)
 	for _, ct := range contracts {
-		contractMap[ct.RoomID] = ct.EndDate
+		if _, ok := contractMap[ct.RoomID]; !ok {
+			contractMap[ct.RoomID] = ct
+		}
 	}
 
 	type RoomWithThumbnail struct {
 		models.Room
-		Thumbnail string `json:"thumbnail"`
-		EndDate   string `json:"end_date"`
+		Thumbnail             string   `json:"thumbnail"`
+		EndDate               string   `json:"end_date"`
+		ContractManagementFee *float64 `json:"contract_management_fee,omitempty"`
 	}
 	var result []RoomWithThumbnail
 	for _, r := range rooms {
@@ -217,9 +222,14 @@ func (h *RoomHandler) List(c *gin.Context) {
 				}
 			}
 		}
-		endDate := contractMap[r.ID]
-		r.Status = utils.DynamicRoomStatus(r.Status, endDate)
-		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: endDate})
+		ct, hasContract := contractMap[r.ID]
+		var contractMgmtFee *float64
+		if hasContract {
+			fee := ct.ManagementFee
+			contractMgmtFee = &fee
+		}
+		r.Status = utils.DynamicRoomStatus(r.Status, contractMap[r.ID].EndDate)
+		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: contractMap[r.ID].EndDate, ContractManagementFee: contractMgmtFee})
 	}
 
 	if requestedStatus != "" {
@@ -507,14 +517,15 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			}
 
 			contract = models.RentalContract{
-				RoomID:     room.ID,
-				BuildingID: room.BuildingID,
-				TenantID:   tenant.ID,
-				RentPrice:  req.RentPrice,
-				Deposit:    req.Deposit,
-				StartDate:  req.StartDate,
-				EndDate:    req.EndDate,
-				Status:     "active",
+				RoomID:        room.ID,
+				BuildingID:    room.BuildingID,
+				TenantID:      tenant.ID,
+				RentPrice:     req.RentPrice,
+				ManagementFee: *req.ManagementFee,
+				Deposit:       req.Deposit,
+				StartDate:     req.StartDate,
+				EndDate:       req.EndDate,
+				Status:        "active",
 			}
 			if err := tx.Create(&contract).Error; err != nil {
 				tx.Rollback()
@@ -911,6 +922,26 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 		return
 	}
 	utils.Success(c, gin.H{"contract": contract})
+}
+
+// GetRoomContracts 获取房间的历史合同列表（从新到旧）
+func (h *RoomHandler) GetRoomContracts(c *gin.Context) {
+	roomID := c.Param("id")
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+
+	contracts, err := h.RoomService.ListRoomContracts(uint(rid))
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "获取合同列表失败")
+		return
+	}
+	if contracts == nil {
+		contracts = []models.RentalContract{}
+	}
+	utils.Success(c, gin.H{"contracts": contracts})
 }
 
 // RenewContract 续租合同（延长租期或调整租金）

@@ -21,6 +21,10 @@
             <el-icon><Money /></el-icon>
             <span class="nav-text">财务管理</span>
           </el-menu-item>
+          <el-menu-item v-if="isBuildingAdmin" index="/landlord/contracts">
+            <el-icon><Document /></el-icon>
+            <span class="nav-text">合同查询</span>
+          </el-menu-item>
           <el-menu-item v-if="isBuildingAdmin && isFullPackage" index="/landlord/dividends">
             <el-icon><Coin /></el-icon>
             <span class="nav-text">分红管理</span>
@@ -103,6 +107,14 @@
               :to="'/landlord/bills'"
               @click="showMobileMenu = false"
               :class="{ 'menu-active': $route.path.startsWith('/landlord/bills') }"
+            />
+            <van-cell
+              v-if="isBuildingAdmin"
+              title="合同查询"
+              icon="notes-o"
+              :to="'/landlord/contracts'"
+              @click="showMobileMenu = false"
+              :class="{ 'menu-active': $route.path.startsWith('/landlord/contracts') }"
             />
             <van-cell
               v-if="isBuildingAdmin && isFullPackage"
@@ -230,11 +242,13 @@ onMounted(() => {
   }
   await fetchPendingTaskCount()
   taskPollTimer = setInterval(fetchPendingTaskCount, 30000)
+  window.addEventListener('tasks-changed', fetchPendingTaskCount)
   })()
 })
 
 onUnmounted(() => {
   if (taskPollTimer) clearInterval(taskPollTimer)
+  window.removeEventListener('tasks-changed', fetchPendingTaskCount)
 })
 </script>
 

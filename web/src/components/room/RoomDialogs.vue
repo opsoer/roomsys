@@ -350,6 +350,7 @@ async function handleConfirmSign() {
     await buildingUpdateRoomStatus(props.roomId, { status: 'rented', ...signForm.value })
     ElMessage.success('已确认签约')
     showConfirmSignDialog.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
     signSubmitting.value = false
@@ -364,6 +365,7 @@ async function handleCancelReserve() {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
     ElMessage.success('已取消预订')
     showCancelReserveDialog.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
     cancelSubmitting.value = false

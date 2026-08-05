@@ -134,6 +134,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.DELETE("/rooms/:id", roomH.Delete)
 		building.PUT("/rooms/:id/status", roomH.UpdateStatus)
 		building.GET("/rooms/:id/contract", roomH.GetActiveContract)
+		building.GET("/rooms/:id/contracts", roomH.GetRoomContracts)
 		building.PUT("/rooms/:id/contract", roomH.RenewContract)
 		building.POST("/rooms/:id/prepay", roomH.PrepayContract)
 

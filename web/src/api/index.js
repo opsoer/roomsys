@@ -166,6 +166,10 @@ export function buildingGetRoom(id) {
   return api.get(`/building/rooms/${id}`)
 }
 
+export function buildingGetRoomContracts(id) {
+  return api.get(`/building/rooms/${id}/contracts`)
+}
+
 export function buildingUpdateRoom(id, data) {
   return api.put(`/building/rooms/${id}`, data)
 }

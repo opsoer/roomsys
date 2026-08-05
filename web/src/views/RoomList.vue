@@ -61,7 +61,7 @@
           </p>
           <div class="room-card-price-row" v-if="room.rent_price || room.deposit_months != null">
             <span v-if="room.rent_price" class="room-card-price">¥{{ room.rent_price }}/月</span>
-            <span v-if="room.management_fee != null" class="room-card-mgmt">{{ room.management_fee ? '管理费¥' + room.management_fee + '/月' : '无管理费' }}</span>
+            <span v-if="mgmtFee(room) != null" class="room-card-mgmt">{{ mgmtFee(room) ? '管理费¥' + mgmtFee(room) + '/月' : '无管理费' }}</span>
             <span v-if="room.deposit_months != null" class="room-card-deposit">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
           </div>
           <p class="room-card-utilities" v-if="room.electricity_unit_price || room.water_unit_price">
@@ -183,6 +183,10 @@ async function fetchRooms() {
 function onRoomPageChange(page) {
   roomPage.value = page
   fetchRooms()
+}
+
+function mgmtFee(room) {
+  return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
 }
 
 async function handleAdd() {

@@ -150,6 +150,7 @@ async function handleProcessSubmit() {
     await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit })
     ElMessage.success('退租处理完成')
     showProcessDialog.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     await fetchTasks()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '处理失败')

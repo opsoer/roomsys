@@ -22,6 +22,7 @@
       <view class="info-row"><text class="il">起租</text><text class="iv">{{ currentContract.start_date }}</text></view>
       <view class="info-row"><text class="il">到期</text><text class="iv">{{ currentContract.end_date || '未设置' }}</text></view>
       <view class="info-row"><text class="il">月租金</text><text class="iv gold">¥{{ currentContract.rent_price?.toFixed(2) }}</text></view>
+      <view class="info-row"><text class="il">管理费</text><text class="iv">{{ currentContract.management_fee > 0 ? '¥' + currentContract.management_fee.toFixed(2) + '/月' : '无管理费' }}</text></view>
       <view class="info-row"><text class="il">押金</text><text class="iv warn">¥{{ currentContract.deposit?.toFixed(2) }}</text></view>
       <view v-if="room.status === 'reserved'" class="info-row"><text class="il">定金</text><text class="iv warn">¥{{ currentContract.earnest_money?.toFixed(2) }}</text></view>
     </view>
@@ -67,6 +68,7 @@
         <view class="form-group"><text class="form-label">租客姓名</text><input class="form-input" v-model="rentForm.tenant_name" /></view>
         <view class="form-group"><text class="form-label">联系电话</text><input class="form-input" v-model="rentForm.tenant_phone" /></view>
         <view class="form-group"><text class="form-label">月租金</text><input class="form-input" v-model="rentForm.rent_price" type="digit" /></view>
+        <view class="form-group"><text class="form-label">管理费</text><input class="form-input" v-model="rentForm.management_fee" type="digit" /></view>
         <view class="form-group"><text class="form-label">押金</text><input class="form-input" v-model="rentForm.deposit" type="digit" /></view>
         <view class="form-group"><text class="form-label">起租</text><picker mode="date" @change="e => rentForm.start_date = e.detail.value"><view class="picker-val">{{ rentForm.start_date || '选择日期' }}</view></picker></view>
         <view class="form-group"><text class="form-label">到期</text><picker mode="date" @change="e => rentForm.end_date = e.detail.value"><view class="picker-val">{{ rentForm.end_date || '选择日期' }}</view></picker></view>
@@ -196,7 +198,7 @@ const loading = ref(true)
 // Dialogs
 const showRentDialog = ref(false)
 const rentSubmitting = ref(false)
-const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, deposit: 0, start_date: '', end_date: '' })
+const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' })
 
 const showVacantDialog = ref(false)
 const vacateSubmitting = ref(false)
@@ -304,7 +306,7 @@ async function fetchRoom() {
   }
 }
 
-function openRentDialog() { rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, deposit: 0, start_date: '', end_date: '' }; showRentDialog.value = true }
+function openRentDialog() { rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' }; showRentDialog.value = true }
 function openVacantDialog() { vacateForm.value = { refunded_deposit: '' }; showVacantDialog.value = true }
 function openRenewDialog() { renewForm.value = { end_date: '', rent_price: currentContract.value?.rent_price || 0 }; showRenewDialog.value = true }
 function openEditDialog() { showEditDialog.value = true }
@@ -373,6 +375,10 @@ async function handleCancelReserve() {
 }
 
 async function handleRent() {
+  if (rentForm.value.management_fee === '' || rentForm.value.management_fee === null || rentForm.value.management_fee === undefined) {
+    uni.showToast({ title: '请填写管理费', icon: 'none' })
+    return
+  }
   rentSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(roomId.value, { status: 'rented', ...rentForm.value })

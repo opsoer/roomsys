@@ -214,7 +214,9 @@ func main() {
 
 	routes.Setup(r, db, cfg)
 	logger.Log.Info().Str("port", cfg.ServerPort).Msg("服务启动")
-	r.Run(":" + cfg.ServerPort)
+	if err := r.Run(":" + cfg.ServerPort); err != nil {
+		logger.Log.Fatal().Err(err).Msg("HTTP 服务启动失败（端口可能被占用）")
+	}
 }
 
 // requestLogger 返回 Gin 中间件，记录每个 HTTP 请求的方法、路径、状态码和耗时。

@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import 'element-plus/dist/index.css'
 import 'vant/lib/index.css'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowDown, Close, Coin, Delete, HomeFilled, List, Loading, Money, Picture, Plus, Search, Setting, User, VideoCamera } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, Close, Coin, Delete, Document, HomeFilled, List, Loading, Money, Picture, Plus, Search, Setting, User, VideoCamera } from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './style.css'
@@ -23,6 +23,7 @@ app.component('ArrowDown', ArrowDown)
 app.component('Close', Close)
 app.component('Coin', Coin)
 app.component('Delete', Delete)
+app.component('Document', Document)
 app.component('HomeFilled', HomeFilled)
 app.component('List', List)
 app.component('Loading', Loading)

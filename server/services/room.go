@@ -133,6 +133,19 @@ func (s *RoomService) GetReservedContract(roomID uint) (*models.RentalContract, 
 	return &contract, nil
 }
 
+// ListRoomContracts 获取房间的历史合同（含租客信息），从新到旧排列
+func (s *RoomService) ListRoomContracts(roomID uint) ([]models.RentalContract, error) {
+	var contracts []models.RentalContract
+	err := s.DB.Where("room_id = ? AND status IN ?", roomID, []string{"active", "ended"}).
+		Preload("Tenant").
+		Order("start_date DESC").
+		Find(&contracts).Error
+	if err != nil {
+		return nil, err
+	}
+	return contracts, nil
+}
+
 // GetActiveContractPublic 获取房间的活跃合同（公开，不含租客信息）
 func (s *RoomService) GetActiveContractPublic(roomID uint) (*models.RentalContract, error) {
 	var contract models.RentalContract

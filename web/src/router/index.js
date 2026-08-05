@@ -60,6 +60,7 @@ const routes = [
     children: [
       { path: 'rooms', name: 'LandlordRooms', component: () => import('../views/RoomList.vue') },
       { path: 'rooms/:id', name: 'LandlordRoomDetail', component: () => import('../views/RoomDetail.vue') },
+      { path: 'contracts', name: 'LandlordContracts', component: () => import('../views/ContractHistory.vue') },
       { path: 'bills', name: 'LandlordBills', component: () => import('../views/Bills.vue') },
       { path: 'dividends', name: 'LandlordDividends', component: () => import('../views/Dividends.vue') },
       { path: 'users', name: 'LandlordUsers', component: () => import('../views/UserManage.vue') },

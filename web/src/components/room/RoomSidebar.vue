@@ -47,6 +47,10 @@
         <span class="sidebar-val price-primary">{{ currentContract.rent_price?.toFixed(2) }} 元</span>
       </div>
       <div class="sidebar-row">
+        <span class="sidebar-label">管理费</span>
+        <span class="sidebar-val">{{ mgmtFeeLabel(currentContract.management_fee) }}</span>
+      </div>
+      <div class="sidebar-row">
         <span class="sidebar-label">押金</span>
         <span class="sidebar-val price-warn">{{ currentContract.deposit?.toFixed(2) }} 元</span>
       </div>
@@ -79,6 +83,10 @@
       <div class="sidebar-row">
         <span class="sidebar-label">月租金</span>
         <span class="sidebar-val price-primary">{{ futureReservation.rent_price?.toFixed(2) }} 元</span>
+      </div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">管理费</span>
+        <span class="sidebar-val">{{ mgmtFeeLabel(futureReservation.management_fee) }}</span>
       </div>
       <div class="sidebar-row">
         <span class="sidebar-label">押金</span>
@@ -184,6 +192,11 @@ const props = defineProps({
   futureReservation: { type: Object, default: null },
   isAdmin: { type: Boolean, default: false },
 })
+
+function mgmtFeeLabel(fee) {
+  if (fee != null && Number(fee) > 0) return Number(fee).toFixed(2) + ' 元/月'
+  return '无管理费'
+}
 
 const emit = defineEmits(['renew', 'rent', 'vacant', 'reserve', 'confirm-sign', 'cancel-reserve', 'upload-success'])
 

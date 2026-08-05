@@ -23,7 +23,7 @@ func NewBillService(db *gorm.DB) *BillService {
 // GetByID 根据ID获取账单
 func (s *BillService) GetByID(id uint) (*models.Bill, error) {
 	var bill models.Bill
-	err := s.DB.Preload("Room").First(&bill, id).Error
+	err := s.DB.Preload("Room", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).First(&bill, id).Error
 	return &bill, err
 }
 
@@ -57,7 +57,7 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}, page,
 		return nil, 0, err
 	}
 
-	err := query.Preload("Room").Order("bill_date DESC, id DESC").Offset((page - 1) * size).Limit(size).Find(&bills).Error
+	err := query.Preload("Room", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).Order("bill_date DESC, id DESC").Offset((page - 1) * size).Limit(size).Find(&bills).Error
 	return bills, total, err
 }
 
