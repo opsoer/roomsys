@@ -206,7 +206,7 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 	datePart := now.Format("20060102")
 	var count int64
 	tx.Model(&models.Bill{}).
-		Where("building_id = ? AND bill_no LIKE ?", buildingID, "B"+datePart+"%").
+		Where("bill_no LIKE ?", "B"+datePart+"%").
 		Count(&count)
 	billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
 

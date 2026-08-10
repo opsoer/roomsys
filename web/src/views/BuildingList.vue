@@ -126,10 +126,10 @@
           </div>
         </div>
 
-        <div v-if="buildings.length < total" style="text-align: center; padding: 12px">
-          <van-button :loading="loadingMore" size="small" plain @click="loadMore">加载更多</van-button>
+        <div v-if="buildings.length < total" class="load-more-wrap">
+          <van-button :loading="loadingMore" plain round @click="loadMore">加载更多</van-button>
         </div>
-        <div v-if="total > 0" style="text-align: center; padding: 0 12px 12px; font-size: 12px; color: #999">
+        <div v-if="total > 0" class="load-more-count">
           共 {{ total }} 栋，已显示 {{ buildings.length }} 栋
         </div>
       </div>
@@ -380,6 +380,18 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+.load-more-wrap {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 12px 0;
+}
+.load-more-count {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 0 12px 12px;
+  font-size: 12px;
+  color: #999;
 }
 .building-card {
   background: #fff;

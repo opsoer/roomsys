@@ -201,14 +201,14 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	}, nil
 }
 
-// GenerateBillNo 生成唯一账单编号
+// GenerateBillNo 生成唯一账单编号（按日全局递增，避免跨楼栋同日重复）
 func (s *BillService) GenerateBillNo(buildingID uint) (string, error) {
 	now := utils.Now()
 	datePart := now.Format("20060102")
 
 	var count int64
 	s.DB.Model(&models.Bill{}).
-		Where("building_id = ? AND bill_no LIKE ?", buildingID, fmt.Sprintf("B%s%%", datePart)).
+		Where("bill_no LIKE ?", fmt.Sprintf("B%s%%", datePart)).
 		Count(&count)
 
 	return fmt.Sprintf("B%s%05d", datePart, count+1), nil

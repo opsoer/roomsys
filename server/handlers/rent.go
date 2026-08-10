@@ -92,7 +92,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 		datePart := now.Format("20060102")
 		var count int64
 		db.Model(&models.Bill{}).
-			Where("building_id = ? AND bill_no LIKE ?", contract.BuildingID, "B"+datePart+"%").
+			Where("bill_no LIKE ?", "B"+datePart+"%").
 			Count(&count)
 		billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
 

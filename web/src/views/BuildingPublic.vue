@@ -131,10 +131,10 @@
       </div>
     </div>
 
-    <div v-if="rooms.length < totalRooms" style="text-align: center; padding: 12px">
-      <van-button :loading="loadingMore" size="small" plain @click="loadMore">加载更多</van-button>
+    <div v-if="rooms.length < totalRooms" class="load-more-wrap">
+      <van-button :loading="loadingMore" plain round @click="loadMore">加载更多</van-button>
     </div>
-    <div v-if="totalRooms > 0" style="text-align: center; padding: 0 12px 12px; font-size: 12px; color: #999">
+    <div v-if="totalRooms > 0" class="load-more-count">
       共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间
     </div>
     <div class="page-footer">
@@ -434,6 +434,18 @@ onMounted(async () => {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   padding: 8px 12px 12px;
+}
+.load-more-wrap {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 12px 0;
+}
+.load-more-count {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 0 12px 12px;
+  font-size: 12px;
+  color: #999;
 }
 .room-card {
   background: #fff;

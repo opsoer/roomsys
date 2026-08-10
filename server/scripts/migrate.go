@@ -30,16 +30,16 @@ func main() {
 
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
-	result := db.Where("username = ?", "admin").First(&admin)
+	result := db.Where("username = ?", "root").First(&admin)
 	if result.Error != nil {
-		password := "admin123"
+		password := "root"
 		hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		admin = models.User{
-			Username:     "admin",
+			Username:     "root",
 			PasswordHash: string(hash),
 			Role:         "super_admin",
 		}
 		db.Create(&admin)
-		fmt.Printf("已创建默认超级管理员: admin / %s\n", password)
+		fmt.Printf("已创建默认超级管理员: root / %s\n", password)
 	}
 }

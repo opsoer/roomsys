@@ -543,7 +543,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			datePart := now.Format("20060102")
 			var count int64
 			tx.Model(&models.Bill{}).
-				Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+				Where("bill_no LIKE ?", "B"+datePart+"%").
 				Count(&count)
 
 			if req.RentPrice > 0 {
@@ -673,7 +673,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			datePart := now.Format("20060102")
 			var count int64
 			tx.Model(&models.Bill{}).
-				Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+				Where("bill_no LIKE ?", "B"+datePart+"%").
 				Count(&count)
 
 			deducted := originalDeposit - *req.RefundedDeposit
@@ -854,7 +854,7 @@ func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *
 		datePart := now.Format("20060102")
 		var count int64
 		tx.Model(&models.Bill{}).
-			Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+			Where("bill_no LIKE ?", "B"+datePart+"%").
 			Count(&count)
 
 		bill := models.Bill{
@@ -1050,7 +1050,7 @@ func (h *RoomHandler) PrepayContract(c *gin.Context) {
 
 	var count int64
 	tx.Model(&models.Bill{}).
-		Where("building_id = ? AND bill_no LIKE ?", room.BuildingID, "B"+datePart+"%").
+		Where("bill_no LIKE ?", "B"+datePart+"%").
 		Count(&count)
 
 	if req.Deposit > 0 {

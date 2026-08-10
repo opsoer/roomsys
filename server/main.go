@@ -278,11 +278,11 @@ func resetDatabase(db *gorm.DB) {
 	logger.Log.Info().Msg("所有表已删除，等待 AutoMigrate 重建")
 }
 
-// seedAdmin 检查是否存在 admin 用户，如不存在则创建，否则重置密码。
+// seedAdmin 检查是否存在 root 用户，如不存在则创建，否则重置密码。
 func seedAdmin(db *gorm.DB) {
 	var admin models.User
-	result := db.Where("username = ?", "admin").First(&admin)
-	password := "admin123"
+	result := db.Where("username = ?", "root").First(&admin)
+	password := "root"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
@@ -291,7 +291,7 @@ func seedAdmin(db *gorm.DB) {
 
 	if result.Error != nil {
 		admin = models.User{
-			Username:     "admin",
+			Username:     "root",
 			PasswordHash: string(hash),
 			Role:         "super_admin",
 		}
@@ -299,13 +299,13 @@ func seedAdmin(db *gorm.DB) {
 			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
 			return
 		}
-		logger.Log.Info().Msg("已创建默认超级管理员: admin / admin")
+		logger.Log.Info().Msg("已创建默认超级管理员: root / root")
 	} else {
 		db.Model(&admin).Updates(map[string]interface{}{
 			"password_hash": string(hash),
 			"role":          "super_admin",
 		})
-		logger.Log.Info().Msg("已重置超级管理员密码: admin / admin")
+		logger.Log.Info().Msg("已重置超级管理员密码: root / root")
 	}
 }
 

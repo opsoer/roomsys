@@ -40,7 +40,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		public.POST("/auth/login", auth.Login)
 		public.POST("/auth/refresh", auth.RefreshToken)
 
-		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
+		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
@@ -76,7 +76,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	platform.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
-		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
+		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		platform.POST("/buildings", buildingH.Create)
 		platform.GET("/buildings", buildingH.List)
 		platform.PUT("/buildings/:id", buildingH.Update)
@@ -120,7 +120,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 
 		// 楼栋信息
-		buildingH := &handlers.BuildingHandler{DB: db, BuildingService: buildingSvc}
+		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		building.GET("/info", buildingH.MyBuilding)
 		building.PUT("/info", buildingH.UpdateMyBuilding)
 		building.GET("/stats", buildingH.MyStats)

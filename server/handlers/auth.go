@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -23,8 +24,15 @@ var rateLimitMu sync.Mutex
 // rateLimitData 存储按 IP 统计的登录尝试数据
 var rateLimitData = make(map[string]*rateLimitEntry)
 
-// maxLoginAttempts 单个 IP 在时间窗口内允许的最大登录尝试次数
-const maxLoginAttempts = 10
+// maxLoginAttempts 单个 IP 在时间窗口内允许的最大登录尝试次数（可用环境变量 LOGIN_RATE_LIMIT_PER_MIN 覆盖）
+var maxLoginAttempts = func() int {
+	if v := os.Getenv("LOGIN_RATE_LIMIT_PER_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 10
+}()
 
 // rateLimitWindow 登录频率统计的时间窗口（1 分钟）
 const rateLimitWindow = 1 * time.Minute

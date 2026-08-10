@@ -55,17 +55,17 @@ func main() {
 	fmt.Println("   完成")
 
 	fmt.Println("4. 创建默认超级管理员...")
-	password := "admin123"
+	password := "root"
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	admin := models.User{
-		Username:     "admin",
+		Username:     "root",
 		PasswordHash: string(hash),
 		Role:         "super_admin",
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		panic(err)
 	}
-	fmt.Printf("   超级管理员: admin / %s\n", password)
+	fmt.Printf("   超级管理员: root / %s\n", password)
 
 	fmt.Println("5. 清理媒体文件...")
 	mediaDir := cfg.UploadDir

@@ -3,6 +3,8 @@ package middleware
 
 import (
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +21,15 @@ var apiRateData = make(map[string]*apiRateEntry)
 // apiRateMu 保护 apiRateData 的并发安全
 var apiRateMu sync.Mutex
 
-// maxAPIRequests 单个 IP 每分钟允许的最大 API 请求数
-const maxAPIRequests = 60
+// maxAPIRequests 单个 IP 每分钟允许的最大 API 请求数（可用环境变量 RATE_LIMIT_PER_MIN 覆盖）
+var maxAPIRequests = func() int {
+	if v := os.Getenv("RATE_LIMIT_PER_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 60
+}()
 
 // apiRateWindow 频率统计的时间窗口（1 分钟）
 const apiRateWindow = 1 * time.Minute

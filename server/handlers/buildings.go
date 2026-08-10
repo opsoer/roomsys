@@ -4,8 +4,10 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -17,7 +19,8 @@ import (
 
 // BuildingHandler 公寓处理器，依赖数据库连接和公寓服务
 type BuildingHandler struct {
-	DB             *gorm.DB
+	DB              *gorm.DB
+	Cfg             *config.Config
 	BuildingService *services.BuildingService
 }
 
@@ -353,6 +356,27 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 
 	reservedRoomIDs := h.DB.Table("rental_contracts").Select("room_id").Where("status = ?", "reserved")
 	query := h.DB.Where("building_id = ? AND status NOT IN ? AND id NOT IN (?)", buildingID, []string{"reserved"}, reservedRoomIDs)
+
+	// 已登录且为该公寓的管理员（或超级管理员）可见全部房间；
+	// 未登录或其它公寓管理员仅可见「未出租」和「即将到期」的房间
+	canViewAll := false
+	authHeader := c.GetHeader("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		if claims, err := utils.ParseToken(strings.TrimPrefix(authHeader, "Bearer "), h.Cfg.JWTSecret); err == nil {
+			if claims.Role == "super_admin" || (claims.BuildingID > 0 && claims.BuildingID == uint(buildingID)) {
+				canViewAll = true
+			}
+		}
+	}
+	if !canViewAll {
+		today := utils.Now().Format("2006-01-02")
+		expiringBefore := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		query = query.Where(
+			"(status = ? OR (status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date >= ? AND end_date < ?)))",
+			"vacant", "rented", "active", today, expiringBefore,
+		)
+	}
+
 	if floor := c.Query("floor"); floor != "" {
 		query = query.Where("floor = ?", floor)
 	}
