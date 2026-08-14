@@ -25,15 +25,22 @@
       </el-tab-pane>
     </el-tabs>
 
-    <div v-if="billTotal > billPageSize" style="display: flex; justify-content: center; margin-top: 16px">
-      <el-pagination background layout="prev, pager, next" :total="billTotal" :page-size="billPageSize" :current-page="billPage" @current-change="onBillPageChange" />
+    <div v-if="billLoadingMore" style="text-align: center; padding: 16px; color: #999">
+      <el-icon class="is-loading"><Loading /></el-icon> 加载中...
     </div>
+    <div v-else-if="billTotal > 0 && bills.length >= billTotal" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+      已全部加载（共 {{ billTotal }} 条）
+    </div>
+    <div v-else-if="billTotal > 0" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+      共 {{ billTotal }} 条，已显示 {{ bills.length }} 条
+    </div>
+    <div ref="sentinel" style="height: 10px"></div>
     <BillDialog ref="billDialogRef" :all-rooms="allRooms" @save-success="handleSaveSuccess" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetBills, buildingGetRooms } from '../api'
 import { ElMessage } from 'element-plus'
 import BillList from '../components/bill/BillList.vue'
@@ -45,32 +52,64 @@ import BillDialog from '../components/bill/BillDialog.vue'
 const activeTab = ref('list')
 const bills = ref([])
 const billLoading = ref(false)
+const billLoadingMore = ref(false)
+const sentinel = ref(null)
+let observer = null
 const allRooms = ref([])
 const billListRef = ref(null)
 const billDialogRef = ref(null)
-const billPage = ref(1)
 const billTotal = ref(0)
 const billPageSize = 20
 
-async function fetchBills() {
-  billLoading.value = true
+async function fetchBills(append = false) {
+  if (!append) {
+    billLoading.value = true
+  } else {
+    billLoadingMore.value = true
+  }
   try {
     const params = billListRef.value?.getFilterParams() || {}
-    params.page = billPage.value
     params.page_size = billPageSize
+    if (append && bills.value.length > 0) {
+      params.last_id = bills.value[bills.value.length - 1].id
+      params.last_key = bills.value[bills.value.length - 1].bill_date
+    }
     const res = await buildingGetBills(params)
-    bills.value = res.data.bills
-    billTotal.value = res.data.total || 0
+    const data = res.data.bills || []
+    if (!append) billTotal.value = res.data.total || 0
+    if (append) {
+      bills.value = [...bills.value, ...data]
+    } else {
+      bills.value = data
+    }
   } catch {
     ElMessage.error('获取账单列表失败')
   } finally {
     billLoading.value = false
+    billLoadingMore.value = false
+    nextTick(setupInfiniteScroll)
   }
 }
 
-function onBillPageChange(page) {
-  billPage.value = page
-  fetchBills()
+function loadMore() {
+  fetchBills(true)
+}
+
+// 触底自动加载：sentinel 进入视口附近时加载下一页
+function setupInfiniteScroll() {
+  if (observer) observer.disconnect()
+  if (!sentinel.value) return
+  observer = new IntersectionObserver((entries) => {
+    if (
+      entries[0].isIntersecting &&
+      !billLoading.value &&
+      !billLoadingMore.value &&
+      bills.value.length < billTotal.value
+    ) {
+      loadMore()
+    }
+  }, { rootMargin: '200px 0px' })
+  observer.observe(sentinel.value)
 }
 
 function openAddDialog() {
@@ -97,5 +136,10 @@ onMounted(async () => {
   } catch {
     ElMessage.error('获取房间列表失败')
   }
+})
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect()
+  observer = null
 })
 </script>

@@ -44,8 +44,9 @@
           <div style="flex: 1; min-width: 240px;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
               <span style="font-size: 18px; font-weight: 600;">{{ b.name }}</span>
+              <el-tag v-if="b.status === 'hidden'" size="small" type="warning">不可见</el-tag>
               <el-tag v-if="b.status === 'active'" size="small" type="success">正常</el-tag>
-              <el-tag v-else size="small" type="danger">已到期</el-tag>
+              <el-tag v-else-if="b.status && b.status !== 'hidden'" size="small" type="danger">已到期</el-tag>
               <el-tag :type="b.package === 'full' ? 'primary' : 'info'" size="small" effect="plain">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</el-tag>
             </div>
             <div style="font-size: 13px; color: #555; line-height: 1.8;">
@@ -76,6 +77,13 @@
             <el-button size="small" @click="$emit('upgrade', b)">升级套餐</el-button>
             <el-button size="small" @click="$emit('copy-link', b)">复制登录链接</el-button>
             <el-button size="small" @click="$emit('create-admin', b)">创建管理员</el-button>
+            <el-popconfirm :title="b.status === 'hidden' ? '确定恢复该公寓可见？' : '设为不可见后，首页及所有房间将不再展示，确定？'" @confirm="$emit('toggle-visibility', b)">
+              <template #reference>
+                <el-button size="small" :type="b.status === 'hidden' ? 'success' : 'warning'" plain>
+                  {{ b.status === 'hidden' ? '恢复可见' : '设为不可见' }}
+                </el-button>
+              </template>
+            </el-popconfirm>
             <el-popconfirm title="确定删除?" @confirm="$emit('delete', b.id)">
               <template #reference>
                 <el-button size="small" type="danger">删除</el-button>
@@ -97,7 +105,7 @@ defineProps({
   loading: { type: Boolean, default: false },
 })
 
-defineEmits(['search', 'edit', 'upgrade', 'copy-link', 'create-admin', 'delete'])
+defineEmits(['search', 'edit', 'upgrade', 'copy-link', 'create-admin', 'delete', 'toggle-visibility'])
 
 const filterStatus = ref('')
 const keyword = ref('')

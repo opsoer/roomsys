@@ -1,5 +1,6 @@
 <template>
   <view class="page-admin-buildings">
+    <back-top />
     <view v-if="!auth.isLoggedIn" class="login-prompt">
       <text>请先登录</text>
       <button @click="uni.navigateTo({ url: '/pages/login/login' })">去登录</button>
@@ -23,6 +24,7 @@
         <view v-for="b in buildings" :key="b.id" class="building-card">
           <view class="card-top">
             <text class="card-name">{{ b.name }}</text>
+            <text v-if="b.status === 'hidden'" class="hidden-tag">不可见</text>
             <text :class="['pkg-tag', b.package === 'full' ? 'pkg-full' : 'pkg-basic']">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</text>
           </view>
           <view class="card-info">
@@ -35,10 +37,15 @@
             <button class="act-btn" @click="handleEdit(b)">编辑</button>
             <button class="act-btn" @click="handleUpgrade(b)">套餐</button>
             <button class="act-btn" @click="handleCreateAdmin(b)">创建管理员</button>
+            <button class="act-btn warn" @click="handleToggleVisibility(b)">{{ b.status === 'hidden' ? '恢复可见' : '设为不可见' }}</button>
             <button class="act-btn danger" @click="handleDelete(b.id)">删除</button>
           </view>
         </view>
       </view>
+
+      <view v-if="loadingMore" class="load-more-wrap"><text class="load-more-tips">加载中...</text></view>
+    <view v-else-if="total > 0 && buildings.length >= total" class="load-more-wrap"><text class="load-more-tips">已全部加载（共 {{ total }} 栋）</text></view>
+    <view v-else-if="total > 0" class="load-more-wrap"><text class="load-more-tips">共 {{ total }} 栋，已显示 {{ buildings.length }} 栋</text></view>
 
       <!-- 创建/编辑弹窗 -->
       <view v-if="showCreateDialog" class="overlay" @click="showCreateDialog = false">
@@ -71,12 +78,16 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { adminGetBuildings, adminCreateBuilding, adminUpdateBuilding, adminDeleteBuilding, adminCreateBuildingAdmin } from '../../api'
 import { auth } from '../../store/auth'
 import shenzhen from '../../utils/shenzhen'
 
 const buildings = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
+const total = ref(0)
+const PAGE_SIZE = 20
 const keyword = ref('')
 const showCreateDialog = ref(false)
 const editingId = ref(null)
@@ -91,19 +102,43 @@ const currentStreets = computed(() => {
 })
 const streetLabels = computed(() => currentStreets.value.map(s => s.label))
 
-async function fetchBuildings() {
-  loading.value = true
+async function fetchBuildings(append = false) {
+  if (!append) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   try {
-    const params = {}
+    const params = { page_size: PAGE_SIZE }
+    // 游标分页：加载更多时携带上一批最后一条的 id
+    if (append && buildings.value.length > 0) {
+      params.last_id = buildings.value[buildings.value.length - 1].id
+    }
     if (keyword.value) params.keyword = keyword.value
     const res = await adminGetBuildings(params)
-    buildings.value = res.data.buildings || []
+    const data = res.data.buildings || []
+    if (!append) total.value = res.data.total || 0
+    if (append) {
+      buildings.value = [...buildings.value, ...data]
+    } else {
+      buildings.value = data
+    }
   } catch {
     uni.showToast({ title: '获取失败', icon: 'none' })
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loading.value && !loadingMore.value && buildings.value.length < total.value) {
+    fetchBuildings(true)
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 function openCreate() {
   editingId.value = null
@@ -195,6 +230,24 @@ async function handleDelete(id) {
   })
 }
 
+function handleToggleVisibility(row) {
+  const target = row.status === 'hidden' ? 'active' : 'hidden'
+  uni.showModal({
+    title: target === 'hidden' ? '设为不可见' : '恢复可见',
+    content: target === 'hidden' ? '设为不可见后，首页及所有房间将不再展示，确定？' : '确定恢复该公寓可见？',
+    success: async (res) => {
+      if (!res.confirm) return
+      try {
+        await adminUpdateBuilding(row.id, { status: target })
+        uni.showToast({ title: '已更新', icon: 'success' })
+        await fetchBuildings()
+      } catch {
+        uni.showToast({ title: '操作失败', icon: 'none' })
+      }
+    }
+  })
+}
+
 onMounted(() => {
   if (auth.isLoggedIn) fetchBuildings()
 })
@@ -202,6 +255,8 @@ onMounted(() => {
 
 <style scoped>
 .page-admin-buildings { padding: 16px; min-height: 100vh; }
+.load-more-wrap { text-align: center; padding: 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
 .login-prompt { text-align: center; padding: 80px 0; color: #999; }
 .login-prompt button { margin-top: 12px; padding: 8px 24px; background: #1989fa; color: #fff; border: none; border-radius: 8px; }
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -214,6 +269,7 @@ onMounted(() => {
 .building-card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); }
 .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .card-name { font-size: 16px; font-weight: 600; color: #1a1a2e; }
+.hidden-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #e6a23c; color: #fff; margin-right: 6px; }
 .pkg-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; color: #fff; }
 .pkg-full { background: #409eff; }
 .pkg-basic { background: #909399; }
@@ -222,6 +278,7 @@ onMounted(() => {
 .card-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .act-btn { font-size: 12px; padding: 4px 12px; border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #333; }
 .act-btn.danger { color: #f56c6c; border-color: #f56c6c; }
+.act-btn.warn { color: #e6a23c; border-color: #e6a23c; }
 .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: flex-end; }
 .dialog-panel { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 20px; max-height: 80vh; }
 .dialog-title { font-size: 18px; font-weight: 700; color: #1a1a2e; display: block; margin-bottom: 16px; }

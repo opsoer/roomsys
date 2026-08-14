@@ -73,9 +73,16 @@
         </div>
       </div>
     </div>
-    <div v-if="roomTotal > roomPageSize" style="display: flex; justify-content: center; margin-top: 16px">
-      <el-pagination background layout="prev, pager, next" :total="roomTotal" :page-size="roomPageSize" :current-page="roomPage" @current-change="onRoomPageChange" />
+    <div v-if="loadingMore" style="text-align: center; padding: 16px; color: #999">
+      <el-icon class="is-loading"><Loading /></el-icon> 加载中...
     </div>
+    <div v-else-if="roomTotal > 0 && rooms.length >= roomTotal" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+      已全部加载（共 {{ roomTotal }} 间）
+    </div>
+    <div v-else-if="roomTotal > 0" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+      共 {{ roomTotal }} 间，已显示 {{ rooms.length }} 间
+    </div>
+    <div ref="sentinel" class="load-more-sentinel"></div>
 
     <el-dialog v-model="showAddDialog" title="添加房间" width="500px">
       <el-form ref="addFormRef" :model="addForm" label-width="90px">
@@ -141,7 +148,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetRooms, buildingCreateRoom } from '../api'
 import { ElMessage } from 'element-plus'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
@@ -152,6 +159,9 @@ const layoutOptions = LAYOUT_OPTIONS
 
 const rooms = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
+const sentinel = ref(null)
+let observer = null
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
@@ -159,30 +169,59 @@ const showAddDialog = ref(false)
 const submitting = ref(false)
 const addForm = ref({ room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null })
 const addFormRef = ref(null)
-const roomPage = ref(1)
 const roomTotal = ref(0)
 const roomPageSize = 20
 
-async function fetchRooms() {
-  loading.value = true
+async function fetchRooms(append = false) {
+  if (!append) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   try {
-    const params = { page: roomPage.value, page_size: roomPageSize }
+    const params = { page_size: roomPageSize }
+    if (append && rooms.value.length > 0) {
+      params.last_id = rooms.value[rooms.value.length - 1].id
+    }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
     if (layoutFilter.value) params.layout = layoutFilter.value
     const res = await buildingGetRooms(params)
-    rooms.value = res.data.rooms || []
-    roomTotal.value = res.data.total || 0
+    const data = res.data.rooms || []
+    if (!append) roomTotal.value = res.data.total || 0
+    if (append) {
+      rooms.value = [...rooms.value, ...data]
+    } else {
+      rooms.value = data
+    }
   } catch {
     ElMessage.error('获取房间列表失败')
   } finally {
     loading.value = false
+    loadingMore.value = false
+    nextTick(setupInfiniteScroll)
   }
 }
 
-function onRoomPageChange(page) {
-  roomPage.value = page
-  fetchRooms()
+function loadMore() {
+  fetchRooms(true)
+}
+
+// 触底自动加载：sentinel 进入视口附近时加载下一页
+function setupInfiniteScroll() {
+  if (observer) observer.disconnect()
+  if (!sentinel.value) return
+  observer = new IntersectionObserver((entries) => {
+    if (
+      entries[0].isIntersecting &&
+      !loading.value &&
+      !loadingMore.value &&
+      rooms.value.length < roomTotal.value
+    ) {
+      loadMore()
+    }
+  }, { rootMargin: '200px 0px' })
+  observer.observe(sentinel.value)
 }
 
 function mgmtFee(room) {
@@ -207,6 +246,10 @@ async function handleAdd() {
 }
 
 onMounted(fetchRooms)
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect()
+  observer = null
+})
 </script>
 
 <style scoped>
@@ -218,6 +261,7 @@ onMounted(fetchRooms)
 .skeleton-item { background: #fff; border-radius: 12px; overflow: hidden; }
 .empty-wrap { padding: 60px 0; }
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(270px,1fr)); gap: 24px; }
+.load-more-sentinel { grid-column: 1 / -1; height: 10px; }
 .room-card { background: #fff; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.35s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
 .room-card:hover { transform: translateY(-6px); box-shadow: 0 12px 32px rgba(0,0,0,0.12); }
 .room-card-image { position: relative; height: 200px; background: #e9ecef; overflow: hidden; }

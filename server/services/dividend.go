@@ -88,14 +88,27 @@ func (s *DividendService) Calculate(buildingID uint, month string) (map[string]i
 }
 
 // List 分页查询分红记录
-func (s *DividendService) List(buildingID uint, page, size int) ([]models.Dividend, int64, error) {
+// 双模式分页：lastID > 0 时走游标分页（按 settle_month + id 定位下一批），不再重查总数（total 返回 -1）
+func (s *DividendService) List(buildingID uint, page, lastID, size int, lastKey string) ([]models.Dividend, int64, error) {
 	var dividends []models.Dividend
 	query := s.DB.Where("building_id = ?", buildingID)
-	var total int64
-	if err := query.Model(&models.Dividend{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if lastID > 0 {
+		query = query.Where("(settle_month < ? OR (settle_month = ? AND id < ?))", lastKey, lastKey, lastID)
 	}
-	err := query.Preload("Shareholder").Order("settle_month DESC").Offset((page - 1) * size).Limit(size).Find(&dividends).Error
+	var total int64
+	if lastID == 0 {
+		if err := query.Model(&models.Dividend{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		total = -1
+	}
+	q := query.Preload("Shareholder").Order("settle_month DESC, id DESC")
+	if lastID > 0 {
+		err := q.Limit(size).Find(&dividends).Error
+		return dividends, total, err
+	}
+	err := q.Offset((page - 1) * size).Limit(size).Find(&dividends).Error
 	return dividends, total, err
 }
 

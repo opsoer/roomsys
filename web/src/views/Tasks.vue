@@ -3,7 +3,7 @@
     <h3 style="margin-bottom: 20px">代办事项</h3>
     <el-card>
       <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center">
-        <el-radio-group v-model="filterStatus" @change="currentPage=1;fetchTasks()">
+        <el-radio-group v-model="filterStatus" @change="fetchTasks()">
           <el-radio-button value="">全部</el-radio-button>
           <el-radio-button value="pending">待处理</el-radio-button>
           <el-radio-button value="completed">已完成</el-radio-button>
@@ -54,9 +54,16 @@
           </div>
         </div>
       </div>
-      <div v-if="total > pageSize" style="display: flex; justify-content: center; margin-top: 16px">
-        <el-pagination background layout="prev, pager, next" :total="total" :page-size="pageSize" :current-page="currentPage" @current-change="onPageChange" />
+      <div v-if="loadingMore" style="text-align: center; padding: 16px; color: #999">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载中...
       </div>
+      <div v-else-if="total > 0 && tasks.length >= total" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+        已全部加载（共 {{ total }} 条）
+      </div>
+      <div v-else-if="total > 0" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+        共 {{ total }} 条，已显示 {{ tasks.length }} 条
+      </div>
+      <div ref="sentinel" style="height: 10px"></div>
     </el-card>
 
     <el-dialog v-model="showProcessDialog" title="处理退租" width="420px">
@@ -93,14 +100,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetTasks, buildingProcessTask } from '../api'
 import { ElMessage } from 'element-plus'
 
 const tasks = ref([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const sentinel = ref(null)
+let observer = null
 const filterStatus = ref('pending')
-const currentPage = ref(1)
 const total = ref(0)
 const pageSize = 20
 
@@ -116,23 +125,55 @@ const deduction = computed(() => {
   return d > 0 ? d : 0
 })
 
-async function fetchTasks() {
-  loading.value = true
+async function fetchTasks(append = false) {
+  if (!append) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   try {
     const status = filterStatus.value || undefined
-    const res = await buildingGetTasks(status, currentPage.value, pageSize)
-    tasks.value = res.data.tasks
-    total.value = res.data.total || 0
+    const params = { page_size: pageSize }
+    if (append && tasks.value.length > 0) {
+      params.last_id = tasks.value[tasks.value.length - 1].id
+      params.last_key = tasks.value[tasks.value.length - 1].created_at
+    }
+    const res = await buildingGetTasks(status, params)
+    const data = res.data.tasks || []
+    if (!append) total.value = res.data.total || 0
+    if (append) {
+      tasks.value = [...tasks.value, ...data]
+    } else {
+      tasks.value = data
+    }
   } catch {
     ElMessage.error('获取任务列表失败')
   } finally {
     loading.value = false
+    loadingMore.value = false
+    nextTick(setupInfiniteScroll)
   }
 }
 
-function onPageChange(page) {
-  currentPage.value = page
-  fetchTasks()
+function loadMore() {
+  fetchTasks(true)
+}
+
+// 触底自动加载：sentinel 进入视口附近时加载下一页
+function setupInfiniteScroll() {
+  if (observer) observer.disconnect()
+  if (!sentinel.value) return
+  observer = new IntersectionObserver((entries) => {
+    if (
+      entries[0].isIntersecting &&
+      !loading.value &&
+      !loadingMore.value &&
+      tasks.value.length < total.value
+    ) {
+      loadMore()
+    }
+  }, { rootMargin: '200px 0px' })
+  observer.observe(sentinel.value)
 }
 
 function openProcessDialog(task) {
@@ -160,6 +201,11 @@ async function handleProcessSubmit() {
 }
 
 onMounted(fetchTasks)
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect()
+  observer = null
+})
 </script>
 
 <style scoped>

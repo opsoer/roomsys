@@ -12,6 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// BuildingStatusHidden 公寓不可见状态（超级管理员专用管理标记，公开接口不展示）
+const BuildingStatusHidden = "hidden"
+
 // BuildingService 楼栋服务
 type BuildingService struct {
 	DB *gorm.DB
@@ -39,6 +42,15 @@ func (s *BuildingService) GetByID(id uint) (*models.Building, error) {
 		return nil, err
 	}
 	return &building, nil
+}
+
+// IsVisible 判断公寓是否公开可见（未被超级管理员设为不可见）
+func (s *BuildingService) IsVisible(id uint) (bool, error) {
+	var building models.Building
+	if err := s.DB.Select("status").First(&building, id).Error; err != nil {
+		return false, err
+	}
+	return building.Status != BuildingStatusHidden, nil
 }
 
 // GetWithStats 获取楼栋详情及统计数据（房间数、空置数等）
@@ -85,9 +97,20 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 }
 
 // List 分页查询楼栋列表（支持状态、关键词、区域筛选）
-func (s *BuildingService) List(status, keyword, district, street, village string, page, size int) ([]BuildingWithStats, int64, error) {
+// includeHidden 为 false 时排除被超级管理员设为不可见（status=hidden）的公寓，用于公开端
+// 双模式分页：lastID > 0 时走游标分页（只返回 id 大于 lastID 的下一批，避免 OFFSET 深翻页变慢，且不再重查总数，total 返回 -1）；
+// lastID == 0 时保持原有 page/OFFSET 分页并统计 total（兼容未升级的客户端）
+func (s *BuildingService) List(status, keyword, district, street, village string, page, lastID, size int, includeHidden bool) ([]BuildingWithStats, int64, error) {
 	var buildings []models.Building
 	query := s.DB
+
+	if !includeHidden {
+		query = query.Where("status <> ?", BuildingStatusHidden)
+	}
+
+	if lastID > 0 {
+		query = query.Where("id > ?", lastID)
+	}
 
 	today := utils.Now().Format("2006-01-02")
 	thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
@@ -119,11 +142,21 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 	}
 
 	var total int64
-	if err := query.Model(&models.Building{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if lastID == 0 {
+		if err := query.Model(&models.Building{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		total = -1
 	}
 
-	if err := query.Offset((page - 1) * size).Limit(size).Find(&buildings).Error; err != nil {
+	q := query.Order("id ASC")
+	if lastID > 0 {
+		q = q.Limit(size)
+	} else {
+		q = q.Offset((page - 1) * size).Limit(size)
+	}
+	if err := q.Find(&buildings).Error; err != nil {
 		return nil, 0, err
 	}
 

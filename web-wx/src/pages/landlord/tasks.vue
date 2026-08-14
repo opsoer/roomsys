@@ -1,9 +1,9 @@
 <template>
   <view class="page-tasks">
     <view class="filter-tabs">
-      <text :class="['filter-tab', filterStatus === 'pending' ? 'active' : '']" @click="filterStatus='pending'; currentPage=1; fetchTasks()">待处理</text>
-      <text :class="['filter-tab', filterStatus === '' ? 'active' : '']" @click="filterStatus=''; currentPage=1; fetchTasks()">全部</text>
-      <text :class="['filter-tab', filterStatus === 'completed' ? 'active' : '']" @click="filterStatus='completed'; currentPage=1; fetchTasks()">已完成</text>
+      <text :class="['filter-tab', filterStatus === 'pending' ? 'active' : '']" @click="filterStatus='pending'; fetchTasks()">待处理</text>
+      <text :class="['filter-tab', filterStatus === '' ? 'active' : '']" @click="filterStatus=''; fetchTasks()">全部</text>
+      <text :class="['filter-tab', filterStatus === 'completed' ? 'active' : '']" @click="filterStatus='completed'; fetchTasks()">已完成</text>
     </view>
 
     <view v-if="loading" class="loading-wrap"><text>加载中...</text></view>
@@ -39,17 +39,21 @@
         </view>
       </view>
     </view>
+  <view v-if="total > 0 || loadingMore" class="load-more-wrap"><text :class="['load-more-tips', loadingMore ? 'loading' : '']">{{ loadingMore ? '加载中...' : (tasks.length >= total ? '已全部加载（共 ' + total + ' 条）' : '共 ' + total + ' 条，已显示 ' + tasks.length + ' 条') }}</text></view>
+
+    <back-top />
   </view>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { buildingGetTasks, buildingProcessTask } from '../../api'
 
 const tasks = ref([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const filterStatus = ref('pending')
-const currentPage = ref(1)
 const total = ref(0)
 const pageSize = 20
 
@@ -59,16 +63,43 @@ const processSubmitting = ref(false)
 const processForm = ref({ refunded_deposit: 0 })
 const originalDeposit = ref(0)
 
-async function fetchTasks() {
-  loading.value = true
+async function fetchTasks(append = false) {
+  if (!append) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   try {
     const status = filterStatus.value || undefined
-    const res = await buildingGetTasks(status, currentPage.value, pageSize)
-    tasks.value = res.data.tasks || []
-    total.value = res.data.total || 0
+    const params = { page_size: pageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id 和排序键（任务按创建时间倒序）
+    if (append && tasks.value.length > 0) {
+      params.last_id = tasks.value[tasks.value.length - 1].id
+      params.last_key = tasks.value[tasks.value.length - 1].created_at
+    }
+    const res = await buildingGetTasks(status, params)
+    const data = res.data.tasks || []
+    if (!append) total.value = res.data.total || 0
+    if (append) {
+      tasks.value = [...tasks.value, ...data]
+    } else {
+      tasks.value = data
+    }
   } catch { uni.showToast({ title: '获取任务失败', icon: 'none' }) }
-  finally { loading.value = false }
+  finally {
+    loading.value = false
+    loadingMore.value = false
+  }
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loading.value && !loadingMore.value && tasks.value.length < total.value) {
+    fetchTasks(true)
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 function openProcessDialog(task) {
   processingTask.value = task
@@ -95,6 +126,9 @@ onMounted(fetchTasks)
 
 <style scoped>
 .page-tasks { padding: 12px; min-height: 100vh; }
+.load-more-wrap { text-align: center; padding: 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
+.load-more-tips.loading { color: #1989fa; }
 .filter-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
 .filter-tab { padding: 6px 16px; border-radius: 20px; font-size: 13px; color: #666; background: #f0f0f0; }
 .filter-tab.active { background: #e6a23c; color: #fff; font-weight: 600; }

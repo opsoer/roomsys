@@ -51,7 +51,8 @@ func (s *RoomService) GetWithContract(id uint) (*models.Room, *models.RentalCont
 }
 
 // List 分页获取楼栋下的房间列表，支持楼层和户型筛选
-func (s *RoomService) List(buildingID uint, page, size int, floor, layout string) ([]models.Room, int64, error) {
+// 双模式分页：lastID > 0 时走游标分页（按 room_number + id 定位下一批），不再重查总数（total 返回 -1）
+func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layout, lastKey string) ([]models.Room, int64, error) {
 	var rooms []models.Room
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -62,12 +63,25 @@ func (s *RoomService) List(buildingID uint, page, size int, floor, layout string
 		query = query.Where("layout = ?", layout)
 	}
 
-	var total int64
-	if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if lastID > 0 {
+		query = query.Where("(room_number > ? OR (room_number = ? AND id > ?))", lastKey, lastKey, lastID)
 	}
 
-	err := query.Preload("Media").Order("room_number").Offset((page - 1) * size).Limit(size).Find(&rooms).Error
+	var total int64
+	if lastID == 0 {
+		if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		total = -1
+	}
+
+	q := query.Preload("Media").Order("room_number ASC, id ASC")
+	if lastID > 0 {
+		err := q.Limit(size).Find(&rooms).Error
+		return rooms, total, err
+	}
+	err := q.Offset((page - 1) * size).Limit(size).Find(&rooms).Error
 	return rooms, total, err
 }
 

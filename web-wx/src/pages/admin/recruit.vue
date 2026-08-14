@@ -1,5 +1,6 @@
 <template>
   <view class="page-recruit">
+    <back-top />
     <view class="header-row">
       <text class="page-title">招商管理</text>
       <text :class="['count-badge', pendingCount > 0 ? 'has-pending' : '']">{{ pendingCount > 0 ? pendingCount + ' 条待处理' : '全部已处理' }}</text>

@@ -1,5 +1,6 @@
 <template>
   <view class="page-users">
+    <back-top />
     <view class="header-row">
       <text class="page-title">管理员管理</text>
       <button class="add-btn" @click="openAddDialog">+ 添加管理员</button>

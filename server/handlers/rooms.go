@@ -106,6 +106,11 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
+	var buildingStatus string
+	if err := h.DB.Model(&models.Building{}).Where("id = ?", bid).Pluck("status", &buildingStatus).Error; err != nil || buildingStatus == services.BuildingStatusHidden {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return
+	}
 
 	type RoomDetail struct {
 		models.Room
@@ -147,6 +152,11 @@ func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
+	var buildingStatus string
+	if err := h.DB.Model(&models.Building{}).Where("id = ?", bid).Pluck("status", &buildingStatus).Error; err != nil || buildingStatus == services.BuildingStatusHidden {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return
+	}
 
 	contract, err := h.RoomService.GetActiveContractPublic(uint(rid))
 	if err != nil {
@@ -165,11 +175,13 @@ func (h *RoomHandler) List(c *gin.Context) {
 	}
 
 	page, size := utils.ParsePage(c)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	lastKey := c.Query("last_key")
 	floor := c.Query("floor")
 	layout := c.Query("layout")
 	requestedStatus := c.Query("status")
 
-	rooms, total, err := h.RoomService.List(bid, page, size, floor, layout)
+	rooms, total, err := h.RoomService.List(bid, page, lastID, size, floor, layout, lastKey)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")

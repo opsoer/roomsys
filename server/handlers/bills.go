@@ -90,7 +90,9 @@ func (h *BillHandler) List(c *gin.Context) {
 	}
 
 	page, size := utils.ParsePage(c)
-	bills, total, err := h.BillService.List(bid, params, page, size)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	lastKey := c.Query("last_key")
+	bills, total, err := h.BillService.List(bid, params, page, lastID, size, lastKey)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询账单列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询账单列表失败")
@@ -326,7 +328,7 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 		"end_date":   c.Query("end_date"),
 	}
 
-	bills, _, err := h.BillService.List(bid, params, 1, 100000)
+	bills, _, err := h.BillService.List(bid, params, 1, 0, 100000, "")
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("导出账单失败")
 		utils.Error(c, http.StatusInternalServerError, "导出失败")

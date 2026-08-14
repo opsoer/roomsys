@@ -1,5 +1,6 @@
 <template>
   <view class="page-room" v-if="room">
+    <back-top />
     <swiper v-if="allImages.length" class="room-swipe" :indicator-dots="true" indicator-color="rgba(255,255,255,0.4)" indicator-active-color="#fff" autoplay>
       <swiper-item v-for="(img, i) in allImages" :key="i">
         <image :src="mediaUrl(img)" mode="aspectFill" class="swipe-img" @click="previewImage(i)" />

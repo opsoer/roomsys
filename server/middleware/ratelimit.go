@@ -28,7 +28,7 @@ var maxAPIRequests = func() int {
 			return n
 		}
 	}
-	return 60
+	return 240
 }()
 
 // apiRateWindow 频率统计的时间窗口（1 分钟）
@@ -58,10 +58,11 @@ func init() {
 	}()
 }
 
-// RateLimitMiddleware API 限流中间件，每 IP 每分钟最多 60 次请求
+// RateLimitMiddleware API 限流中间件，每 IP 每分钟最多 maxAPIRequests 次请求
+// /assets/ 静态资源和 /api/media/ 图片视频文件不计入限流（媒体文件请求量大且为只读资源）
 func RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+		if strings.HasPrefix(c.Request.URL.Path, "/assets/") || strings.HasPrefix(c.Request.URL.Path, "/api/media/") {
 			c.Next()
 			return
 		}

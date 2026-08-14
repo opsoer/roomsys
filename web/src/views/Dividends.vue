@@ -83,9 +83,16 @@
           </el-table-column>
         </el-table>
       </div>
-      <div v-if="divTotal > divPageSize" style="display: flex; justify-content: center; margin-top: 16px">
-        <el-pagination background layout="prev, pager, next" :total="divTotal" :page-size="divPageSize" :current-page="divCurrentPage" @current-change="onDivPageChange" />
+      <div v-if="divLoadingMore" style="text-align: center; padding: 16px; color: #999">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载中...
       </div>
+      <div v-else-if="divTotal > 0 && dividends.length >= divTotal" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+        已全部加载（共 {{ divTotal }} 条）
+      </div>
+      <div v-else-if="divTotal > 0" style="text-align: center; padding: 16px; color: #999; font-size: 13px">
+        共 {{ divTotal }} 条，已显示 {{ dividends.length }} 条
+      </div>
+      <div ref="sentinel" style="height: 10px"></div>
       <div class="mobile-cards">
         <div v-for="d in dividends" :key="d.id" class="div-history-card">
           <div class="dhc-top">
@@ -125,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetDividends, buildingCalculateDividend, buildingGetShareholders, buildingCreateShareholder, buildingUpdateShareholder, buildingDeleteShareholder } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -138,9 +145,11 @@ const shSubmitting = ref(false)
 const shForm = ref({ name: '', share_ratio: 0 })
 const shFormRef = ref(null)
 const editingSHId = ref(null)
-const divCurrentPage = ref(1)
 const divTotal = ref(0)
 const divPageSize = 20
+const divLoadingMore = ref(false)
+const sentinel = ref(null)
+let observer = null
 
 async function handleCalculate() {
   if (!calcMonth.value) {
@@ -155,19 +164,48 @@ async function handleCalculate() {
   }
 }
 
-async function fetchDividends() {
+async function fetchDividends(append = false) {
+  if (append) divLoadingMore.value = true
   try {
-    const res = await buildingGetDividends(divCurrentPage.value, divPageSize)
-    dividends.value = res.data.dividends
-    divTotal.value = res.data.total || 0
+    const params = { page_size: divPageSize }
+    if (append && dividends.value.length > 0) {
+      params.last_id = dividends.value[dividends.value.length - 1].id
+      params.last_key = dividends.value[dividends.value.length - 1].settle_month
+    }
+    const res = await buildingGetDividends(params)
+    const data = res.data.dividends || []
+    if (!append) divTotal.value = res.data.total || 0
+    if (append) {
+      dividends.value = [...dividends.value, ...data]
+    } else {
+      dividends.value = data
+    }
   } catch {
     ElMessage.error('获取分红记录失败')
+  } finally {
+    divLoadingMore.value = false
+    nextTick(setupInfiniteScroll)
   }
 }
 
-function onDivPageChange(page) {
-  divCurrentPage.value = page
-  fetchDividends()
+function loadMore() {
+  fetchDividends(true)
+}
+
+// 触底自动加载：sentinel 进入视口附近时加载下一页
+function setupInfiniteScroll() {
+  if (observer) observer.disconnect()
+  if (!sentinel.value) return
+  observer = new IntersectionObserver((entries) => {
+    if (
+      entries[0].isIntersecting &&
+      !divLoadingMore.value &&
+      dividends.value.length < divTotal.value
+    ) {
+      loadMore()
+    }
+  }, { rootMargin: '200px 0px' })
+  observer.observe(sentinel.value)
 }
 
 async function fetchShareholders() {
@@ -224,6 +262,11 @@ async function handleDeleteSH(id) {
 onMounted(() => {
   fetchDividends()
   fetchShareholders()
+})
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect()
+  observer = null
 })
 </script>
 

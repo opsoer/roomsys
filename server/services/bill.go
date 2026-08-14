@@ -28,7 +28,8 @@ func (s *BillService) GetByID(id uint) (*models.Bill, error) {
 }
 
 // List 分页查询账单列表（支持按类型、日期、房间号筛选）
-func (s *BillService) List(buildingID uint, params map[string]interface{}, page, size int) ([]models.Bill, int64, error) {
+// 双模式分页：lastID > 0 时走游标分页（按 bill_date + id 定位下一批），不再重查总数（total 返回 -1）
+func (s *BillService) List(buildingID uint, params map[string]interface{}, page, lastID, size int, lastKey string) ([]models.Bill, int64, error) {
 	var bills []models.Bill
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -52,12 +53,25 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}, page,
 		}
 	}
 
-	var total int64
-	if err := query.Model(&models.Bill{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if lastID > 0 {
+		query = query.Where("(bill_date < ? OR (bill_date = ? AND id < ?))", lastKey, lastKey, lastID)
 	}
 
-	err := query.Preload("Room", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).Order("bill_date DESC, id DESC").Offset((page - 1) * size).Limit(size).Find(&bills).Error
+	var total int64
+	if lastID == 0 {
+		if err := query.Model(&models.Bill{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		total = -1
+	}
+
+	q := query.Preload("Room", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).Order("bill_date DESC, id DESC")
+	if lastID > 0 {
+		err := q.Limit(size).Find(&bills).Error
+		return bills, total, err
+	}
+	err := q.Offset((page - 1) * size).Limit(size).Find(&bills).Error
 	return bills, total, err
 }
 

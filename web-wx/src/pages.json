@@ -33,5 +33,11 @@
       {"pagePath": "pages/index/index", "text": "首页", "iconPath": "static/home.png", "selectedIconPath": "static/home-active.png"},
       {"pagePath": "pages/login/login", "text": "我的", "iconPath": "static/user.png", "selectedIconPath": "static/user-active.png"}
     ]
+  },
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^(back-top)": "@/components/$1/$1.vue"
+    }
   }
 }

@@ -1,5 +1,6 @@
 <template>
   <view class="page-settings">
+    <back-top />
     <text class="page-title">公寓设置</text>
 
     <view v-if="loading" class="loading-wrap"><text>加载中...</text></view>

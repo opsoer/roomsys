@@ -41,11 +41,9 @@
       </view>
     </view>
 
-    <view v-if="total > pageSize" class="pagination">
-      <button :disabled="page <= 1" @click="page--; fetchRooms()">上一页</button>
-      <text>{{ page }} / {{ Math.ceil(total / pageSize) }}</text>
-      <button :disabled="page >= Math.ceil(total / pageSize)" @click="page++; fetchRooms()">下一页</button>
-    </view>
+    <view v-if="loadingMore" class="load-more-wrap"><text class="load-more-tips">加载中...</text></view>
+    <view v-else-if="total > 0 && rooms.length >= total" class="load-more-wrap"><text class="load-more-tips">已全部加载（共 {{ total }} 间）</text></view>
+    <view v-else-if="total > 0" class="load-more-wrap"><text class="load-more-tips">共 {{ total }} 间，已显示 {{ rooms.length }} 间</text></view>
 
     <!-- Add Room Dialog -->
     <view v-if="showAddDialog" class="overlay" @click="showAddDialog = false">
@@ -89,18 +87,21 @@
         <view class="sheet-cancel" @click="filterOpen = false">取消</view>
       </view>
     </view>
+
+    <back-top />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { buildingGetRooms, buildingCreateRoom } from '../../api'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS, ROOM_STATUS_OPTIONS } from '../../utils/constants'
 import { mediaUrl, statusLabel } from '../../utils/format'
 
 const rooms = ref([])
 const loading = ref(true)
-const page = ref(1)
+const loadingMore = ref(false)
 const total = ref(0)
 const pageSize = 20
 const statusFilter = ref('')
@@ -131,7 +132,6 @@ function onFilterSelect(val) {
   if (filterType.value === 'status') statusFilter.value = val
   else floorFilter.value = val
   filterOpen.value = false
-  page.value = 1
   fetchRooms()
 }
 
@@ -141,21 +141,44 @@ function mgmtFee(room) {
   return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
 }
 
-async function fetchRooms() {
-  loading.value = true
+async function fetchRooms(append = false) {
+  if (!append) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   try {
-    const params = { page: page.value, page_size: pageSize }
+    const params = { page_size: pageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id
+    if (append && rooms.value.length > 0) {
+      params.last_id = rooms.value[rooms.value.length - 1].id
+    }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
     const res = await buildingGetRooms(params)
-    rooms.value = res.data.rooms || []
-    total.value = res.data.total || 0
+    const data = res.data.rooms || []
+    if (!append) total.value = res.data.total || 0
+    if (append) {
+      rooms.value = [...rooms.value, ...data]
+    } else {
+      rooms.value = data
+    }
   } catch {
     uni.showToast({ title: '获取房间列表失败', icon: 'none' })
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loading.value && !loadingMore.value && rooms.value.length < total.value) {
+    fetchRooms(true)
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 async function handleAdd() {
   if (!addForm.value.room_number || !addForm.value.floor || !addForm.value.layout) {
@@ -208,6 +231,8 @@ onMounted(fetchRooms)
 .rc-price-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .rc-mgmt { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; line-height: 18px; margin-top: 4px; }
 .rc-enddate { font-size: 11px; color: #e6a23c; display: block; margin-top: 4px; }
+.load-more-wrap { text-align: center; padding: 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 .pagination button { background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; padding: 6px 14px; font-size: 13px; }
 .pagination button[disabled] { opacity: 0.4; }

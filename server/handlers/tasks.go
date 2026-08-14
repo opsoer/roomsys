@@ -35,7 +35,9 @@ func (h *TaskHandler) List(c *gin.Context) {
 	}
 	status := c.Query("status")
 	page, size := utils.ParsePage(c)
-	tasks, total, err := h.TaskService.List(bid, status, page, size)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	lastKey := c.Query("last_key")
+	tasks, total, err := h.TaskService.List(bid, status, page, lastID, size, lastKey)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询任务列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询任务列表失败")

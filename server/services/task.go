@@ -18,7 +18,8 @@ func NewTaskService(db *gorm.DB) *TaskService {
 }
 
 // List 分页查询任务列表（支持按状态筛选）
-func (s *TaskService) List(buildingID uint, status string, page, size int) ([]models.Task, int64, error) {
+// 双模式分页：lastID > 0 时走游标分页（按 created_at + id 定位下一批），不再重查总数（total 返回 -1）
+func (s *TaskService) List(buildingID uint, status string, page, lastID, size int, lastKey string) ([]models.Task, int64, error) {
 	var tasks []models.Task
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -26,12 +27,25 @@ func (s *TaskService) List(buildingID uint, status string, page, size int) ([]mo
 		query = query.Where("status = ?", status)
 	}
 
-	var total int64
-	if err := query.Model(&models.Task{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if lastID > 0 {
+		query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", lastKey, lastKey, lastID)
 	}
 
-	err := query.Preload("Room").Order("created_at DESC").Offset((page - 1) * size).Limit(size).Find(&tasks).Error
+	var total int64
+	if lastID == 0 {
+		if err := query.Model(&models.Task{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		total = -1
+	}
+
+	q := query.Preload("Room").Order("created_at DESC, id DESC")
+	if lastID > 0 {
+		err := q.Limit(size).Find(&tasks).Error
+		return tasks, total, err
+	}
+	err := q.Offset((page - 1) * size).Limit(size).Find(&tasks).Error
 	return tasks, total, err
 }
 

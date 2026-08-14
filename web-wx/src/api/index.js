@@ -200,8 +200,9 @@ export function buildingGetBillStats(month, year) {
   return request('GET', '/building/bills/stats', null, { params })
 }
 
-export function buildingGetDividends(page = 1, pageSize = 20) {
-  return request('GET', '/building/dividends', null, { params: { page, page_size: pageSize } })
+export function buildingGetDividends(pageOrParams = 1, pageSize = 20) {
+  const params = typeof pageOrParams === 'object' ? pageOrParams : { page: pageOrParams, page_size: pageSize }
+  return request('GET', '/building/dividends', null, { params })
 }
 
 export function buildingCalculateDividend(month) {
@@ -224,8 +225,10 @@ export function buildingDeleteShareholder(id) {
   return request('DELETE', `/building/dividends/shareholders/${id}`)
 }
 
-export function buildingGetTasks(status, page = 1, pageSize = 20) {
-  return request('GET', '/building/tasks', null, { params: { status, page, page_size: pageSize } })
+export function buildingGetTasks(status, pageOrParams = 1, pageSize = 20) {
+  const merged = typeof pageOrParams === 'object' ? { ...pageOrParams } : { page: pageOrParams, page_size: pageSize }
+  if (status) merged.status = status
+  return request('GET', '/building/tasks', null, { params: merged })
 }
 
 export function buildingProcessTask(id, data) {

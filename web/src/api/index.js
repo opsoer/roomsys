@@ -227,8 +227,9 @@ export function buildingGetDividendPredict(params) {
   return api.get('/building/dividends/predict', { params })
 }
 
-export function buildingGetDividends(page = 1, pageSize = 20) {
-  return api.get('/building/dividends', { params: { page, page_size: pageSize } })
+export function buildingGetDividends(pageOrParams = 1, pageSize = 20) {
+  const params = typeof pageOrParams === 'object' ? pageOrParams : { page: pageOrParams, page_size: pageSize }
+  return api.get('/building/dividends', { params })
 }
 
 export function buildingCalculateDividend(month) {
@@ -251,8 +252,10 @@ export function buildingDeleteShareholder(id) {
   return api.delete(`/building/dividends/shareholders/${id}`)
 }
 
-export function buildingGetTasks(status, page = 1, pageSize = 20) {
-  return api.get('/building/tasks', { params: { status, page, page_size: pageSize } })
+export function buildingGetTasks(status, pageOrParams = 1, pageSize = 20) {
+  const merged = typeof pageOrParams === 'object' ? { ...pageOrParams } : { page: pageOrParams, page_size: pageSize }
+  if (status) merged.status = status
+  return api.get('/building/tasks', { params: merged })
 }
 
 export function buildingProcessTask(id, data) {

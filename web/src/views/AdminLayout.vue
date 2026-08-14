@@ -7,6 +7,7 @@
         <el-menu :default-active="$route.path" mode="horizontal" :ellipsis="false" class="header-menu" router>
           <el-menu-item index="/admin/buildings" class="menu-item-light">公寓管理</el-menu-item>
           <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
+          <el-menu-item index="/admin/test" class="menu-item-light">测试</el-menu-item>
           <el-menu-item index="/admin/recruit" class="menu-item-light">
             <span>招商</span>
             <span v-if="recruitCount" class="recruit-badge">{{ recruitCount }}</span>
@@ -33,6 +34,7 @@
       <div class="mobile-tabs">
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/stats' }]" @click="$router.push('/admin/stats')">数据看板</div>
+        <div :class="['mobile-tab', { active: $route.path === '/admin/test' }]" @click="$router.push('/admin/test')">测试</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/recruit' }]" @click="$router.push('/admin/recruit')">
           招商
           <span v-if="recruitCount" class="recruit-badge-mobile">{{ recruitCount }}</span>

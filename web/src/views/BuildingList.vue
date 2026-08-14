@@ -126,12 +126,16 @@
           </div>
         </div>
 
-        <div v-if="buildings.length < total" class="load-more-wrap">
-          <van-button :loading="loadingMore" plain round @click="loadMore">加载更多</van-button>
+        <div v-if="loadingMore" class="load-more-wrap">
+          <van-loading size="18" color="#1989fa">加载中...</van-loading>
         </div>
-        <div v-if="total > 0" class="load-more-count">
+        <div v-else-if="total > 0 && buildings.length >= total" class="load-more-count">
+          已全部加载（共 {{ total }} 栋）
+        </div>
+        <div v-else-if="total > 0" class="load-more-count">
           共 {{ total }} 栋，已显示 {{ buildings.length }} 栋
         </div>
+        <div ref="sentinel" class="load-more-sentinel"></div>
       </div>
 
       <div class="home-footer">
@@ -142,7 +146,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
@@ -164,10 +168,11 @@ const filterVillage = ref('')
 const stepDistrict = ref(null)
 const stepStreet = ref(null)
 const stepVillage = ref('')
-const currentPage = ref(1)
 const total = ref(0)
 const pageSize = 20
 const loadingMore = ref(false)
+const sentinel = ref(null)
+let observer = null
 
 const currentStreets = computed(() => {
   if (!stepDistrict.value) return []
@@ -213,18 +218,21 @@ function scrollToTop() {
 async function fetchBuildings(append = false) {
   if (!append) {
     loading.value = true
-    currentPage.value = 1
   } else {
     loadingMore.value = true
   }
   try {
-    const params = { page: currentPage.value, page_size: pageSize }
+    const params = { page_size: pageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id
+    if (append && buildings.value.length > 0) {
+      params.last_id = buildings.value[buildings.value.length - 1].id
+    }
     if (filterDistrict.value) params.district = filterDistrict.value
     if (filterStreet.value) params.street = filterStreet.value
     if (filterVillage.value) params.village = filterVillage.value
     const res = await getBuildings(params)
     const data = res.data.buildings || []
-    total.value = res.data.total || 0
+    if (!append) total.value = res.data.total || 0
     if (append) {
       buildings.value = [...buildings.value, ...data]
     } else {
@@ -235,12 +243,29 @@ async function fetchBuildings(append = false) {
   } finally {
     loading.value = false
     loadingMore.value = false
+    nextTick(setupInfiniteScroll)
   }
 }
 
 function loadMore() {
-  currentPage.value++
   fetchBuildings(true)
+}
+
+// 触底自动加载：sentinel 元素进入视口附近时加载下一页（类似小红书等 App 的滑动更新）
+function setupInfiniteScroll() {
+  if (observer) observer.disconnect()
+  if (!sentinel.value) return
+  observer = new IntersectionObserver((entries) => {
+    if (
+      entries[0].isIntersecting &&
+      !loading.value &&
+      !loadingMore.value &&
+      buildings.value.length < total.value
+    ) {
+      loadMore()
+    }
+  }, { rootMargin: '200px 0px' })
+  observer.observe(sentinel.value)
 }
 
 async function onRefresh() {
@@ -251,6 +276,11 @@ async function onRefresh() {
 
 onMounted(async () => {
   await fetchBuildings()
+})
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect()
+  observer = null
 })
 </script>
 
@@ -385,6 +415,10 @@ onMounted(async () => {
   grid-column: 1 / -1;
   text-align: center;
   padding: 12px 0;
+}
+.load-more-sentinel {
+  grid-column: 1 / -1;
+  height: 10px;
 }
 .load-more-count {
   grid-column: 1 / -1;

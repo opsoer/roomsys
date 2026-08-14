@@ -1,5 +1,6 @@
 <template>
   <view class="page-dividends">
+    <back-top />
     <view class="card-section">
       <text class="section-title">分红计算</text>
       <view class="calc-row">
@@ -37,6 +38,9 @@
         <view class="dh-detail">收入 {{ d.total_income?.toFixed(2) }} | 支出 {{ d.total_expense?.toFixed(2) }} | 净利 {{ d.net_profit?.toFixed(2) }}</view>
         <view class="dh-bottom"><text>股东：{{ d.shareholder?.name }}</text><text class="dh-time">{{ d.created_at }}</text></view>
       </view>
+      <view v-if="loadingMore || dividends.length > 0" class="load-more-wrap">
+        <text class="load-more-tips">{{ loadingMore ? '加载中...' : (total > 0 && dividends.length >= total ? '已全部加载（共 ' + total + ' 条）' : '共 ' + total + ' 条，已显示 ' + dividends.length + ' 条') }}</text>
+      </view>
     </view>
 
     <!-- Shareholder Dialog -->
@@ -56,11 +60,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { buildingGetDividends, buildingCalculateDividend, buildingGetShareholders, buildingCreateShareholder, buildingUpdateShareholder, buildingDeleteShareholder } from '../../api'
 
 const calcMonth = ref('')
 const preview = ref(null)
 const dividends = ref([])
+const loadingMore = ref(false)
+const total = ref(0)
 const shareholders = ref([])
 const showSHDialog = ref(false)
 const shSubmitting = ref(false)
@@ -75,12 +82,35 @@ async function handleCalculate() {
   } catch { uni.showToast({ title: '获取失败', icon: 'none' }) }
 }
 
-async function fetchDividends() {
+async function fetchDividends(append = false) {
+  if (append) loadingMore.value = true
   try {
-    const res = await buildingGetDividends()
-    dividends.value = res.data.dividends || []
+    const params = { page_size: 20 }
+    // 游标分页：加载更多时携带上一批最后一条的 id 和排序键（分红按结算月份倒序）
+    if (append && dividends.value.length > 0) {
+      params.last_id = dividends.value[dividends.value.length - 1].id
+      params.last_key = dividends.value[dividends.value.length - 1].settle_month
+    }
+    const res = await buildingGetDividends(params)
+    const data = res.data.dividends || []
+    if (!append) total.value = res.data.total || 0
+    if (append) {
+      dividends.value = [...dividends.value, ...data]
+    } else {
+      dividends.value = data
+    }
   } catch {}
+  finally { loadingMore.value = false }
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loadingMore.value && dividends.value.length < total.value) {
+    fetchDividends(true)
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 async function fetchShareholders() {
   try {
@@ -132,6 +162,8 @@ onMounted(() => { fetchDividends(); fetchShareholders() })
 
 <style scoped>
 .page-dividends { padding: 12px; min-height: 100vh; }
+.load-more-wrap { text-align: center; padding: 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
 .card-section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
 .section-title { font-size: 15px; font-weight: 600; color: #333; display: block; margin-bottom: 12px; }
 .calc-row { display: flex; gap: 10px; align-items: center; }

@@ -29,7 +29,9 @@ func (h *DividendHandler) List(c *gin.Context) {
 		return
 	}
 	page, size := utils.ParsePage(c)
-	dividends, total, err := h.DividendService.List(bid, page, size)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	lastKey := c.Query("last_key")
+	dividends, total, err := h.DividendService.List(bid, page, lastID, size, lastKey)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询分红记录失败")
 		utils.Error(c, http.StatusInternalServerError, "查询分红记录失败")

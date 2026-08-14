@@ -99,10 +99,15 @@
         </view>
       </view>
 
-      <view v-if="rooms.length < totalRooms" class="load-more-wrap">
-        <button class="load-more-btn" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中...' : '加载更多' }}</button>
+      <view v-if="loadingMore" class="load-more-wrap">
+        <text class="load-more-tips">加载中...</text>
       </view>
-      <view v-if="totalRooms > 0" class="count-hint">共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间</view>
+      <view v-else-if="totalRooms > 0 && rooms.length >= totalRooms" class="load-more-wrap">
+        <text class="load-more-tips">已全部加载（共 {{ totalRooms }} 间）</text>
+      </view>
+      <view v-else-if="totalRooms > 0" class="load-more-wrap">
+        <text class="load-more-tips">共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间</text>
+      </view>
     </template>
 
     <!-- ActionSheet 模拟 -->
@@ -121,11 +126,14 @@
     <view class="page-footer">
       <text>© 2026 圳好租</text>
     </view>
+
+    <back-top />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { getBuildingDetail, getBuildingRooms } from '../../api'
 import { mediaUrl, statusLabel, maskPhone } from '../../utils/format'
 import { auth } from '../../store/auth'
@@ -138,7 +146,6 @@ const loadError = ref(false)
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
-const currentPage = ref(1)
 const totalRooms = ref(0)
 const pageSize = 20
 const loadingMore = ref(false)
@@ -206,18 +213,22 @@ function navTo(url) {
 async function fetchRooms(append = false) {
   if (!append) {
     loading.value = true
-    currentPage.value = 1
   } else {
     loadingMore.value = true
   }
   try {
-    const params = { page: currentPage.value, page_size: pageSize }
+    const params = { page_size: pageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id 和排序键
+    if (append && rooms.value.length > 0) {
+      params.last_id = rooms.value[rooms.value.length - 1].id
+      params.last_key = rooms.value[rooms.value.length - 1].room_number
+    }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
     if (layoutFilter.value) params.layout = layoutFilter.value
     const res = await getBuildingRooms(id.value, params)
     const data = res.data.rooms || []
-    totalRooms.value = res.data.total || 0
+    if (!append) totalRooms.value = res.data.total || 0
     if (append) {
       rooms.value = [...rooms.value, ...data]
     } else {
@@ -232,9 +243,17 @@ async function fetchRooms(append = false) {
 }
 
 function loadMore() {
-  currentPage.value++
   fetchRooms(true)
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loading.value && !loadingMore.value && rooms.value.length < totalRooms.value) {
+    loadMore()
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 async function retryLoad() {
   loadError.value = false
@@ -332,8 +351,7 @@ onMounted(async () => {
 .rc-utilities { margin-top: 2px; font-size: 11px; color: #999; }
 .rc-enddate { margin-top: 4px; font-size: 11px; color: #e6a23c; font-weight: 500; display: block; }
 .load-more-wrap { text-align: center; padding: 12px; }
-.load-more-btn { font-size: 13px; color: #1989fa; background: none; border: 1px solid #1989fa; border-radius: 20px; padding: 6px 20px; }
-.count-hint { text-align: center; font-size: 12px; color: #999; padding: 0 12px 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
 .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: flex-end; }
 .sheet-panel { width: 100%; background: #fff; border-radius: 16px 16px 0 0; max-height: 60vh; }
 .sheet-list { padding: 8px 0; max-height: 50vh; }

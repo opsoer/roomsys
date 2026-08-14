@@ -1,5 +1,6 @@
 <template>
   <view class="stats-page">
+    <back-top />
     <text class="page-title">📊 数据看板</text>
 
     <view class="stats-cards">

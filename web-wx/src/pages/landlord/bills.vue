@@ -37,11 +37,9 @@
         </view>
       </view>
 
-      <view v-if="billTotal > billPageSize" class="pagination">
-        <button :disabled="billPage <= 1" @click="billPage--; fetchBills()">上一页</button>
-        <text>{{ billPage }} / {{ Math.ceil(billTotal / billPageSize) }}</text>
-        <button :disabled="billPage >= Math.ceil(billTotal / billPageSize)" @click="billPage++; fetchBills()">下一页</button>
-      </view>
+      <view v-if="billLoadingMore" class="load-more-wrap"><text class="load-more-tips">加载中...</text></view>
+      <view v-else-if="billTotal > 0 && bills.length >= billTotal" class="load-more-wrap"><text class="load-more-tips">已全部加载（共 {{ billTotal }} 条）</text></view>
+      <view v-else-if="billTotal > 0" class="load-more-wrap"><text class="load-more-tips">共 {{ billTotal }} 条，已显示 {{ bills.length }} 条</text></view>
     </view>
 
     <!-- 月度统计 -->
@@ -105,18 +103,21 @@
         </view>
       </scroll-view>
     </view>
+
+    <back-top />
   </view>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import { buildingGetBills, buildingGetBillStats, buildingCreateBill, buildingUpdateBill } from '../../api'
 import { SUBTYPE_INCOME, SUBTYPE_EXPENSE } from '../../utils/constants'
 
 const activeTab = ref('list')
 const bills = ref([])
 const billLoading = ref(false)
-const billPage = ref(1)
+const billLoadingMore = ref(false)
 const billTotal = ref(0)
 const billPageSize = 20
 
@@ -136,17 +137,43 @@ const billSubmitting = ref(false)
 const billForm = ref({ type: 'income', subtype: '', amount: 0, bill_date: '', description: '', _old_amount: 0 })
 const subtypeOptions = computed(() => billForm.value.type === 'income' ? SUBTYPE_INCOME : SUBTYPE_EXPENSE)
 
-async function fetchBills() {
-  billLoading.value = true
+async function fetchBills(append = false) {
+  if (!append) {
+    billLoading.value = true
+  } else {
+    billLoadingMore.value = true
+  }
   try {
-    const params = { page: billPage.value, page_size: billPageSize }
+    const params = { page_size: billPageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id 和排序键（账单按日期倒序）
+    if (append && bills.value.length > 0) {
+      params.last_id = bills.value[bills.value.length - 1].id
+      params.last_key = bills.value[bills.value.length - 1].bill_date
+    }
     if (filter.type) params.type = filter.type
     const res = await buildingGetBills(params)
-    bills.value = res.data.bills || []
-    billTotal.value = res.data.total || 0
+    const data = res.data.bills || []
+    if (!append) billTotal.value = res.data.total || 0
+    if (append) {
+      bills.value = [...bills.value, ...data]
+    } else {
+      bills.value = data
+    }
   } catch { uni.showToast({ title: '获取失败', icon: 'none' }) }
-  finally { billLoading.value = false }
+  finally {
+    billLoading.value = false
+    billLoadingMore.value = false
+  }
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!billLoading.value && !billLoadingMore.value && bills.value.length < billTotal.value) {
+    fetchBills(true)
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 async function fetchStats() {
   if (!statMonth.value) return
@@ -211,10 +238,8 @@ onMounted(fetchBills)
 .bc-amount.expense { color: #f56c6c; }
 .edit-btn { font-size: 12px; color: #1989fa; background: none; border: 1px solid #1989fa; border-radius: 4px; padding: 2px 10px; }
 .bc-desc { font-size: 12px; color: #999; margin-top: 6px; padding-top: 6px; border-top: 1px solid #f5f5f5; display: block; }
-.pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 16px; }
-.pagination button { background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; padding: 6px 14px; font-size: 13px; }
-.pagination button[disabled] { opacity: 0.4; }
-.pagination text { font-size: 13px; color: #666; }
+.load-more-wrap { text-align: center; padding: 12px; }
+.load-more-tips { font-size: 13px; color: #999; }
 .date-picker-bar { padding: 12px; }
 .picker-val2 { height: 40px; line-height: 40px; border: 1px solid #dcdfe6; border-radius: 8px; padding: 0 12px; font-size: 14px; background: #fff; display: inline-block; min-width: 140px; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 0 12px; margin-bottom: 12px; }

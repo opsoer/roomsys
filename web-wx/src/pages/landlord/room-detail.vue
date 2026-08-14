@@ -179,6 +179,8 @@
       </scroll-view>
     </view>
   </view>
+
+  <back-top />
 </template>
 
 <script setup>

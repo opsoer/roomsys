@@ -104,22 +104,27 @@
       </view>
     </view>
 
-    <view v-if="buildings.length < total" class="load-more-wrap">
-      <button class="load-more-btn" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中...' : '加载更多' }}</button>
+    <view v-if="loadingMore" class="load-more-wrap">
+      <text class="load-more-tips">加载中...</text>
     </view>
-    <view v-if="total > 0" class="load-more-info">
-      <text>共 {{ total }} 栋，已显示 {{ buildings.length }} 栋</text>
+    <view v-else-if="total > 0 && buildings.length >= total" class="load-more-wrap">
+      <text class="load-more-tips">已全部加载（共 {{ total }} 栋）</text>
+    </view>
+    <view v-else-if="total > 0" class="load-more-wrap">
+      <text class="load-more-tips">共 {{ total }} 栋，已显示 {{ buildings.length }} 栋</text>
     </view>
 
     <view class="page-footer">
       <text>© 2026 圳好租 · 深圳公寓租赁管理平台</text>
     </view>
+
+    <back-top />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { onPullDownRefresh } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import { getBuildings } from '../../api'
 import { mediaUrl, maskName, maskPhone } from '../../utils/format'
 import shenzhen from '../../utils/shenzhen'
@@ -133,7 +138,6 @@ const filterVillage = ref('')
 const stepDistrict = ref(null)
 const stepStreet = ref(null)
 const stepVillage = ref('')
-const currentPage = ref(1)
 const total = ref(0)
 const pageSize = 20
 const loadingMore = ref(false)
@@ -182,18 +186,21 @@ function navTo(url) {
 async function fetchBuildings(append = false) {
   if (!append) {
     loading.value = true
-    currentPage.value = 1
   } else {
     loadingMore.value = true
   }
   try {
-    const params = { page: currentPage.value, page_size: pageSize }
+    const params = { page_size: pageSize }
+    // 游标分页：加载更多时携带上一批最后一条的 id
+    if (append && buildings.value.length > 0) {
+      params.last_id = buildings.value[buildings.value.length - 1].id
+    }
     if (filterDistrict.value) params.district = filterDistrict.value
     if (filterStreet.value) params.street = filterStreet.value
     if (filterVillage.value) params.village = filterVillage.value
     const res = await getBuildings(params)
     const data = res.data.buildings || []
-    total.value = res.data.total || 0
+    if (!append) total.value = res.data.total || 0
     if (append) {
       buildings.value = [...buildings.value, ...data]
     } else {
@@ -209,9 +216,17 @@ async function fetchBuildings(append = false) {
 }
 
 function loadMore() {
-  currentPage.value++
   fetchBuildings(true)
 }
+
+// 触底自动加载：页面滚动到底部附近时加载下一页
+function onReachBottomLoad() {
+  if (!loading.value && !loadingMore.value && buildings.value.length < total.value) {
+    loadMore()
+  }
+}
+
+onReachBottom(onReachBottomLoad)
 
 onPullDownRefresh(() => {
   fetchBuildings()
@@ -313,6 +328,5 @@ onMounted(() => {
 .filter-col-item.active { color: #fff; background: #1989fa; font-weight: 600; }
 .all-item { color: #e6a23c; }
 .load-more-wrap { text-align: center; padding: 12px; }
-.load-more-btn { font-size: 13px; padding: 6px 24px; border: 1px solid #1989fa; color: #1989fa; border-radius: 20px; background: #fff; }
-.load-more-info { text-align: center; padding: 0 12px 12px; font-size: 12px; color: #999; }
+.load-more-tips { font-size: 13px; color: #999; }
 </style>

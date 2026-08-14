@@ -295,12 +295,13 @@ func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 	utils.SuccessWithMsg(c, "升级成功", nil)
 }
 
-// List 获取公寓列表，支持状态和关键词筛选（管理端）
+// List 获取公寓列表，支持状态和关键词筛选（管理端，包含不可见公寓）
 func (h *BuildingHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	keyword := c.Query("keyword")
 	page, size := utils.ParsePage(c)
-	buildings, total, err := h.BuildingService.List(status, keyword, "", "", "", page, size)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	buildings, total, err := h.BuildingService.List(status, keyword, "", "", "", page, lastID, size, true)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -309,13 +310,14 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
-// ListPublic 获取公寓列表（公开端），按地区筛选并记录访问
+// ListPublic 获取公寓列表（公开端，排除不可见公寓），按地区筛选并记录访问
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	page, size := utils.ParsePage(c)
 	district := c.Query("district")
 	street := c.Query("street")
 	village := c.Query("village")
-	buildings, total, err := h.BuildingService.List("", "", district, street, village, page, size)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	buildings, total, err := h.BuildingService.List("", "", district, street, village, page, lastID, size, false)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -331,6 +333,12 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 	buildingID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	visible, err := h.BuildingService.IsVisible(uint(buildingID))
+	if err != nil || !visible {
+		logger.Log.Warn().Str("id", id).Msg("获取公寓详情失败: 公寓不存在或不可见")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
 	building, err := h.BuildingService.GetWithStats(uint(buildingID))
@@ -351,11 +359,22 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
+	visible, err := h.BuildingService.IsVisible(uint(buildingID))
+	if err != nil || !visible {
+		logger.Log.Warn().Str("id", id).Msg("获取房间列表失败: 公寓不存在或不可见")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
 	requestedStatus := c.Query("status")
 	page, size := utils.ParsePage(c)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
 
 	reservedRoomIDs := h.DB.Table("rental_contracts").Select("room_id").Where("status = ?", "reserved")
 	query := h.DB.Where("building_id = ? AND status NOT IN ? AND id NOT IN (?)", buildingID, []string{"reserved"}, reservedRoomIDs)
+
+	if lastID > 0 {
+		query = query.Where("id > ?", lastID)
+	}
 
 	// 已登录且为该公寓的管理员（或超级管理员）可见全部房间；
 	// 未登录或其它公寓管理员仅可见「未出租」和「即将到期」的房间
@@ -385,17 +404,30 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	}
 
 	var total int64
-	if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间总数失败")
-		utils.Error(c, http.StatusInternalServerError, "查询失败")
-		return
+	if lastID == 0 {
+		if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间总数失败")
+			utils.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
+	} else {
+		total = -1
 	}
 
 	var rooms []models.Room
-	if err := query.Preload("Media").Offset((page - 1) * size).Limit(size).Find(&rooms).Error; err != nil {
-		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间列表失败")
-		utils.Error(c, http.StatusInternalServerError, "查询失败")
-		return
+	q := query.Preload("Media").Order("id ASC")
+	if lastID > 0 {
+		if err := q.Limit(size).Find(&rooms).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间列表失败")
+			utils.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
+	} else {
+		if err := q.Offset((page - 1) * size).Limit(size).Find(&rooms).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询房间列表失败")
+			utils.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
 	}
 
 	roomIDs := make([]uint, len(rooms))
