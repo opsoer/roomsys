@@ -21,7 +21,7 @@ func NewTaskService(db *gorm.DB) *TaskService {
 // 双模式分页：lastID > 0 时走游标分页（按 created_at + id 定位下一批），不再重查总数（total 返回 -1）
 func (s *TaskService) List(buildingID uint, status string, page, lastID, size int, lastKey string) ([]models.Task, int64, error) {
 	var tasks []models.Task
-	query := s.DB.Where("building_id = ?", buildingID)
+	query := s.DB.Where("building_id = ? AND scope = ?", buildingID, "building")
 
 	if status != "" {
 		query = query.Where("status = ?", status)

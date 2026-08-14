@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -127,6 +128,8 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "创建公寓失败")
 		return
 	}
+	// 写入入驻记录（入驻日期 → 首次到期日期）
+	h.BuildingService.RecordJoin(building.ID, building.ContractDate, building.ExpiredAt)
 	for _, l := range req.Landlords {
 		ll := models.BuildingLandlord{
 			BuildingID: building.ID,
@@ -532,6 +535,100 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 		return
 	}
 	utils.SuccessWithMsg(c, "更新成功", nil)
+}
+
+// Renew 公寓续约（超级管理员）：更新到期日期、恢复可见状态并完成相关待办
+func (h *BuildingHandler) Renew(c *gin.Context) {
+	id := c.Param("id")
+	buildingID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	var req struct {
+		ExpiredAt string `json:"expired_at"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	operator := c.GetString("username")
+	if operator == "" {
+		if uid, err := utils.GetUserID(c); err == nil {
+			operator = fmt.Sprintf("uid:%d", uid)
+		}
+	}
+	if err := h.BuildingService.Renew(uint(buildingID), req.ExpiredAt, operator); err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logger.Log.Info().Uint("building_id", uint(buildingID)).Str("expired_at", req.ExpiredAt).Msg("公寓续约成功")
+	utils.SuccessWithMsg(c, "续约成功，公寓已恢复展示", nil)
+}
+
+// Renewals 获取公寓入驻/续约历史（超级管理员）
+func (h *BuildingHandler) Renewals(c *gin.Context) {
+	id := c.Param("id")
+	buildingID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	if _, err := h.BuildingService.GetByID(uint(buildingID)); err != nil {
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+	records, err := h.BuildingService.ListRenewals(uint(buildingID))
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询入驻续约记录失败")
+		utils.Error(c, http.StatusInternalServerError, "查询记录失败")
+		return
+	}
+	utils.Success(c, gin.H{"records": records})
+}
+
+// RenewMy 公寓续约（当前房东管理员）：仅操作自己所属公寓
+func (h *BuildingHandler) RenewMy(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	var req struct {
+		ExpiredAt string `json:"expired_at"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	operator := c.GetString("username")
+	if operator == "" {
+		if uid, err := utils.GetUserID(c); err == nil {
+			operator = fmt.Sprintf("uid:%d", uid)
+		}
+	}
+	if err := h.BuildingService.Renew(bid, req.ExpiredAt, operator); err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logger.Log.Info().Uint("building_id", bid).Str("expired_at", req.ExpiredAt).Msg("房东续约成功")
+	utils.SuccessWithMsg(c, "续约成功，公寓已恢复展示", nil)
+}
+
+// RenewalsMy 获取当前房东管理员所属公寓的入驻/续约历史
+func (h *BuildingHandler) RenewalsMy(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	records, err := h.BuildingService.ListRenewals(bid)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询入驻续约记录失败")
+		utils.Error(c, http.StatusInternalServerError, "查询记录失败")
+		return
+	}
+	utils.Success(c, gin.H{"records": records})
 }
 
 // MyStats 获取当前管理员所属公寓的统计数据

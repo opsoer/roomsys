@@ -8,9 +8,9 @@
           <el-menu-item index="/admin/buildings" class="menu-item-light">公寓管理</el-menu-item>
           <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
           <el-menu-item index="/admin/test" class="menu-item-light">测试</el-menu-item>
-          <el-menu-item index="/admin/recruit" class="menu-item-light">
-            <span>招商</span>
-            <span v-if="recruitCount" class="recruit-badge">{{ recruitCount }}</span>
+          <el-menu-item index="/admin/tasks" class="menu-item-light">
+            <span>代办事项</span>
+            <span v-if="taskCount" class="recruit-badge">{{ taskCount }}</span>
           </el-menu-item>
         </el-menu>
         <div class="layout-user user-info">
@@ -35,9 +35,9 @@
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/stats' }]" @click="$router.push('/admin/stats')">数据看板</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/test' }]" @click="$router.push('/admin/test')">测试</div>
-        <div :class="['mobile-tab', { active: $route.path === '/admin/recruit' }]" @click="$router.push('/admin/recruit')">
-          招商
-          <span v-if="recruitCount" class="recruit-badge-mobile">{{ recruitCount }}</span>
+        <div :class="['mobile-tab', { active: $route.path === '/admin/tasks' }]" @click="$router.push('/admin/tasks')">
+          代办事项
+          <span v-if="taskCount" class="recruit-badge-mobile">{{ taskCount }}</span>
         </div>
       </div>
       <div class="mobile-body">
@@ -51,7 +51,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getUnprocessedRecruitCount } from '../api'
+import { adminGetPlatformTaskCount } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
 import MobileUserMenu from '../components/common/MobileUserMenu.vue'
@@ -61,22 +61,22 @@ const authStore = useAuthStore()
 const { isMobile } = useMobile()
 const username = ref(authStore.username)
 const showUserMenu = ref(false)
-const recruitCount = ref(0)
+const taskCount = ref(0)
 let timer = null
 
-async function fetchRecruitCount() {
+async function fetchTaskCount() {
   try {
-    const res = await getUnprocessedRecruitCount()
-    recruitCount.value = res.data.count || 0
+    const res = await adminGetPlatformTaskCount()
+    taskCount.value = res.data.count || 0
   } catch {
-    ElMessage.error('获取招商信息失败')
+    ElMessage.error('获取代办数量失败')
   }
 }
 
 onMounted(() => {
-  fetchRecruitCount()
+  fetchTaskCount()
   timer = setInterval(() => {
-    if (!document.hidden) fetchRecruitCount()
+    if (!document.hidden) fetchTaskCount()
   }, 30000)
 })
 

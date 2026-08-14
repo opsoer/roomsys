@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -18,6 +19,7 @@ import (
 type RecruitHandler struct {
 	DB             *gorm.DB
 	RecruitService *services.RecruitService
+	TaskService    *services.TaskService
 }
 
 // Submit 提交招募申请
@@ -39,6 +41,22 @@ func (h *RecruitHandler) Submit(c *gin.Context) {
 		logger.Log.Error().Err(err).Msg("创建招募提交记录失败")
 		utils.Error(c, http.StatusInternalServerError, "提交失败")
 		return
+	}
+	if h.TaskService != nil {
+		refID := sub.ID
+		task := models.Task{
+			Title:    "收到新的公寓招商申请",
+			Type:     "recruit",
+			Priority: "medium",
+			Status:   "pending",
+			Scope:    "platform",
+			RefID:    &refID,
+			Description: fmt.Sprintf("有意向的房东信息：地址「%s」，联系电话 %s。请尽快联系确认合作。",
+				req.Address, req.Phone),
+		}
+		if err := h.TaskService.Create(&task); err != nil {
+			logger.Log.Error().Err(err).Uint("recruit_id", sub.ID).Msg("创建招商待办失败")
+		}
 	}
 	utils.SuccessWithMsg(c, "提交成功，我们会尽快联系您", nil)
 }
@@ -62,6 +80,12 @@ func (h *RecruitHandler) Process(c *gin.Context) {
 		logger.Log.Error().Err(err).Str("id", id).Msg("处理招募记录失败")
 		utils.Error(c, http.StatusInternalServerError, "处理失败")
 		return
+	}
+	if h.TaskService != nil {
+		h.TaskService.DB.Model(&models.Task{}).
+			Where("scope = ? AND type = ? AND ref_id = ? AND status = ?",
+				"platform", "recruit", uint(recruitID), "pending").
+			Update("status", "completed")
 	}
 	utils.SuccessWithMsg(c, "已处理", nil)
 }

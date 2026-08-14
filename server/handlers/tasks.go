@@ -61,7 +61,7 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		return
 	}
 	task, err := h.TaskService.GetByID(uint(taskID))
-	if err != nil || task.BuildingID != bid {
+	if err != nil || task.BuildingID == nil || *task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("处理任务失败: 任务不存在")
 		utils.Error(c, http.StatusNotFound, "任务不存在")
 		return
@@ -162,7 +162,7 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 		return
 	}
 	task, err := h.TaskService.GetByID(uint(taskID))
-	if err != nil || task.BuildingID != bid {
+	if err != nil || task.BuildingID == nil || *task.BuildingID != bid {
 		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("完成任务失败: 任务不存在")
 		utils.Error(c, http.StatusNotFound, "任务不存在")
 		return
@@ -187,6 +187,12 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	taskID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "无效的任务ID")
+		return
+	}
+	task, err := h.TaskService.GetByID(uint(taskID))
+	if err != nil || task.BuildingID == nil || *task.BuildingID != bid {
+		logger.Log.Warn().Str("id", id).Uint("building_id", bid).Msg("删除任务失败: 任务不存在")
+		utils.Error(c, http.StatusNotFound, "任务不存在")
 		return
 	}
 	if err := h.TaskService.Delete(uint(taskID)); err != nil {

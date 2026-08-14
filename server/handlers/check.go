@@ -40,8 +40,9 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 			result := db.Where("room_id = ? AND type = ? AND status = ?",
 				contract.RoomID, "expired_room", "pending").First(&existingTask)
 			if result.Error == gorm.ErrRecordNotFound {
+				bid := contract.BuildingID
 				task := models.Task{
-					BuildingID: contract.BuildingID,
+					BuildingID: &bid,
 					Title:      "房间到期退租",
 					Type:       "expired_room",
 					Status:     "pending",
@@ -64,28 +65,87 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 	return result + "，" + overdueResult
 }
 
-// CheckExpiredBuildings 检查所有到期公寓，将已过期的状态更新为 expired。
+// CheckExpiredBuildings 检查所有公寓的到期情况（每天凌晨3点定时执行）：
+//   - 即将到期（30天内）：状态更新为 expiring，并为房东和超级管理员创建续约提醒待办
+//   - 已到期：状态更新为 hidden（自动不可见），并为房东和超级管理员创建到期待办
 func CheckExpiredBuildings(db *gorm.DB) string {
-	var buildings []models.Building
-	db.Where("status = ? AND expired_at IS NOT NULL AND expired_at != ''", "active").Find(&buildings)
 	now := utils.Now()
+	expireThreshold := now.AddDate(0, 0, 30)
+
+	logger.Log.Info().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("CheckExpiredBuildings: 开始执行")
+
+	var buildings []models.Building
+	db.Where("status IN ? AND expired_at IS NOT NULL AND expired_at != ''", []string{"active", "expiring"}).Find(&buildings)
+
+	expiringCount := 0
 	expiredCount := 0
 	for _, b := range buildings {
-		if expDate, err := time.Parse("2006-01-02", b.ExpiredAt); err == nil {
-			if now.After(expDate) {
-				db.Model(&b).Update("status", "expired")
-				expiredCount++
+		expDate, err := time.Parse("2006-01-02", b.ExpiredAt)
+		if err != nil {
+			continue
+		}
+		// 防止同一公寓在已到期后又重复创建"即将到期"待办
+		if now.After(expDate) {
+			if b.Status != "hidden" {
+				db.Model(&b).Update("status", "hidden")
 				logger.Log.Info().
 					Uint("building_id", b.ID).
 					Str("name", b.Name).
 					Str("expired_at", b.ExpiredAt).
-					Msg("公寓已到期，状态更新为 expired")
+					Msg("公寓已到期，状态更新为 hidden（不可见）")
 			}
+			createBuildingExpiryTasks(db, b, "building_expired",
+				"公寓「"+b.Name+"」已到期，请尽快续约",
+				"公寓已于 "+b.ExpiredAt+" 到期，系统已自动将其设为不可见状态，请及时续约")
+			expiredCount++
+		} else if !expDate.After(expireThreshold) {
+			if b.Status != "expiring" {
+				db.Model(&b).Update("status", "expiring")
+				logger.Log.Info().
+					Uint("building_id", b.ID).
+					Str("name", b.Name).
+					Str("expired_at", b.ExpiredAt).
+					Msg("公寓即将到期，状态更新为 expiring")
+			}
+			createBuildingExpiryTasks(db, b, "building_expiring",
+				"公寓「"+b.Name+"」即将到期，请及时续约",
+				"公寓将于 "+b.ExpiredAt+" 到期，请尽快续约以免到期后自动隐藏")
+			expiringCount++
 		}
 	}
-	result := fmt.Sprintf("公寓到期: %d 栋已到期", expiredCount)
-	logger.Log.Info().Int("count", expiredCount).Msg("到期公寓检查完成")
+
+	result := fmt.Sprintf("公寓到期: %d 栋已到期, %d 栋即将到期", expiredCount, expiringCount)
+	logger.Log.Info().Int("expired", expiredCount).Int("expiring", expiringCount).Msg("到期公寓检查完成")
 	return result
+}
+
+// createBuildingExpiryTasks 为公寓到期/即将到期创建待办（房东后台 + 超级管理员各一条，幂等）
+func createBuildingExpiryTasks(db *gorm.DB, b models.Building, taskType, title, description string) {
+	bid := b.ID
+	for _, scope := range []string{"building", "platform"} {
+		var existing models.Task
+		result := db.Where("building_id = ? AND type = ? AND scope = ? AND status = ?",
+			b.ID, taskType, scope, "pending").First(&existing)
+		if result.Error != gorm.ErrRecordNotFound {
+			continue
+		}
+		task := models.Task{
+			BuildingID:  &bid,
+			Title:       title,
+			Type:        taskType,
+			Priority:    "high",
+			Status:      "pending",
+			Scope:       scope,
+			DueDate:     b.ExpiredAt,
+			Description: description,
+		}
+		db.Create(&task)
+		logger.Log.Info().
+			Uint("building_id", b.ID).
+			Str("type", taskType).
+			Str("scope", scope).
+			Msg("创建公寓到期提醒待办")
+	}
 }
 
 // AutoCleanupData 清理超过90天的软删除数据和 page_views 记录。
@@ -129,8 +189,9 @@ func AutoCheckOverdueReservations(db *gorm.DB) string {
 		result := db.Where("room_id = ? AND type = ? AND status = ?",
 			contract.RoomID, "reserved_overdue", "pending").First(&existingTask)
 		if result.Error == gorm.ErrRecordNotFound {
+			bid := contract.BuildingID
 			task := models.Task{
-				BuildingID:  contract.BuildingID,
+				BuildingID:  &bid,
 				Title:       contract.Room.RoomNumber + " 定金预订已到入住日，请确认签约或处理",
 				Type:        "reserved_overdue",
 				Status:      "pending",

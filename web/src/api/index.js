@@ -121,6 +121,22 @@ export function adminUpgradePackage(id, data) {
   return api.put(`/admin/buildings/${id}/package`, data)
 }
 
+export function adminRenewBuilding(id, data) {
+  return api.post(`/admin/buildings/${id}/renew`, data)
+}
+
+export function adminGetBuildingRenewals(id) {
+  return api.get(`/admin/buildings/${id}/renewals`)
+}
+
+export function buildingRenew(data) {
+  return api.put('/building/renew', data)
+}
+
+export function buildingGetRenewals() {
+  return api.get('/building/renewals')
+}
+
 export function adminCreateBuildingAdmin(data) {
   return api.post('/admin/auth/create-building-admin', data)
 }
@@ -285,6 +301,21 @@ export function submitRecruit(data) {
 
 export function getUnprocessedRecruitCount() {
   return api.get('/admin/recruit/unprocessed-count')
+}
+
+// ===== 平台待办（超级管理员）=====
+export function adminGetPlatformTasks(status = '', pageOrParams = 1, pageSize = 20) {
+  const merged = typeof pageOrParams === 'object' ? { ...pageOrParams } : { page: pageOrParams, page_size: pageSize }
+  if (status) merged.status = status
+  return api.get('/admin/tasks', { params: merged })
+}
+
+export function adminProcessPlatformTask(id) {
+  return api.post(`/admin/tasks/${id}/process`)
+}
+
+export function adminGetPlatformTaskCount() {
+  return api.get('/admin/tasks/count')
 }
 
 export function buildingUploadMedia(roomId, formData, onProgress) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"rental-server/models"
 	"rental-server/utils"
@@ -44,13 +45,108 @@ func (s *BuildingService) GetByID(id uint) (*models.Building, error) {
 	return &building, nil
 }
 
-// IsVisible 判断公寓是否公开可见（未被超级管理员设为不可见）
+// IsVisible 判断公寓是否公开可见（未被超级管理员设为不可见，且到期日未过）
 func (s *BuildingService) IsVisible(id uint) (bool, error) {
 	var building models.Building
-	if err := s.DB.Select("status").First(&building, id).Error; err != nil {
+	if err := s.DB.Select("status, expired_at").First(&building, id).Error; err != nil {
 		return false, err
 	}
-	return building.Status != BuildingStatusHidden, nil
+	if building.Status == BuildingStatusHidden {
+		return false, nil
+	}
+	if building.ExpiredAt != "" {
+		if t, err := time.Parse("2006-01-02", building.ExpiredAt); err == nil {
+			if utils.Now().After(t) {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+// Renew 公寓续约：更新新的到期日期、恢复状态为 active（若已到期/不可见），
+// 自动完成该公寓相关的到期/即将到期待办（房东端 + 平台端），并写入一条续约记录。
+// 新的到期日期不得早于今天。operator 为操作人（用户名为空表示系统）。
+func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) error {
+	if newExpiredAt == "" {
+		return fmt.Errorf("到期日期不能为空")
+	}
+	date, err := time.Parse("2006-01-02", newExpiredAt)
+	if err != nil {
+		return fmt.Errorf("到期日期格式无效")
+	}
+	today := time.Date(utils.Now().Year(), utils.Now().Month(), utils.Now().Day(), 0, 0, 0, 0, utils.Now().Location())
+	if date.Before(today) {
+		return fmt.Errorf("到期日期不能早于今天")
+	}
+
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		var building models.Building
+		if err := tx.First(&building, id).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Building{}).Where("id = ?", id).
+			Updates(map[string]interface{}{
+				"expired_at": newExpiredAt,
+				"status":     "active",
+			}).Error; err != nil {
+			return err
+		}
+		// 写入续约记录
+		renewal := models.BuildingRenewal{
+			BuildingID: id,
+			Action:     "renew",
+			FromDate:   building.ExpiredAt,
+			ToDate:     newExpiredAt,
+			Operator:   operator,
+			Note:       "续约" + newExpiredAt,
+		}
+		if err := tx.Create(&renewal).Error; err != nil {
+			return err
+		}
+		// 自动完成该公寓的到期类待办
+		return tx.Model(&models.Task{}).
+			Where("building_id = ? AND type IN ? AND status = ?",
+				id, []string{"building_expired", "building_expiring"}, "pending").
+			Update("status", "completed").Error
+	})
+}
+
+// ListRenewals 查询公寓入驻/续约历史（倒序）。
+// 若该公寓尚无任何记录（历史数据），自动补一条入驻记录（签约日期 → 当前到期日）。
+func (s *BuildingService) ListRenewals(id uint) ([]models.BuildingRenewal, error) {
+	var records []models.BuildingRenewal
+	if err := s.DB.Where("building_id = ?", id).
+		Order("created_at DESC, id DESC").
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		var building models.Building
+		if err := s.DB.Select("id, contract_date, expired_at").First(&building, id).Error; err == nil && building.ContractDate != "" {
+			initial := models.BuildingRenewal{
+				BuildingID: id,
+				Action:     "join",
+				FromDate:   building.ContractDate,
+				ToDate:     building.ExpiredAt,
+				Note:       "入驻签约" + building.ContractDate,
+			}
+			s.DB.Create(&initial)
+			records = append(records, initial)
+		}
+	}
+	return records, nil
+}
+
+// RecordJoin 写入公寓入驻记录（创建公寓时调用）
+func (s *BuildingService) RecordJoin(id uint, contractDate, expiredAt string) error {
+	return s.DB.Create(&models.BuildingRenewal{
+		BuildingID: id,
+		Action:     "join",
+		FromDate:   contractDate,
+		ToDate:     expiredAt,
+		Note:       "入驻签约" + contractDate,
+	}).Error
 }
 
 // GetWithStats 获取楼栋详情及统计数据（房间数、空置数等）
@@ -105,7 +201,11 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 	query := s.DB
 
 	if !includeHidden {
-		query = query.Where("status <> ?", BuildingStatusHidden)
+		// 公开端：不可见（hidden）与已到期（expired_at 已过）的公寓均不展示，
+		// 直接按日期过滤，不依赖定时任务是否已执行
+		today := utils.Now().Format("2006-01-02")
+		query = query.Where("status <> ?", BuildingStatusHidden).
+			Where("expired_at = '' OR expired_at IS NULL OR expired_at >= ?", today)
 	}
 
 	if lastID > 0 {

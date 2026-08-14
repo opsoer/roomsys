@@ -179,10 +179,11 @@ type Dividend struct {
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// Task 表示待办任务（维修、退租等）。
+// Task 表示待办任务（维修、退租、公寓到期提醒、招商申请等）。
+// Scope 区分公寓级（building，房东后台可见）与平台级（platform，超级管理员可见）。
 type Task struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
-	BuildingID  uint           `gorm:"index;not null" json:"building_id"`
+	BuildingID  *uint          `gorm:"index" json:"building_id"`
 	Title       string         `gorm:"size:200;not null" json:"title"`
 	Type        string         `gorm:"size:50;not null" json:"type"`
 	Priority    string         `gorm:"size:10;not null;default:'medium'" json:"priority"`
@@ -190,12 +191,15 @@ type Task struct {
 	AssignedTo  string         `gorm:"size:50" json:"assigned_to"`
 	DueDate     string         `gorm:"size:10" json:"due_date"`
 	RoomID      *uint          `gorm:"index;constraint:OnDelete:SET NULL" json:"room_id"`
+	Scope       string         `gorm:"size:20;not null;default:'building'" json:"scope"`
+	RefID       *uint          `gorm:"index" json:"ref_id"`
 	Deposit     float64        `gorm:"type:decimal(10,2)" json:"deposit"`
 	Description string         `gorm:"type:text" json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 	Room        Room           `gorm:"foreignKey:RoomID" json:"room,omitempty"`
+	Building    Building       `gorm:"foreignKey:BuildingID" json:"building,omitempty"`
 }
 
 // Setting 表示系统配置项（键值对）。
@@ -239,6 +243,21 @@ type PageView struct {
 	CreatedAt  time.Time `gorm:"index:idx_pv_query;index:idx_pv_cleanup" json:"created_at"`
 }
 
+// BuildingRenewal 公寓入驻/续约记录，类似租约历史：
+// join=入驻（记录签约日期与首次到期日），renew=续约（记录原到期日与新到期日）。
+type BuildingRenewal struct {
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	BuildingID uint           `gorm:"index;not null" json:"building_id"`
+	Action     string         `gorm:"size:20;not null" json:"action"`
+	FromDate   string         `gorm:"size:10" json:"from_date"`
+	ToDate     string         `gorm:"size:10" json:"to_date"`
+	Operator   string         `gorm:"size:50" json:"operator"`
+	Note       string         `gorm:"size:200" json:"note"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
 // AutoMigrate 自动创建或更新所有模型对应的数据库表。
 func AutoMigrate(db *gorm.DB) error {
 	// Room 的唯一索引改为普通索引（允许软删除后重建同号房间）
@@ -249,6 +268,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&User{},
 		&Building{},
 		&BuildingLandlord{},
+		&BuildingRenewal{},
 		&Room{},
 		&RoomMedia{},
 		&Tenant{},

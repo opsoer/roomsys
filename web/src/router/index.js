@@ -41,6 +41,11 @@ const routes = [
         component: () => import('../views/AdminBuildings.vue'),
       },
       {
+        path: 'tasks',
+        name: 'AdminTasks',
+        component: () => import('../views/PlatformTasks.vue'),
+      },
+      {
         path: 'recruit',
         name: 'AdminRecruit',
         component: () => import('../views/RecruitSettings.vue'),

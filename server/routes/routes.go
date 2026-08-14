@@ -49,7 +49,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
 		public.GET("/buildings/:id/rooms/:rid/contract", roomH.GetActiveContractPublic)
 
-		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc}
+		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		public.POST("/recruit/submit", recruitH.Submit)
 
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
@@ -82,6 +82,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.PUT("/buildings/:id", buildingH.Update)
 		platform.DELETE("/buildings/:id", buildingH.Delete)
 		platform.PUT("/buildings/:id/package", buildingH.UpgradePackage)
+		platform.POST("/buildings/:id/renew", buildingH.Renew)
+		platform.GET("/buildings/:id/renewals", buildingH.Renewals)
 
 		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		platform.POST("/auth/create-admin", authH.CreateAdmin)
@@ -95,10 +97,15 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.POST("/system/time", systemH.SetTime)
 		platform.POST("/system/run-tasks", systemH.RunTasks)
 
-		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc}
+		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)
 		platform.GET("/recruit/unprocessed-count", recruitH.UnprocessedCount)
+
+		platformTaskH := &handlers.PlatformTaskHandler{DB: db, TaskService: taskSvc, RecruitService: recruitSvc}
+		platform.GET("/tasks", platformTaskH.List)
+		platform.GET("/tasks/count", platformTaskH.Count)
+		platform.POST("/tasks/:id/process", platformTaskH.Process)
 
 		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/settings/:key", settingsH.Get)
@@ -123,6 +130,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		building.GET("/info", buildingH.MyBuilding)
 		building.PUT("/info", buildingH.UpdateMyBuilding)
+		building.PUT("/renew", buildingH.RenewMy)
+		building.GET("/renewals", buildingH.RenewalsMy)
 		building.GET("/stats", buildingH.MyStats)
 
 		// 房间管理

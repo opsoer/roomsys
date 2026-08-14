@@ -83,16 +83,19 @@ func main() {
 		}
 	}()
 
-	// 每6小时检查一次公寓到期
+	// 每天凌晨3点检查公寓到期（启动时先执行一次，保证到期公寓尽快置为不可见并生成提醒待办）
+	handlers.CheckExpiredBuildings(db)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("到期检查定时任务 panic，已恢复")
+				logger.Log.Error().Interface("panic", r).Msg("公寓到期检查定时任务 panic，已恢复")
 			}
 		}()
 		for {
+			now := utils.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+			time.Sleep(next.Sub(now))
 			handlers.CheckExpiredBuildings(db)
-			time.Sleep(6 * time.Hour)
 		}
 	}()
 

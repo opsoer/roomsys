@@ -135,8 +135,8 @@
       </template>
     </el-dialog>
 
-    <!-- 升级套餐弹窗 -->
-    <el-dialog v-model="showUpgrade" title="升级套餐" width="420px">
+    <!-- 修改套餐弹窗 -->
+    <el-dialog v-model="showUpgrade" title="修改套餐" width="420px">
       <p style="margin-bottom: 16px; color: #666;">为「{{ upgradeBuildingName }}」变更套餐</p>
       <el-form :model="upgradeForm" label-width="80px">
         <el-form-item label="目标套餐">
@@ -150,6 +150,78 @@
         <el-button @click="showUpgrade = false">取消</el-button>
         <el-button type="primary" :loading="upgradeSubmitting" @click="handleUpgrade">确定变更</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 续约弹窗 -->
+    <el-dialog v-model="showRenew" title="公寓续约" width="420px">
+      <p style="margin-bottom: 16px; color: #666;">为「{{ renewBuildingName }}」补录续约信息。</p>
+      <p style="margin-bottom: 12px; color: #999; font-size: 13px;">原到期日：{{ renewOldExpiredAt || '未设置' }}。原状态：{{ renewOldStatus }}</p>
+      <el-form :model="renewForm" label-width="80px">
+        <el-form-item label="新到期日" required>
+          <el-date-picker v-model="renewForm.expired_at" type="date" placeholder="选择新的到期日期"
+            :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRenew = false">取消</el-button>
+        <el-button type="primary" :loading="renewSubmitting" :disabled="!renewForm.expired_at" @click="handleRenew">
+          确认续约
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 租约记录弹窗 -->
+    <el-dialog v-model="showHistory" :title="`租约记录 · ${historyBuildingName}`" width="640px">
+      <p style="margin-bottom: 14px; color: #666; font-size: 13px;">
+        入驻、到期与续约完整记录。最新到期日期：<b>{{ latestExpiredAt || '—' }}</b>
+      </p>
+      <div class="desktop-table" v-loading="historyLoading">
+        <el-table :data="records" empty-text="暂无记录" size="small" style="width:100%">
+          <el-table-column label="类型" width="90">
+            <template #default="{ row }">
+              <el-tag :type="row.action === 'join' ? 'success' : 'warning'" size="small">
+                {{ row.action === 'join' ? '入驻' : '续约' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="原日期" width="110">
+            <template #default="{ row }">{{ row.from_date || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="新日期" width="110">
+            <template #default="{ row }">{{ row.to_date || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="note" label="备注" min-width="150" />
+          <el-table-column label="操作人" width="100">
+            <template #default="{ row }">{{ row.operator || '系统' }}</template>
+          </el-table-column>
+          <el-table-column label="时间" width="160">
+            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="mobile-cards" v-loading="historyLoading">
+        <div v-for="r in records" :key="r.id" class="history-card">
+          <div class="history-card-head">
+            <el-tag :type="r.action === 'join' ? 'success' : 'warning'" size="small" effect="dark">
+              {{ r.action === 'join' ? '入驻' : '续约' }}
+            </el-tag>
+            <span class="history-card-time">{{ formatTime(r.created_at) }}</span>
+          </div>
+          <div class="history-card-row">
+            <span class="hc-label">原日期</span><span class="hc-value">{{ r.from_date || '—' }}</span>
+          </div>
+          <div class="history-card-row">
+            <span class="hc-label">新日期</span><span class="hc-value">{{ r.to_date || '—' }}</span>
+          </div>
+          <div class="history-card-row">
+            <span class="hc-label">备注</span><span class="hc-value">{{ r.note || '—' }}</span>
+          </div>
+          <div class="history-card-row">
+            <span class="hc-label">操作人</span><span class="hc-value">{{ r.operator || '系统' }}</span>
+          </div>
+        </div>
+        <div v-if="!historyLoading && records.length === 0" class="empty-text">暂无记录</div>
+      </div>
     </el-dialog>
 
     <!-- 创建管理员弹窗 -->
@@ -174,7 +246,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage } from '../../api'
+import dayjs from 'dayjs'
+import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage, adminRenewBuilding, adminGetBuildingRenewals } from '../../api'
 import shenzhen from '../../utils/shenzhen'
 
 const emit = defineEmits(['save-success'])
@@ -189,6 +262,18 @@ const upgradeBuildingName = ref('')
 const upgradeBuildingId = ref(0)
 const upgradeForm = ref({ package: 'full' })
 const upgradeSubmitting = ref(false)
+const showRenew = ref(false)
+const renewBuildingName = ref('')
+const renewBuildingId = ref(0)
+const renewOldExpiredAt = ref('')
+const renewOldStatus = ref('')
+const renewForm = ref({ expired_at: '' })
+const renewSubmitting = ref(false)
+const showHistory = ref(false)
+const historyBuildingName = ref('')
+const historyBuildingExpiredAt = ref('')
+const records = ref([])
+const historyLoading = ref(false)
 const selectedBuildingName = ref('')
 const selectedBuildingId = ref(0)
 const adminSubmitting = ref(false)
@@ -259,6 +344,21 @@ function openUpgrade(row) {
   upgradeBuildingName.value = row.name
   upgradeForm.value = { package: row.package === 'full' ? 'basic' : 'full' }
   showUpgrade.value = true
+}
+
+function disablePastDate(date) {
+  return dayjs(date).isBefore(dayjs().startOf('day'))
+}
+
+function openRenew(row) {
+  renewBuildingId.value = row.id
+  renewBuildingName.value = row.name
+  renewOldExpiredAt.value = row.expired_at || ''
+  renewOldStatus.value = row.status === 'hidden' ? '不可见' : row.status === 'expired' ? '已到期' : '正常'
+  renewForm.value = {
+    expired_at: dayjs().add(1, 'year').format('YYYY-MM-DD'),
+  }
+  showRenew.value = true
 }
 
 function openCreateAdmin(row) {
@@ -349,6 +449,49 @@ async function handleUpgrade() {
   }
 }
 
+async function handleRenew() {
+  if (!renewForm.value.expired_at) {
+    ElMessage.warning('请选择新的到期日期')
+    return
+  }
+  renewSubmitting.value = true
+  try {
+    await adminRenewBuilding(renewBuildingId.value, { expired_at: renewForm.value.expired_at })
+    ElMessage.success('续约成功，公寓已恢复展示')
+    showRenew.value = false
+    emit('save-success')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '续约失败')
+  } finally {
+    renewSubmitting.value = false
+  }
+}
+
+async function openHistory(row) {
+  historyBuildingName.value = row.name
+  historyBuildingExpiredAt.value = row.expired_at || ''
+  showHistory.value = true
+  historyLoading.value = true
+  records.value = []
+  try {
+    const r = await adminGetBuildingRenewals(row.id)
+    records.value = r.data.records || []
+  } catch {
+    ElMessage.error('获取租约记录失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const latestExpiredAt = computed(() => {
+  return records.value.length > 0 ? records.value[0].to_date || '' : historyBuildingExpiredAt.value
+})
+
+function formatTime(t) {
+  if (!t) return '-'
+  return dayjs(t).format('YYYY-MM-DD HH:mm:ss')
+}
+
 async function handleCreateAdmin() {
   if (!adminForm.value.username || !adminForm.value.password) {
     ElMessage.warning('请填写完整')
@@ -369,5 +512,42 @@ async function handleCreateAdmin() {
   }
 }
 
-defineExpose({ openCreate, openEdit, openUpgrade, openCreateAdmin })
+defineExpose({ openCreate, openEdit, openUpgrade, openRenew, openHistory, openCreateAdmin })
 </script>
+
+<style scoped>
+.desktop-table { display: block; }
+.mobile-cards { display: none; }
+.history-card {
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.history-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.history-card-time { font-size: 12px; color: #bbb; }
+.history-card-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.hc-label { color: #999; flex-shrink: 0; width: 52px; }
+.hc-value { color: #333; word-break: break-all; }
+.empty-text {
+  text-align: center;
+  padding: 24px 0;
+  color: #999;
+  font-size: 13px;
+}
+@media (max-width: 768px) {
+  .desktop-table { display: none; }
+  .mobile-cards { display: block; }
+}
+</style>
