@@ -51,6 +51,7 @@
           <template v-if="loggedIn">
             <el-tag v-if="isBuildingAdmin" size="small" type="warning">管理员</el-tag>
             <span class="user-text">{{ username }}</span>
+            <el-button size="small" type="primary" plain @click="handleDownloadQr">下载二维码</el-button>
             <el-button size="small" @click="handleLogout">退出</el-button>
           </template>
         </div>
@@ -74,7 +75,10 @@
         <h2 class="mobile-title" @click="goToBuildingPage">
           🏠 {{ buildingName || '公寓管理' }}
         </h2>
-        <van-icon name="friends-o" size="20" @click="showUserMenu = !showUserMenu" />
+        <div style="display:flex;gap:8px;align-items:center;">
+          <el-button size="small" type="primary" plain @click="handleDownloadQr">二维码</el-button>
+          <van-icon name="friends-o" size="20" @click="showUserMenu = !showUserMenu" />
+        </div>
       </div>
       <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-body">
@@ -166,6 +170,22 @@
         </div>
       </van-overlay>
     </div>
+
+    <!-- 公寓二维码预览弹窗（面板 + 下载/复制） -->
+    <el-dialog v-model="buildingQrVisible" title="公寓二维码" width="380px" align-center>
+      <div style="text-align: center;">
+        <img v-if="buildingQrDataUrl" :src="buildingQrDataUrl" alt="公寓二维码"
+          style="width: 240px; border: 1px solid #f0f0f0; border-radius: 8px;" />
+        <el-icon v-else class="is-loading" style="font-size: 40px; color: #999"><Loading /></el-icon>
+        <div style="font-size: 13px; color: #999; margin-top: 12px; word-break: break-all;">
+          扫码访问公寓主页：<br />{{ buildingQrLink }}
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="copyBuildingQrLink">复制主页链接</el-button>
+        <el-button type="primary" @click="downloadBuildingQrCard">下载二维码</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -175,6 +195,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildingInfo, buildingGetTasks } from '../api'
+import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
 import MobileUserMenu from '../components/common/MobileUserMenu.vue'
@@ -185,6 +206,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const buildingName = ref('')
 const buildingPackage = ref('basic')
+const buildingInfo = ref({})
 const { isMobile } = useMobile()
 const pendingTaskCount = ref(0)
 let taskPollTimer = null
@@ -220,6 +242,47 @@ function goToBuildingPage() {
   }
 }
 
+const buildingQrVisible = ref(false)
+const buildingQrDataUrl = ref('')
+const buildingQrLink = ref('')
+
+async function handleDownloadQr() {
+  const bid = authStore.buildingId
+  if (!bid || bid === '0' || bid === 'null') {
+    ElMessage.info('当前账号未关联公寓')
+    return
+  }
+  buildingQrVisible.value = true
+  buildingQrDataUrl.value = ''
+  buildingQrLink.value = buildingHomeUrl(bid)
+  try {
+    buildingQrDataUrl.value = await generateBrandedQrDataUrl({
+      text: buildingQrLink.value,
+      title: buildingName.value || '公寓主页',
+      lines: buildingInfoLines(buildingInfo.value),
+    })
+  } catch {
+    ElMessage.error('二维码生成失败，请重试')
+  }
+}
+
+function copyBuildingQrLink() {
+  navigator.clipboard.writeText(buildingQrLink.value).then(() => {
+    ElMessage.success('已复制公寓主页链接')
+  }, () => {
+    ElMessage.error('复制失败，请手动复制')
+  })
+}
+
+function downloadBuildingQrCard() {
+  if (!buildingQrDataUrl.value) {
+    ElMessage.error('二维码尚未生成，请稍后重试')
+    return
+  }
+  downloadQrImage(buildingQrDataUrl.value, `公寓二维码_${buildingName.value || '公寓'}.png`)
+  ElMessage.success('二维码已下载')
+}
+
 onMounted(() => {
   ;(async () => {
   const bid = authStore.buildingId
@@ -235,8 +298,10 @@ onMounted(() => {
   }
   try {
     const res = await getBuildingInfo()
-    buildingName.value = res.data.building?.name || ''
-    buildingPackage.value = res.data.building?.package || 'basic'
+    const b = res.data.building || {}
+    buildingInfo.value = b
+    buildingName.value = b.name || ''
+    buildingPackage.value = b.package || 'basic'
   } catch {
     ElMessage.error('获取公寓信息失败')
   }

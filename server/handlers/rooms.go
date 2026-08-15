@@ -417,10 +417,21 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	var mediaPaths []string
+	var thumbPaths []string
+	h.DB.Table("room_media").Where("room_id = ?", rid).Pluck("file_path", &mediaPaths)
+	h.DB.Table("room_media").Where("room_id = ?", rid).Pluck("thumbnail_path", &thumbPaths)
+
 	if err := h.RoomService.Delete(uint(rid)); err != nil {
 		logger.Log.Error().Err(err).Msg("删除房间失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
+	}
+
+	for _, p := range append(mediaPaths, thumbPaths...) {
+		if p != "" {
+			deleteStoredFile(h.Cfg, p)
+		}
 	}
 
 	utils.SuccessWithMsg(c, "删除成功", nil)

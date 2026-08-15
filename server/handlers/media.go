@@ -253,18 +253,29 @@ func (h *MediaHandler) uploadAndProcess(fileData []byte, vf *validatedFile, key 
 	return int64(len(processed)), thumbKey, nil
 }
 
+// deleteStoredFile 从存储中删除文件（七牛云或本地），失败仅记录日志
+func deleteStoredFile(cfg *config.Config, key string) {
+	if key == "" {
+		return
+	}
+	if cfg.QiniuAccessKey != "" && cfg.QiniuBucket != "" {
+		mac := qiniuAuth.NewMac(cfg.QiniuAccessKey, cfg.QiniuSecretKey)
+		qcfg := storage.Config{Region: getZone(cfg.QiniuZone), UseHTTPS: cfg.QiniuUseHTTPS}
+		bucketMgr := storage.NewBucketManager(mac, &qcfg)
+		if err := bucketMgr.Delete(cfg.QiniuBucket, key); err != nil {
+			logger.Log.Warn().Err(err).Str("key", key).Msg("删除七牛文件失败")
+		}
+		return
+	}
+	absPath := filepath.Join(cfg.UploadDir, key)
+	if err := os.Remove(absPath); err != nil {
+		logger.Log.Warn().Err(err).Str("path", absPath).Msg("删除本地文件失败")
+	}
+}
+
 // deleteFile 从存储中删除文件（七牛云或本地）
 func (h *MediaHandler) deleteFile(key string) {
-	if h.useQiniu() {
-		if err := h.qiniuDelete(key); err != nil {
-			logger.Log.Warn().Err(err).Str("key", key).Msg("删除文件失败")
-		}
-	} else {
-		absPath := filepath.Join(h.Cfg.UploadDir, key)
-		if err := os.Remove(absPath); err != nil {
-			logger.Log.Warn().Err(err).Str("path", absPath).Msg("删除本地文件失败")
-		}
-	}
+	deleteStoredFile(h.Cfg, key)
 }
 
 // Upload 上传媒体文件到房间，支持图片压缩和视频上传

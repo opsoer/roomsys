@@ -269,6 +269,7 @@ func resetDatabase(db *gorm.DB) {
 		&models.RoomMedia{},
 		&models.Room{},
 		&models.BuildingLandlord{},
+		&models.BuildingRenewal{},
 		&models.Building{},
 		&models.User{},
 		&models.PageView{},

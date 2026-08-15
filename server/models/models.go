@@ -291,6 +291,7 @@ func CleanupSoftDeleted(db *gorm.DB, days int) error {
 		&User{}, &Building{}, &Room{}, &RoomMedia{},
 		&Tenant{}, &RentalContract{}, &Bill{},
 		&Shareholder{}, &Dividend{}, &Task{},
+		&BuildingRenewal{},
 	}
 	for _, table := range tables {
 		db.Unscoped().Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).Delete(table)

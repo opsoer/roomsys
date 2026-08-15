@@ -5,7 +5,7 @@
 //
 // 前置条件：
 //  1. 后端已运行，且已通过 ./scripts/seed 生成公寓/房间数据
-//  2. 楼栋管理员 admin001 ~ admin100 / admin123456 存在
+//  2. 楼栋管理员账号存在（用户名与密码均为公寓 id，如公寓 3 → 3 / 3）
 //
 // 运行方式（在 server 目录下）：go run ./scripts/seedmedia
 // 可选环境变量：SEED_BASE_URL（默认 http://127.0.0.1:8081）、SEED_TMP_DIR（下载缓存目录）
@@ -219,9 +219,10 @@ func main() {
 
 	var buildings []building
 	for _, b := range listData.Buildings {
-		token, err := login(fmt.Sprintf("admin%03d", b.ID), "admin123456")
+		username := fmt.Sprintf("%d", b.ID)
+		token, err := login(username, username)
 		if err != nil {
-			panic(fmt.Sprintf("楼栋管理员 admin%03d 登录失败：%v", b.ID, err))
+			panic(fmt.Sprintf("楼栋管理员 %s 登录失败：%v", username, err))
 		}
 		var rooms struct {
 			Rooms []struct {
@@ -326,10 +327,11 @@ func uploadImages(buildings []building, outDir string, uploaded *int64) {
 			token, ok := tokens[b.ID]
 			if !ok {
 				var err error
-				token, err = login(fmt.Sprintf("admin%03d", b.ID), "admin123456")
+				username := fmt.Sprintf("%d", b.ID)
+				token, err = login(username, username)
 				if err != nil {
 					mu.Unlock()
-					fmt.Printf("楼栋管理员 admin%03d 登录失败：%v\n", b.ID, err)
+					fmt.Printf("楼栋管理员 %s 登录失败：%v\n", username, err)
 					return
 				}
 				tokens[b.ID] = token

@@ -36,6 +36,7 @@ func main() {
 		&models.RoomMedia{},
 		&models.Room{},
 		&models.BuildingLandlord{},
+		&models.BuildingRenewal{},
 		&models.Building{},
 		&models.User{},
 		&models.PageView{},

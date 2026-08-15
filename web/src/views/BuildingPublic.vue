@@ -15,7 +15,12 @@
       @click-left="$router.push('/')"
     >
       <template #right>
-        <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
+        <div class="nav-right">
+          <span class="nav-share" @click="openQrShare">
+            <van-icon name="share-o" size="18" />
+          </span>
+          <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
+        </div>
       </template>
     </van-nav-bar>
 
@@ -46,6 +51,11 @@
           <span class="stat-lbl">将到期</span>
         </div>
       </div>
+      <button class="hero-home-btn" @click="$router.push('/')">
+        <van-icon name="home-o" size="14" />
+        查看全部公寓
+        <van-icon name="arrow" size="12" />
+      </button>
     </div>
 
     <div v-if="building.landlords && building.landlords.length" class="landlord-bar">
@@ -144,6 +154,9 @@
     <div class="page-footer">
       <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
     </div>
+
+    <QrSharePopup v-model:show="qrVisible" title="分享公寓" :link="qrLink" :data-url="qrDataUrl"
+      @copy="copyQrLink" @download="downloadQrCard" />
     </template>
   </div>
 </template>
@@ -154,7 +167,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildingDetail, getBuildingRooms } from '../api'
 import { mediaUrl, statusLabel, statusTagType, maskPhone } from '../utils/format'
+import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
+import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -243,6 +258,42 @@ function goToDashboard() {
   } else {
     router.push('/login')
   }
+}
+
+const qrVisible = ref(false)
+const qrDataUrl = ref('')
+const qrLink = ref('')
+
+function openQrShare() {
+  qrVisible.value = true
+  qrDataUrl.value = ''
+  qrLink.value = buildingHomeUrl(id.value)
+  generateBrandedQrDataUrl({
+    text: qrLink.value,
+    title: building.value?.name || '公寓主页',
+    lines: buildingInfoLines(building.value),
+  }).then((url) => {
+    qrDataUrl.value = url
+  }).catch(() => {
+    showToast('二维码生成失败')
+  })
+}
+
+function copyQrLink() {
+  navigator.clipboard.writeText(qrLink.value).then(() => {
+    showToast({ message: '已复制公寓链接', duration: 1500 })
+  }, () => {
+    showToast('复制失败，请手动复制')
+  })
+}
+
+function downloadQrCard() {
+  if (!qrDataUrl.value) {
+    showToast('二维码尚未生成，请稍后重试')
+    return
+  }
+  downloadQrImage(qrDataUrl.value, `公寓二维码_${building.value?.name || '公寓'}.png`)
+  showToast({ message: '二维码已保存', duration: 1500 })
 }
 
 async function fetchRooms(append = false) {
@@ -389,6 +440,24 @@ onBeforeUnmount(() => {
   height: 28px;
   background: rgba(255,255,255,0.12);
 }
+.hero-home-btn {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255,255,255,0.16);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: 18px;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.hero-home-btn:hover {
+  background: rgba(255,255,255,0.28);
+}
 .landlord-bar {
   background: #fff;
   margin: -10px 12px 0;
@@ -453,6 +522,17 @@ onBeforeUnmount(() => {
   border: 1px solid #1989fa;
   border-radius: 14px;
   cursor: pointer;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-share {
+  color: #e6a23c;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
 }
 .loading-wrap {
   padding: 60px 0;

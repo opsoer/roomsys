@@ -1,6 +1,10 @@
 // seed 通过 HTTP API 生成演示数据：100 个公寓（含房东信息）+ 每栋 50 套房 + 约 70% 房间签约出租。
 // 所有操作（创建公寓、创建楼栋管理员、登录、创建房间、出租签约）全部走真实 HTTP 接口。
 //
+// 默认约定：
+//   - 每个公寓创建 1 个管理账号，用户名与密码均为公寓 id（如公寓 3 → 3 / 3）
+//   - 公寓一律全套餐（full），签约时间（contract_date）为跑脚本当天，到期时间自动为一年后
+//
 // 前置条件：
 //  1. 后端服务已在默认地址运行（可用环境变量 SEED_BASE_URL 覆盖，默认 http://127.0.0.1:8081）
 //  2. 数据库中已有超级管理员 root（首次启动自动创建）
@@ -176,10 +180,10 @@ func main() {
 
 	seedBuildings(rootToken)
 	seedRooms(rootToken)
-	fmt.Println("\n全部完成！楼栋管理员账号：admin001 ~ admin100，密码均为 admin123456")
+	fmt.Println("\n全部完成！楼栋管理员账号：用户名=公寓id，密码同用户名（如公寓 3 → 3 / 3）")
 }
 
-// seedBuildings 创建 100 个公寓（全套餐、含房东信息、签约本月随机日期、一年后到期）
+// seedBuildings 创建 100 个公寓（全套餐、含房东信息、签约时间为跑脚本当天、一年后到期）
 func seedBuildings(rootToken string) {
 	usedAddr := make(map[string]bool)
 	usedName := make(map[string]bool)
@@ -219,7 +223,7 @@ func seedBuildings(rootToken string) {
 		reqBody := map[string]interface{}{
 			"name":          name,
 			"package":       "full",
-			"contract_date": randomDayInMonth(now.Year(), int(now.Month())).Format("2006-01-02"),
+			"contract_date": now.Format("2006-01-02"), // 签约时间=跑脚本当天，到期=一年后（后端自动计算）
 			"district":      d.Name,
 			"street":        street,
 			"village":       village,
@@ -243,30 +247,37 @@ func seedRooms(rootToken string) {
 			ID   uint   `json:"id"`
 			Name string `json:"name"`
 		} `json:"buildings"`
+		Total int `json:"total"`
 	}
 	if err := do("GET", "/api/admin/buildings?page=1&page_size=100", rootToken, nil, &listData); err != nil {
 		panic(fmt.Sprintf("获取公寓列表失败：%v", err))
 	}
-	if len(listData.Buildings) != 100 {
-		panic(fmt.Sprintf("期望 100 个公寓，实际 %d 个（请先清空数据库再运行）", len(listData.Buildings)))
+	if listData.Total != 100 {
+		panic(fmt.Sprintf("期望 100 个公寓，实际 %d 个（请先清空数据库再运行）", listData.Total))
 	}
 
 	for idx, b := range listData.Buildings {
 		buildingID := b.ID
-		// 2. 创建该公寓的楼栋管理员
-		username := fmt.Sprintf("admin%03d", buildingID)
+		// 2. 创建该公寓的楼栋管理员，用户名与密码均为公寓 id
+		username := fmt.Sprintf("%d", buildingID)
 		var userData struct {
 			User struct {
 				ID uint `json:"id"`
 			} `json:"user"`
 		}
-		if err := do("POST", "/api/admin/auth/create-building-admin", rootToken,
-			map[string]interface{}{"username": username, "password": "admin123456", "building_id": buildingID}, &userData); err != nil {
-			panic(fmt.Sprintf("创建公寓 %d 的管理员失败：%v", buildingID, err))
+		err := do("POST", "/api/admin/auth/create-building-admin", rootToken,
+			map[string]interface{}{"username": username, "password": username, "building_id": buildingID}, &userData)
+		if err != nil {
+			ae, ok := err.(*apiError)
+			if ok && ae.Status == http.StatusConflict {
+				fmt.Printf("公寓 %d 的管理员 %s 已存在，跳过创建\n", buildingID, username)
+			} else {
+				panic(fmt.Sprintf("创建公寓 %d 的管理员失败：%v", buildingID, err))
+			}
 		}
 
 		// 3. 以该公寓管理员身份登录
-		token, err := login(username, "admin123456")
+		token, err := login(username, username)
 		if err != nil {
 			panic(fmt.Sprintf("楼栋管理员 %s 登录失败：%v", username, err))
 		}

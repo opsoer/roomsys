@@ -388,11 +388,22 @@ func (s *BuildingService) Delete(id uint) error {
 		if err := tx.Where("building_id = ?", id).Delete(&models.BuildingLandlord{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.BuildingRenewal{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Bill{}).Error; err != nil {
 			return err
 		}
+		var tenantIDs []uint
+		tx.Model(&models.RentalContract{}).Where("building_id = ?", id).Pluck("tenant_id", &tenantIDs)
 		if err := tx.Where("building_id = ?", id).Delete(&models.RentalContract{}).Error; err != nil {
 			return err
+		}
+		if len(tenantIDs) > 0 {
+			if err := tx.Where("id IN ? AND id NOT IN (SELECT tenant_id FROM rental_contracts WHERE building_id <> ? AND deleted_at IS NULL)",
+				tenantIDs, id).Delete(&models.Tenant{}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Shareholder{}).Error; err != nil {
 			return err

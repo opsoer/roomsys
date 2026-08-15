@@ -102,10 +102,24 @@ func (s *RoomService) Update(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Room{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete 删除房间及关联的媒体资源
+// Delete 删除房间及关联的媒体资源、合同、租客和任务
 func (s *RoomService) Delete(id uint) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("room_id = ?", id).Delete(&models.RoomMedia{}).Error; err != nil {
+			return err
+		}
+		var tenantIDs []uint
+		tx.Model(&models.RentalContract{}).Where("room_id = ?", id).Pluck("tenant_id", &tenantIDs)
+		if err := tx.Where("room_id = ?", id).Delete(&models.RentalContract{}).Error; err != nil {
+			return err
+		}
+		if len(tenantIDs) > 0 {
+			if err := tx.Where("id IN ? AND id NOT IN (SELECT tenant_id FROM rental_contracts WHERE room_id <> ? AND deleted_at IS NULL)",
+				tenantIDs, id).Delete(&models.Tenant{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("room_id = ?", id).Delete(&models.Task{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&models.Room{}, id).Error

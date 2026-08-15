@@ -6,7 +6,15 @@
       @click-left="$router.push(`/building/${buildingId}`)"
     >
       <template #right>
-        <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
+        <div class="nav-right">
+          <span class="nav-share" @click="openQrShare">
+            <van-icon name="share-o" size="18" />
+          </span>
+          <span class="nav-home" @click="$router.push('/')">
+            <van-icon name="home-o" size="18" />
+          </span>
+          <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
+        </div>
       </template>
     </van-nav-bar>
 
@@ -162,6 +170,9 @@
     <div class="page-footer">
       <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
     </div>
+
+    <QrSharePopup v-model:show="qrVisible" title="分享房间" :link="qrLink" :data-url="qrDataUrl"
+      @copy="copyQrLink" @download="downloadQrCard" />
   </div>
 </template>
 
@@ -171,7 +182,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getPublicRoom, getBuildingDetail } from '../api'
 import { mediaUrl, statusLabel, statusTagType } from '../utils/format'
+import { roomHomeUrl, generateRoomQrDataUrl, downloadQrImage } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
+import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -241,6 +254,46 @@ function previewImage(index) {
   })
 }
 
+const qrVisible = ref(false)
+const qrDataUrl = ref('')
+const qrLink = ref('')
+
+function openQrShare() {
+  qrVisible.value = true
+  qrDataUrl.value = ''
+  qrLink.value = roomHomeUrl(buildingId.value, roomId.value)
+  generateRoomQrDataUrl({
+    text: qrLink.value,
+    buildingName: building.value?.name || '',
+    address: [building.value?.district, building.value?.street, building.value?.village, building.value?.building_no].filter(Boolean).join(' '),
+    floor: room.value?.floor,
+    roomNumber: room.value?.room_number,
+    layout: room.value?.layout,
+    price: room.value?.rent_price,
+  }).then((url) => {
+    qrDataUrl.value = url
+  }).catch(() => {
+    showToast('二维码生成失败')
+  })
+}
+
+function copyQrLink() {
+  navigator.clipboard.writeText(qrLink.value).then(() => {
+    showToast({ message: '已复制房间链接', duration: 1500 })
+  }, () => {
+    showToast('复制失败，请手动复制')
+  })
+}
+
+function downloadQrCard() {
+  if (!qrDataUrl.value) {
+    showToast('二维码尚未生成，请稍后重试')
+    return
+  }
+  downloadQrImage(qrDataUrl.value, `房间二维码_${room.value?.room_number || '房间'}.png`)
+  showToast({ message: '二维码已保存', duration: 1500 })
+}
+
 onMounted(async () => {
   try {
     const res = await getPublicRoom(buildingId.value, roomId.value)
@@ -270,6 +323,23 @@ onMounted(async () => {
   min-height: 100vh;
   background: #f5f6fa;
   padding-bottom: 20px;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-home {
+  color: #1a1a2e;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.nav-share {
+  color: #e6a23c;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
 }
 .login-btn {
   color: #1989fa;

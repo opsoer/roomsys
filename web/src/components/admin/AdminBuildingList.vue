@@ -77,7 +77,8 @@
             <el-button size="small" @click="$emit('upgrade', b)">修改套餐</el-button>
             <el-button size="small" :type="b.status === 'hidden' || b.status === 'expired' ? 'primary' : 'default'" @click="$emit('renew', b)">续约</el-button>
             <el-button size="small" @click="$emit('history', b)">租约记录</el-button>
-            <el-button size="small" @click="$emit('copy-link', b)">复制登录链接</el-button>
+            <el-button size="small" @click="$emit('copy-home-link', b)">复制主页链接</el-button>
+            <el-button size="small" @click="$emit('download-qr', b)">下载二维码</el-button>
             <el-button size="small" @click="$emit('create-admin', b)">创建管理员</el-button>
             <el-popconfirm :title="b.status === 'hidden' ? '确定恢复该公寓可见？' : '设为不可见后，首页及所有房间将不再展示，确定？'" @confirm="$emit('toggle-visibility', b)">
               <template #reference>
@@ -107,7 +108,7 @@ defineProps({
   loading: { type: Boolean, default: false },
 })
 
-defineEmits(['search', 'edit', 'upgrade', 'copy-link', 'create-admin', 'delete', 'toggle-visibility', 'renew', 'history'])
+defineEmits(['search', 'edit', 'upgrade', 'copy-home-link', 'download-qr', 'create-admin', 'delete', 'toggle-visibility', 'renew', 'history'])
 
 const filterStatus = ref('')
 const keyword = ref('')

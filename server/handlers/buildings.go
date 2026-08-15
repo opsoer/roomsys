@@ -266,6 +266,22 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
+	// 删除该公寓下所有房间的媒体物理文件（封面和房间图片由 MediaHandler 各自管理）
+	var mediaPaths []string
+	h.DB.Table("room_media").
+		Joins("JOIN rooms ON rooms.id = room_media.room_id").
+		Where("rooms.building_id = ?", buildingID).
+		Pluck("room_media.file_path", &mediaPaths)
+	var thumbPaths []string
+	h.DB.Table("room_media").
+		Joins("JOIN rooms ON rooms.id = room_media.room_id").
+		Where("rooms.building_id = ?", buildingID).
+		Pluck("room_media.thumbnail_path", &thumbPaths)
+	for _, p := range append(mediaPaths, thumbPaths...) {
+		if p != "" {
+			deleteStoredFile(h.Cfg, p)
+		}
+	}
 	logger.Log.Info().Str("id", id).Msg("公寓已删除")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
