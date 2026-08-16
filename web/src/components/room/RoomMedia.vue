@@ -32,6 +32,9 @@
       <div class="video-list">
         <div v-for="v in videos" :key="v.id" class="video-item" :class="{ 'admin-mode': isAdmin }">
           <video :src="mediaUrl(v.file_path)" controls class="video-player" preload="metadata"></video>
+          <div v-if="v.status === 'processing'" class="video-mask">
+            <span>转码中...</span>
+          </div>
           <el-button v-if="isAdmin" size="small" type="danger" circle class="delete-btn"
             @click.stop="$emit('delete-media', v.id)">
             <el-icon><Close /></el-icon>
@@ -136,6 +139,18 @@ defineEmits(['fullscreen', 'delete-media'])
   width: 100%;
   max-height: 240px;
   display: block;
+}
+.video-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 14px;
+  letter-spacing: 2px;
+  z-index: 3;
 }
 
 @media (max-width: 768px) {

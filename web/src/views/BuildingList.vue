@@ -14,6 +14,7 @@
           <span class="top-title">圳好租</span>
         </div>
         <div class="top-bar-right">
+          <span class="nav-share" @click="openQrShare">分享</span>
           <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
         </div>
       </div>
@@ -142,6 +143,9 @@
         <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
       </div>
     </van-pull-refresh>
+
+    <QrSharePopup v-model:show="qrVisible" title="分享主页" :link="qrLink" :data-url="qrDataUrl"
+      @copy="copyQrLink" @download="downloadQrCard" />
   </div>
 </template>
 
@@ -151,9 +155,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildings } from '../api'
+import { siteHomeUrl, generateSiteQrDataUrl, downloadQrImage } from '../utils/qr'
+import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useUtils } from '../composables/useUtils'
 import shenzhen from '../utils/shenzhen'
+import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -173,6 +180,39 @@ const pageSize = 20
 const loadingMore = ref(false)
 const sentinel = ref(null)
 let observer = null
+
+const qrVisible = ref(false)
+const qrDataUrl = ref('')
+const qrLink = ref('')
+
+function openQrShare() {
+  qrVisible.value = true
+  qrDataUrl.value = ''
+  qrLink.value = siteHomeUrl()
+  generateSiteQrDataUrl().then((url) => {
+    qrDataUrl.value = url
+  }).catch(() => {
+    showToast('二维码生成失败')
+  })
+}
+
+async function copyQrLink() {
+  const ok = await copyText(qrLink.value)
+  if (ok) {
+    showToast({ message: '已复制主页链接', duration: 1500 })
+  } else {
+    showToast('复制失败，请点击上方链接手动复制')
+  }
+}
+
+function downloadQrCard() {
+  if (!qrDataUrl.value) {
+    showToast('二维码尚未生成，请稍后重试')
+    return
+  }
+  downloadQrImage(qrDataUrl.value, '网站主页二维码.png')
+  showToast({ message: '二维码已保存', duration: 1500 })
+}
 
 const currentStreets = computed(() => {
   if (!stepDistrict.value) return []
@@ -332,6 +372,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   color: #666;
+}
+.nav-share {
+  color: #e6a23c;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
 }
 .login-btn {
   color: #1989fa;

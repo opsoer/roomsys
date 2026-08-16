@@ -5,14 +5,10 @@
       left-arrow
       @click-left="$router.push(`/building/${buildingId}`)"
     >
-      <template #right>
+<template #right>
         <div class="nav-right">
-          <span class="nav-share" @click="openQrShare">
-            <van-icon name="share-o" size="18" />
-          </span>
-          <span class="nav-home" @click="$router.push('/')">
-            <van-icon name="home-o" size="18" />
-          </span>
+          <span class="nav-home" @click="$router.push('/')">首页</span>
+          <span class="nav-share" @click="openQrShare">分享</span>
           <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
         </div>
       </template>
@@ -181,7 +177,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getPublicRoom, getBuildingDetail } from '../api'
-import { mediaUrl, statusLabel, statusTagType } from '../utils/format'
+import { mediaUrl, statusLabel, statusTagType, copyText } from '../utils/format'
 import { roomHomeUrl, generateRoomQrDataUrl, downloadQrImage } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
@@ -277,12 +273,13 @@ function openQrShare() {
   })
 }
 
-function copyQrLink() {
-  navigator.clipboard.writeText(qrLink.value).then(() => {
+async function copyQrLink() {
+  const ok = await copyText(qrLink.value)
+  if (ok) {
     showToast({ message: '已复制房间链接', duration: 1500 })
-  }, () => {
-    showToast('复制失败，请手动复制')
-  })
+  } else {
+    showToast('复制失败，请点击上方链接手动复制')
+  }
 }
 
 function downloadQrCard() {
@@ -331,12 +328,16 @@ onMounted(async () => {
 }
 .nav-home {
   color: #1a1a2e;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
 }
 .nav-share {
   color: #e6a23c;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;

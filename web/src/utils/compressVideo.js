@@ -5,6 +5,14 @@ let ffmpeg = null
 let loadPromise = null
 let compressionQueue = Promise.resolve()
 
+// 手机/微信内置浏览器上 ffmpeg.wasm 编码极慢且容易挂起(超时后只能上传原件)，
+// 移动端一律跳过压缩，由调用方直接上传原件。
+export function isMobileWeb() {
+  if (typeof navigator === 'undefined') return false
+  return /Android|iPhone|iPad|iPod|MicroMessenger|Windows Phone/i.test(navigator.userAgent)
+    || (typeof window !== 'undefined' && window.innerWidth < 768)
+}
+
 export function compressVideo(file, { timeout = 120000, signal } = {}) {
   if (!file.type.startsWith('video/')) return Promise.resolve(file)
   if (file.size < 5 * 1024 * 1024) return Promise.resolve(file)
@@ -16,7 +24,7 @@ export function compressVideo(file, { timeout = 120000, signal } = {}) {
 
 function destroyFFmpeg() {
   if (ffmpeg) {
-    try { ffmpeg.terminate?.() } catch {}
+    try { ffmpeg.terminate?.() } catch { void 0 }
     ffmpeg = null
     loadPromise = null
   }
@@ -47,7 +55,7 @@ async function loadFFmpeg(retry = false) {
         ffmpeg = null
         loadPromise = null
         return await loadFFmpeg(true)
-      } catch {}
+      } catch { void 0 }
     }
     throw e
   }
@@ -124,7 +132,7 @@ async function doCompress(file, timeout, signal) {
       destroyFFmpeg()
     } else {
       for (const name of cleaned) {
-        try { await ffmpeg.deleteFile(name) } catch {}
+        try { await ffmpeg.deleteFile(name) } catch { void 0 }
       }
       destroyFFmpeg()
     }

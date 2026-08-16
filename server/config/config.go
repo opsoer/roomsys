@@ -27,22 +27,41 @@ type Config struct {
 	QiniuDomain    string `json:"qiniu_domain"`
 	QiniuUseHTTPS  bool   `json:"qiniu_use_https"`
 	QiniuZone      string `json:"qiniu_zone"`
+	// QiniuProxyMode 七牛媒体访问模式：
+	//   true  (默认)  = 代理模式。浏览器只请求本站 /api/media/xxx，由服务器从
+	//                  七牛拉取字节流后透传回去，浏览器永远不与七牛域名直接通信。
+	//                  适用：七牛使用 HTTP 非备案测试域名(如 *.clouddn.com)，
+	//                  微信内置浏览器会拦截这类资源导致图片/视频无法显示。
+	//                  代价：流量经过服务器，占用服务器上行/下行带宽。
+	//   false          = 直连模式。服务器对 /api/media/xxx 返回 302 重定向，
+	//                  浏览器直接向七牛 CDN 拉取文件，不占用服务器带宽，走 CDN 加速。
+	//                  适用：正式备案的 HTTPS CDN 域名(此时建议 qiniu_use_https=true)。
+	//                  代价：若域名仍为非备案 HTTP，微信端资源会被拦截而无法显示。
+	QiniuProxyMode bool `json:"qiniu_proxy_mode"`
+	// QiniuPfopEnable 七牛转码开关：true 时视频上传后自动触发七牛持久化转码(720p)，
+	// 转码结果经回调写回，原片删除；false 则视频按原件存储。
+	QiniuPfopEnable bool `json:"qiniu_pfop_enable"`
+	// QiniuPfopCallbackSecret 七牛转码回调校验密钥，防止伪造回调。
+	QiniuPfopCallbackSecret string `json:"qiniu_pfop_callback_secret"`
+	// QiniuPfopCallbackURL 七牛转码回调地址(服务器公网可访问)；留空则自动用请求 Host 推导。
+	QiniuPfopCallbackURL string `json:"qiniu_pfop_callback_url"`
 }
 
 // defaults 返回默认配置值。
 func defaults() *Config {
 	return &Config{
-		DBHost:     "127.0.0.1",
-		DBPort:     "3306",
-		DBUser:     "root",
-		DBPassword: "",
-		DBName:     "rental",
-		JWTSecret:  "",
-		ServerPort: "8080",
-		UploadDir:  "./storage/media",
-		LogLevel:   "info",
-		LogDir:     "./logs",
-		WebDistDir: "../web/dist",
+		DBHost:         "127.0.0.1",
+		DBPort:         "3306",
+		DBUser:         "root",
+		DBPassword:     "",
+		DBName:         "rental",
+		JWTSecret:      "",
+		ServerPort:     "8080",
+		UploadDir:      "./storage/media",
+		LogLevel:       "info",
+		LogDir:         "./logs",
+		WebDistDir:     "../web/dist",
+		QiniuProxyMode: true,
 	}
 }
 
@@ -125,6 +144,18 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("QINIU_USE_HTTPS"); v != "" {
 		cfg.QiniuUseHTTPS = v == "true"
+	}
+	if v := os.Getenv("QINIU_PROXY_MODE"); v != "" {
+		cfg.QiniuProxyMode = v == "true"
+	}
+	if v := os.Getenv("QINIU_PFOP_ENABLE"); v != "" {
+		cfg.QiniuPfopEnable = v == "true"
+	}
+	if v := os.Getenv("QINIU_PFOP_CALLBACK_SECRET"); v != "" {
+		cfg.QiniuPfopCallbackSecret = v
+	}
+	if v := os.Getenv("QINIU_PFOP_CALLBACK_URL"); v != "" {
+		cfg.QiniuPfopCallbackURL = v
 	}
 	if v := os.Getenv("QINIU_ZONE"); v != "" {
 		cfg.QiniuZone = v

@@ -54,6 +54,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		public.GET("/media/*filepath", mediaH.Serve)
+		public.POST("/qiniu/pfop-callback", mediaH.PfopCallback)
 
 		statsH := &handlers.StatsHandler{DB: db}
 		public.POST("/stats/landlord-view", statsH.RecordLandlordView)

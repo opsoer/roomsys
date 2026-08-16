@@ -68,3 +68,8 @@ func (s *MediaService) CountMediaByRoomAndType(roomID uint, mediaType string) (i
 func (s *MediaService) UpdateBuildingCover(buildingID uint, coverImage string) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", buildingID).Update("cover_image", coverImage).Error
 }
+
+// UpdateMedia 更新媒体记录的指定字段
+func (s *MediaService) UpdateMedia(media *models.RoomMedia, updates map[string]interface{}) error {
+	return s.DB.Model(media).Updates(updates).Error
+}

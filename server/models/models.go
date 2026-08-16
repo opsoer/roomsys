@@ -87,6 +87,8 @@ type RoomMedia struct {
 	ThumbnailPath string    `gorm:"size:500" json:"thumbnail_path"`
 	FileName      string    `gorm:"size:255" json:"file_name"`
 	FileSize      int64     `json:"file_size"`
+	Status        string    `gorm:"size:20;default:'ready'" json:"status"`
+	TranscodeID   string    `gorm:"size:100" json:"-"`
 	SortOrder     int       `gorm:"default:0" json:"sort_order"`
 	CreatedAt     time.Time `json:"created_at"`
 }

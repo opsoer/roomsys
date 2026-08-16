@@ -69,7 +69,7 @@
     <div v-else class="mobile-layout">
       <div class="mobile-header">
         <div style="position:relative;display:inline-block">
-          <van-icon name="bars" size="22" @click="showMobileMenu = true" />
+          <span class="mobile-menu-btn" @click="showMobileMenu = true">菜单</span>
           <span v-if="pendingTaskCount" class="task-badge mobile-header-badge">{{ pendingTaskCount }}</span>
         </div>
         <h2 class="mobile-title" @click="goToBuildingPage">
@@ -77,7 +77,7 @@
         </h2>
         <div style="display:flex;gap:8px;align-items:center;">
           <el-button size="small" type="primary" plain @click="handleDownloadQr">二维码</el-button>
-          <van-icon name="friends-o" size="20" @click="showUserMenu = !showUserMenu" />
+          <span class="mobile-user-btn" @click="showUserMenu = !showUserMenu">用户</span>
         </div>
       </div>
       <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
@@ -195,7 +195,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildingInfo, buildingGetTasks } from '../api'
-import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
+import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines, canAutoDownloadImage } from '../utils/qr'
+import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
 import MobileUserMenu from '../components/common/MobileUserMenu.vue'
@@ -266,12 +267,13 @@ async function handleDownloadQr() {
   }
 }
 
-function copyBuildingQrLink() {
-  navigator.clipboard.writeText(buildingQrLink.value).then(() => {
+async function copyBuildingQrLink() {
+  const ok = await copyText(buildingQrLink.value)
+  if (ok) {
     ElMessage.success('已复制公寓主页链接')
-  }, () => {
+  } else {
     ElMessage.error('复制失败，请手动复制')
-  })
+  }
 }
 
 function downloadBuildingQrCard() {
@@ -279,8 +281,12 @@ function downloadBuildingQrCard() {
     ElMessage.error('二维码尚未生成，请稍后重试')
     return
   }
-  downloadQrImage(buildingQrDataUrl.value, `公寓二维码_${buildingName.value || '公寓'}.png`)
-  ElMessage.success('二维码已下载')
+  if (canAutoDownloadImage()) {
+    downloadQrImage(buildingQrDataUrl.value, `公寓二维码_${buildingName.value || '公寓'}.png`)
+    ElMessage.success('二维码已下载')
+  } else {
+    ElMessage.info('长按弹窗中的二维码图片即可保存到相册')
+  }
 }
 
 onMounted(() => {
@@ -357,6 +363,26 @@ onUnmounted(() => {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+.mobile-user-btn {
+  color: #1989fa;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid #1989fa;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.mobile-menu-btn {
+  color: #1a1a2e;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
 }
 .mobile-body {
   min-height: calc(100vh - 50px);

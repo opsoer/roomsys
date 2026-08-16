@@ -16,9 +16,7 @@
     >
       <template #right>
         <div class="nav-right">
-          <span class="nav-share" @click="openQrShare">
-            <van-icon name="share-o" size="18" />
-          </span>
+          <span class="nav-share" @click="openQrShare">分享</span>
           <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
         </div>
       </template>
@@ -166,7 +164,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildingDetail, getBuildingRooms } from '../api'
-import { mediaUrl, statusLabel, statusTagType, maskPhone } from '../utils/format'
+import { mediaUrl, statusLabel, statusTagType, maskPhone, copyText } from '../utils/format'
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
@@ -279,12 +277,13 @@ function openQrShare() {
   })
 }
 
-function copyQrLink() {
-  navigator.clipboard.writeText(qrLink.value).then(() => {
+async function copyQrLink() {
+  const ok = await copyText(qrLink.value)
+  if (ok) {
     showToast({ message: '已复制公寓链接', duration: 1500 })
-  }, () => {
-    showToast('复制失败，请手动复制')
-  })
+  } else {
+    showToast('复制失败，请点击上方链接手动复制')
+  }
 }
 
 function downloadQrCard() {
@@ -530,6 +529,8 @@ onBeforeUnmount(() => {
 }
 .nav-share {
   color: #e6a23c;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;

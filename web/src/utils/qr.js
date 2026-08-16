@@ -4,6 +4,16 @@ export function siteHomeUrl() {
   return `${window.location.origin}/`
 }
 
+// 是否微信内置浏览器
+export function isWechat() {
+  return /MicroMessenger/i.test(navigator.userAgent)
+}
+
+// 是否移动端设备（含微信）——此类环境 <a download> 无法保存图片到本地，需引导长按保存
+export function canAutoDownloadImage() {
+  return !isWechat() && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+}
+
 export function buildingHomeUrl(buildingId) {
   return `${window.location.origin}/building/${buildingId}`
 }
@@ -17,7 +27,7 @@ export function buildingInfoLines(b) {
   const lines = []
   const address = [b?.district, b?.street, b?.village, b?.building_no].filter(Boolean).join(' ')
   if (address) lines.push({ label: '位置', value: address })
-  if (b?.room_count != null) lines.push({ label: '房源', value: `${b.room_count}间 · 可租${b.vacant_count ?? 0}间` })
+  if (b?.room_count !== null) lines.push({ label: '房源', value: `${b.room_count}间 · 可租${b.vacant_count ?? 0}间` })
   return lines
 }
 
@@ -161,7 +171,7 @@ export async function generateRoomQrDataUrl({ text, buildingName, address, floor
   if (roomNumber) lines.push({ label: '房号', value: `${roomNumber}房` })
   if (layout) lines.push({ label: '户型', value: layout })
   if (address) lines.push({ label: '位置', value: address })
-  if (price != null && price !== '') lines.push({ label: '租金', value: `¥${price}/月` })
+  if (price !== null && price !== '') lines.push({ label: '租金', value: `¥${price}/月` })
   return generateBrandedQrDataUrl({
     text,
     title: buildingName || '房间详情',

@@ -26,9 +26,9 @@
     <!-- 移动端 -->
     <div v-else class="mobile-layout">
       <div class="mobile-header">
-        <van-icon name="arrow-left" size="20" @click="$router.push('/')" />
+        <span class="mobile-nav-btn" @click="$router.push('/')">返回</span>
         <h2 class="mobile-title">平台管理</h2>
-        <van-icon name="friends-o" size="20" @click="showUserMenu = !showUserMenu" />
+        <span class="mobile-user-btn" @click="showUserMenu = !showUserMenu">用户</span>
       </div>
       <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-tabs">
@@ -113,6 +113,20 @@ onUnmounted(() => {
 .mobile-title {
   font-size: 16px;
   font-weight: 600;
+}
+.mobile-nav-btn {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.mobile-user-btn {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
 }
 .mobile-tabs {
   display: flex;

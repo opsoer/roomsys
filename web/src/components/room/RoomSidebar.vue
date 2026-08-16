@@ -124,13 +124,8 @@
 
     <div v-if="isAdmin" class="sidebar-card">
       <h4 class="sidebar-title">上传媒体</h4>
-      <div v-if="uploading || isCompressing" style="margin-bottom:12px">
-        <el-progress v-if="isCompressing" :percentage="0" :indeterminate="true" :stroke-width="6" />
-        <el-progress v-else :percentage="uploadProgress" :stroke-width="6" />
-        <div v-if="isCompressing" style="font-size:12px;color:#999;margin-top:4px">
-          正在压缩视频...{{ compressElapsed > 0 ? ` 已用时 ${compressElapsed}s` : '' }}
-          <el-button text size="small" type="danger" @click="cancelCompress" style="margin-left:8px">取消</el-button>
-        </div>
+      <div v-if="uploading" style="margin-bottom:12px">
+        <el-progress :percentage="uploadProgress" :stroke-width="6" />
       </div>
       <div class="upload-actions">
         <el-upload
@@ -179,11 +174,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Plus, Picture, VideoCamera } from '@element-plus/icons-vue'
-import { buildingUploadMedia } from '../../api'
-import { compressVideo } from '../../utils/compressVideo'
+import { buildingUploadMedia, getUploadToken, confirmMediaUpload } from '../../api'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -194,7 +188,7 @@ const props = defineProps({
 })
 
 function mgmtFeeLabel(fee) {
-  if (fee != null && Number(fee) > 0) return Number(fee).toFixed(2) + ' 元/月'
+  if (fee !== null && Number(fee) > 0) return Number(fee).toFixed(2) + ' 元/月'
   return '无管理费'
 }
 
@@ -211,10 +205,6 @@ const videoCount = computed(() => {
 
 const uploading = ref(false)
 const uploadProgress = ref(0)
-const isCompressing = ref(false)
-const compressElapsed = ref(0)
-let compressTimer = null
-let activeAbortController = null
 
 const contactVisible = ref(false)
 const contactLandlord = ref({ name: '', phone: '' })
@@ -239,18 +229,6 @@ function copyPhone() {
   }
   ElMessage.success('已复制到剪贴板')
   contactVisible.value = false
-}
-
-function startCompressTimer() {
-  compressElapsed.value = 0
-  compressTimer = setInterval(() => { compressElapsed.value++ }, 1000)
-}
-function stopCompressTimer() {
-  if (compressTimer) { clearInterval(compressTimer); compressTimer = null }
-  compressElapsed.value = 0
-}
-function cancelCompress() {
-  activeAbortController?.abort()
 }
 
 function compressImage(file, maxWidth = 1600, quality = 0.65) {
@@ -287,46 +265,11 @@ async function customUpload(options) {
   uploading.value = true
   uploadProgress.value = 0
   try {
-    let file
     if (options.file.type.startsWith('video/')) {
-      isCompressing.value = true
-      startCompressTimer()
-      activeAbortController = new AbortController()
-      try {
-        file = await compressVideo(options.file, {
-          timeout: 120000,
-          signal: activeAbortController.signal,
-        })
-      } catch (e) {
-        if (e.code === 'COMPRESS_ABORTED') {
-          return
-        }
-        const title = e.code === 'COMPRESS_UNSUPPORTED' ? '设备不支持'
-          : e.code === 'COMPRESS_TIMEOUT' ? '压缩超时'
-          : '压缩失败'
-        const msg = e.code === 'COMPRESS_UNSUPPORTED'
-          ? '当前手机版本太低，建议更换手机上传视频。'
-          : e.code === 'COMPRESS_TIMEOUT'
-          ? '视频压缩超时（2分钟），是否继续上传原件？'
-          : '视频压缩失败，是否继续上传原件？'
-        try {
-          await ElMessageBox.confirm(msg, title, {
-            confirmButtonText: '依然上传',
-            cancelButtonText: '取消上传',
-            type: 'warning',
-          })
-          file = options.file
-        } catch {
-          return
-        }
-      } finally {
-        isCompressing.value = false
-        stopCompressTimer()
-        activeAbortController = null
-      }
-    } else {
-      file = await compressImage(options.file)
+      await directUploadVideo(options)
+      return
     }
+    const file = await compressImage(options.file)
     const formData = new FormData()
     formData.append('file', file)
     for (const key in options.data) {
@@ -340,9 +283,52 @@ async function customUpload(options) {
     options.onError(err, options.file, options.fileList)
   } finally {
     uploading.value = false
-    isCompressing.value = false
-    stopCompressTimer()
   }
+}
+
+// 视频走七牛直传：浏览器直接上传原件到七牛，不占服务器带宽，上传后有真实进度
+async function directUploadVideo(options) {
+  const file = options.file
+  const ext = (file.name.match(/\.(\w+)$/) || [])[1] || 'mp4'
+  const tokRes = await getUploadToken({
+    room_id: options.data.roomId,
+    category: 'video',
+    ext,
+    file_size: file.size,
+  })
+  const { token, key, upload_url } = tokRes.data
+  await uploadDirect(upload_url, token, key, file, (p) => {
+    uploadProgress.value = p
+  })
+  const res = await confirmMediaUpload(options.data.roomId, {
+    key,
+    type: 'video',
+    category: 'video',
+    file_name: file.name,
+    file_size: file.size,
+  })
+  options.onSuccess(res.data, options.file, options.fileList)
+  ElMessage.success('视频上传成功，正在后台转码压缩，完成后自动更新')
+}
+
+function uploadDirect(url, token, key, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData()
+    fd.append('token', token)
+    fd.append('key', key)
+    fd.append('file', file)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText)
+      else reject(new Error(`上传失败(${xhr.status})`))
+    }
+    xhr.onerror = () => reject(new Error('网络错误'))
+    xhr.send(fd)
+  })
 }
 
 function handleUploadError() {
@@ -368,10 +354,6 @@ function beforeUploadVideo(file) {
   return true
 }
 
-onUnmounted(() => {
-  stopCompressTimer()
-  activeAbortController?.abort()
-})
 </script>
 
 <style scoped>

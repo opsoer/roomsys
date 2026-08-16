@@ -67,7 +67,8 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminGetBuildings, adminDeleteBuilding, adminUpdateBuilding } from '../api'
-import { buildingHomeUrl, siteHomeUrl, generateBrandedQrDataUrl, generateSiteQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
+import { buildingHomeUrl, siteHomeUrl, generateBrandedQrDataUrl, generateSiteQrDataUrl, downloadQrImage, buildingInfoLines, canAutoDownloadImage } from '../utils/qr'
+import { copyText } from '../utils/format'
 import AdminBuildingList from '../components/admin/AdminBuildingList.vue'
 import AdminBuildingDialogs from '../components/admin/AdminBuildingDialogs.vue'
 
@@ -187,13 +188,14 @@ async function handleToggleVisibility(row) {
   }
 }
 
-function copyHomeLink(row) {
+async function copyHomeLink(row) {
   const url = buildingHomeUrl(row.id)
-  navigator.clipboard.writeText(url).then(() => {
+  const ok = await copyText(url)
+  if (ok) {
     ElMessage.success('已复制公寓主页链接')
-  }, () => {
+  } else {
     ElMessage.error('复制失败，请手动复制')
-  })
+  }
 }
 
 async function downloadQr(row) {
@@ -220,12 +222,13 @@ function openBuildingQr(row) {
   })
 }
 
-function copyBuildingQrLink() {
-  navigator.clipboard.writeText(buildingQrLink.value).then(() => {
+async function copyBuildingQrLink() {
+  const ok = await copyText(buildingQrLink.value)
+  if (ok) {
     ElMessage.success('已复制公寓主页链接')
-  }, () => {
+  } else {
     ElMessage.error('复制失败，请手动复制')
-  })
+  }
 }
 
 function downloadBuildingQrCard() {
@@ -233,8 +236,12 @@ function downloadBuildingQrCard() {
     ElMessage.error('二维码尚未生成，请稍后重试')
     return
   }
-  downloadQrImage(buildingQrDataUrl.value, `公寓二维码_${buildingQrTitle()}.png`)
-  ElMessage.success('二维码已下载')
+  if (canAutoDownloadImage()) {
+    downloadQrImage(buildingQrDataUrl.value, `公寓二维码_${buildingQrTitle()}.png`)
+    ElMessage.success('二维码已下载')
+  } else {
+    ElMessage.info('长按弹窗中的二维码图片即可保存到相册')
+  }
 }
 
 function openSiteQr() {
@@ -253,8 +260,12 @@ async function downloadSiteQrCard() {
     ElMessage.error('二维码尚未生成，请稍后重试')
     return
   }
-  downloadQrImage(siteQrDataUrl.value, '网站主页二维码.png')
-  ElMessage.success('二维码已下载')
+  if (canAutoDownloadImage()) {
+    downloadQrImage(siteQrDataUrl.value, '网站主页二维码.png')
+    ElMessage.success('二维码已下载')
+  } else {
+    ElMessage.info('长按弹窗中的二维码图片即可保存到相册')
+  }
 }
 
 function copySiteLink() {

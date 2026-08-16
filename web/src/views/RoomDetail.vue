@@ -23,7 +23,7 @@
       <RoomSidebar :room="room" :landlords="landlords" :current-contract="currentContract" :future-reservation="futureReservation" :is-admin="isAdmin"
         @renew="openRenewDialog" @rent="openRentDialog" @vacant="handleVacant"
         @reserve="openReserveDialog" @confirm-sign="openConfirmSignDialog" @cancel-reserve="handleCancelReserve"
-        @upload-success="fetchRoom" />
+        @upload-success="onUploadSuccess" />
     </div>
 
     <RoomDialogs ref="dialogsRef" :room-id="route.params.id" :current-contract="currentContract" :room-status="room?.status"
@@ -32,7 +32,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { buildingGetRoom, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -54,6 +54,8 @@ const futureReservation = ref(null)
 const landlords = ref([])
 const loading = ref(true)
 const dialogsRef = ref(null)
+
+let transcodeTimer = null
 
 const isAdmin = computed(() => {
   const role = localStorage.getItem('role')
@@ -81,8 +83,8 @@ function goBack() {
   router.push('/landlord/rooms')
 }
 
-async function fetchRoom() {
-  loading.value = true
+async function fetchRoom(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await buildingGetRoom(route.params.id)
     room.value = res.data.room
@@ -107,10 +109,36 @@ async function fetchRoom() {
       water_unit_price: room.value.water_unit_price ?? null,
     }
   } catch {
-    ElMessage.error('获取房间信息失败')
+    if (!silent) ElMessage.error('获取房间信息失败')
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
+}
+
+function stopTranscodePolling() {
+  if (transcodeTimer) {
+    clearInterval(transcodeTimer)
+    transcodeTimer = null
+  }
+}
+
+// 上传后若有视频在转码，轮询刷新直到转码完成
+function startTranscodePolling() {
+  stopTranscodePolling()
+  if (!videos.value.some(v => v.status === 'processing')) return
+  let tries = 0
+  transcodeTimer = setInterval(async () => {
+    tries++
+    await fetchRoom(true)
+    if (!videos.value.some(v => v.status === 'processing') || tries >= 20) {
+      stopTranscodePolling()
+    }
+  }, 8000)
+}
+
+async function onUploadSuccess() {
+  await fetchRoom()
+  startTranscodePolling()
 }
 
 async function handleDeleteMedia(mediaId) {
@@ -175,6 +203,11 @@ async function fetchBuildingInfo() {
 onMounted(() => {
   fetchRoom().catch(() => {})
   fetchBuildingInfo()
+  startTranscodePolling()
+})
+
+onUnmounted(() => {
+  stopTranscodePolling()
 })
 </script>
 
