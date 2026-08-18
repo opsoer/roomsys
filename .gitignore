@@ -7,6 +7,7 @@ server/vendor/
 dist/
 server/rental-server.exe
 server/rental-server
+server/rental-server-linux
 *.exe
 
 # 环境变量

@@ -422,6 +422,25 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 		query = query.Where("layout = ?", layout)
 	}
 
+	// 状态筛选下沉到 SQL，保证 total 与分页结果一致（避免动态状态在内存过滤后 total 虚高导致前端无限加载）
+	if requestedStatus != "" {
+		today := utils.Now().Format("2006-01-02")
+		thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		switch requestedStatus {
+		case "vacant":
+			query = query.Where("status = ?", "vacant")
+		case "expiring":
+			query = query.Where("status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date >= ? AND end_date < ?)",
+				"rented", "active", today, thirtyDaysLater)
+		case "rented":
+			query = query.Where("status = ? AND id NOT IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date < ?)",
+				"rented", "active", thirtyDaysLater)
+		case "reserved":
+			// 公开端基础查询已排除已预订房间
+			query = query.Where("1 = 0")
+		}
+	}
+
 	var total int64
 	if lastID == 0 {
 		if err := query.Model(&models.Room{}).Count(&total).Error; err != nil {

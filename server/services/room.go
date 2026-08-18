@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"rental-server/models"
+	"rental-server/utils"
 
 	"gorm.io/gorm"
 )
@@ -50,9 +51,10 @@ func (s *RoomService) GetWithContract(id uint) (*models.Room, *models.RentalCont
 	return &room, &contract, nil
 }
 
-// List 分页获取楼栋下的房间列表，支持楼层和户型筛选
-// 双模式分页：lastID > 0 时走游标分页（按 room_number + id 定位下一批），不再重查总数（total 返回 -1）
-func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layout, lastKey string) ([]models.Room, int64, error) {
+// List 分页获取楼栋下的房间列表，支持楼层、户型、状态筛选
+// 双模式分页：lastID > 0 时走游标分页（按 room_number + id 定位下一批），不再重查总数（total 返回 -1）；
+// 旧客户端未传 lastKey 时兜底为 id 游标（排序同步切换为 id ASC，保证不重复、不遗漏）
+func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layout, status, lastKey string) ([]models.Room, int64, error) {
 	var rooms []models.Room
 	query := s.DB.Where("building_id = ?", buildingID)
 
@@ -63,8 +65,32 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 		query = query.Where("layout = ?", layout)
 	}
 
+	// 状态筛选下沉到 SQL，与 DynamicRoomStatus 的动态判定保持一致，
+	// 保证 total 与分页结果一致（避免内存过滤后 total 虚高/偏小）
+	if status != "" {
+		today := utils.Now().Format("2006-01-02")
+		thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		switch status {
+		case "vacant":
+			query = query.Where("status = ?", "vacant")
+		case "reserved":
+			query = query.Where("status = ? OR id IN (SELECT room_id FROM rental_contracts WHERE status = ?)", "reserved", "reserved")
+		case "expiring":
+			query = query.Where("status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date >= ? AND end_date < ?)",
+				"rented", "active", today, thirtyDaysLater)
+		case "rented":
+			query = query.Where("status = ? AND id NOT IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date < ?)",
+				"rented", "active", thirtyDaysLater)
+		}
+	}
+
+	idCursor := lastID > 0 && lastKey == ""
 	if lastID > 0 {
-		query = query.Where("(room_number > ? OR (room_number = ? AND id > ?))", lastKey, lastKey, lastID)
+		if lastKey != "" {
+			query = query.Where("(room_number > ? OR (room_number = ? AND id > ?))", lastKey, lastKey, lastID)
+		} else {
+			query = query.Where("id > ?", lastID)
+		}
 	}
 
 	var total int64
@@ -76,7 +102,12 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 		total = -1
 	}
 
-	q := query.Preload("Media").Order("room_number ASC, id ASC")
+	q := query.Preload("Media")
+	if idCursor {
+		q = q.Order("id ASC")
+	} else {
+		q = q.Order("room_number ASC, id ASC")
+	}
 	if lastID > 0 {
 		err := q.Limit(size).Find(&rooms).Error
 		return rooms, total, err

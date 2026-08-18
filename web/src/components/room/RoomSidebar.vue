@@ -286,7 +286,8 @@ async function customUpload(options) {
   }
 }
 
-// 视频走七牛直传：浏览器直接上传原件到七牛，不占服务器带宽，上传后有真实进度
+// 视频优先走七牛直传：浏览器直接上传原件到七牛，不占服务器带宽，上传后有真实进度。
+// 直传被浏览器跨域(CORS)拦截或失败时，自动降级为服务器中转上传，保证微信等环境下可用。
 async function directUploadVideo(options) {
   const file = options.file
   const ext = (file.name.match(/\.(\w+)$/) || [])[1] || 'mp4'
@@ -297,9 +298,18 @@ async function directUploadVideo(options) {
     file_size: file.size,
   })
   const { token, key, upload_url } = tokRes.data
-  await uploadDirect(upload_url, token, key, file, (p) => {
-    uploadProgress.value = p
-  })
+  try {
+    await uploadDirect(upload_url, token, key, file, (p) => {
+      uploadProgress.value = p
+    })
+  } catch (err) {
+    if (err.isDirect) {
+      ElMessage.warning('直传受限，已切换为服务器中转上传')
+      await relayUploadVideo(options)
+      return
+    }
+    throw err
+  }
   const res = await confirmMediaUpload(options.data.roomId, {
     key,
     type: 'video',
@@ -309,6 +319,19 @@ async function directUploadVideo(options) {
   })
   options.onSuccess(res.data, options.file, options.fileList)
   ElMessage.success('视频上传成功，正在后台转码压缩，完成后自动更新')
+}
+
+// 服务器中转上传视频（与图片同链路），用于直传失败时的兜底
+async function relayUploadVideo(options) {
+  const formData = new FormData()
+  formData.append('file', options.file)
+  for (const key in options.data) {
+    formData.append(key, options.data[key])
+  }
+  const res = await buildingUploadMedia(options.data.roomId || '', formData, (e) => {
+    uploadProgress.value = Math.round((e.loaded / e.total) * 100)
+  })
+  options.onSuccess(res.data, options.file, options.fileList)
 }
 
 function uploadDirect(url, token, key, file, onProgress) {
@@ -324,15 +347,25 @@ function uploadDirect(url, token, key, file, onProgress) {
     }
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText)
-      else reject(new Error(`上传失败(${xhr.status})`))
+      else {
+        const body = (xhr.responseText || '').trim().slice(0, 300)
+        const e = new Error(`直传失败(${xhr.status})${body ? '：' + body : ''}`)
+        e.isDirect = true
+        reject(e)
+      }
     }
-    xhr.onerror = () => reject(new Error('网络错误'))
+    xhr.onerror = () => {
+      const e = new Error(`直传网络错误${xhr.status ? '(' + xhr.status + ')' : ''}`)
+      e.isDirect = true
+      reject(e)
+    }
     xhr.send(fd)
   })
 }
 
-function handleUploadError() {
-  ElMessage.error('上传失败')
+function handleUploadError(err) {
+  const msg = err && err.message ? `：${err.message}` : ''
+  ElMessage.error('上传失败' + msg)
 }
 
 function handleUploadSuccess() {

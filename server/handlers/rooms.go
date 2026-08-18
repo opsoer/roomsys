@@ -181,7 +181,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 	layout := c.Query("layout")
 	requestedStatus := c.Query("status")
 
-	rooms, total, err := h.RoomService.List(bid, page, lastID, size, floor, layout, lastKey)
+	rooms, total, err := h.RoomService.List(bid, page, lastID, size, floor, layout, requestedStatus, lastKey)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房间列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -244,6 +244,8 @@ func (h *RoomHandler) List(c *gin.Context) {
 		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: contractMap[r.ID].EndDate, ContractManagementFee: contractMgmtFee})
 	}
 
+	// 状态筛选已在 SQL 层完成，此处仅作动态状态兜底校验（如过期等未映射到 SQL 的状态），
+	// 不再覆盖 total，保证 total 与分页结果一致
 	if requestedStatus != "" {
 		var filtered []RoomWithThumbnail
 		for _, r := range result {
@@ -252,7 +254,6 @@ func (h *RoomHandler) List(c *gin.Context) {
 			}
 		}
 		result = filtered
-		total = int64(len(filtered))
 	}
 
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})

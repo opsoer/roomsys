@@ -199,7 +199,7 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self'; worker-src 'self' blob:")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://*.qiniup.com https://*.qiniudn.com")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		if os.Getenv("GIN_MODE") == "release" {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")

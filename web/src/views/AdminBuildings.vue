@@ -111,7 +111,15 @@ async function fetchBuildings(append = false) {
     const data = res.data.buildings || []
     if (!append) total.value = res.data.total || 0
     if (append) {
-      buildings.value = [...buildings.value, ...data]
+      // 去重兜底：游标分页偶发重复时避免同一公寓显示多次
+      const existingIds = new Set(buildings.value.map(b => b.id))
+      const fresh = data.filter(b => !existingIds.has(b.id))
+      if (fresh.length === 0) {
+        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免反复请求
+        total.value = Math.max(total.value, buildings.value.length)
+      } else {
+        buildings.value = [...buildings.value, ...fresh]
+      }
     } else {
       buildings.value = data
     }

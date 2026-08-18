@@ -149,9 +149,10 @@ async function fetchRooms(append = false) {
   }
   try {
     const params = { page_size: pageSize }
-    // 游标分页：加载更多时携带上一批最后一条的 id
+    // 游标分页：加载更多时携带上一批最后一条的 id 和排序键
     if (append && rooms.value.length > 0) {
       params.last_id = rooms.value[rooms.value.length - 1].id
+      params.last_key = rooms.value[rooms.value.length - 1].room_number
     }
     if (statusFilter.value) params.status = statusFilter.value
     if (floorFilter.value) params.floor = floorFilter.value
@@ -159,7 +160,15 @@ async function fetchRooms(append = false) {
     const data = res.data.rooms || []
     if (!append) total.value = res.data.total || 0
     if (append) {
-      rooms.value = [...rooms.value, ...data]
+      // 去重兜底：游标分页偶发重复时避免同一房间显示多次
+      const existingIds = new Set(rooms.value.map(r => r.id))
+      const fresh = data.filter(r => !existingIds.has(r.id))
+      if (fresh.length === 0) {
+        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免无匹配房间时反复请求刷屏
+        total.value = Math.max(total.value, rooms.value.length)
+      } else {
+        rooms.value = [...rooms.value, ...fresh]
+      }
     } else {
       rooms.value = data
     }
