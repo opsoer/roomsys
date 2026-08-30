@@ -210,6 +210,14 @@ export function buildingDeleteMedia(roomId, mediaId) {
   return api.delete(`/building/rooms/${roomId}/media/${mediaId}`)
 }
 
+export function buildingCopyMedia(roomId, sourceRoomNumber) {
+  return api.post(`/building/rooms/${roomId}/media/copy`, { source_room_number: sourceRoomNumber })
+}
+
+export function buildingCheckTranscode(roomId) {
+  return api.post(`/building/rooms/${roomId}/media/check-transcode`)
+}
+
 export function buildingUploadCover(formData) {
   return uploadApi.post('/building/cover', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

@@ -22,8 +22,8 @@
         <template v-if="room.layout">{{ room.layout }}</template>
       </p>
       <div v-if="isAdmin" class="hero-actions">
-        <el-button type="primary" size="small" @click="$emit('edit')">编辑</el-button>
-        <el-button type="danger" size="small" @click="$emit('delete-room')">删除</el-button>
+        <el-button type="primary" size="small" @click="$emit('edit')">房间基本信息编辑</el-button>
+        <el-button type="danger" size="small" @click="$emit('delete-room')">删除房间</el-button>
       </div>
     </div>
   </div>

@@ -168,16 +168,71 @@
             上传视频{{ videoCount >= 2 ? '（已满）' : `（${videoCount}/2）` }}
           </el-button>
         </el-upload>
+        <el-button
+          type="info"
+          plain
+          :icon="CopyDocument"
+          style="width:100%"
+          @click="openCopyMediaDialog"
+        >
+          复用媒体
+        </el-button>
       </div>
     </div>
+
+    <el-dialog v-model="copyMediaVisible" title="复用其他房间的照片和视频" width="420px" align-center>
+      <div style="color:#666;font-size:14px;margin-bottom:16px">
+        选择源楼层和房间号，将该房间的所有照片和视频复制到当前房间。
+      </div>
+      <div style="font-size:14px;color:#909399;margin-bottom:12px">
+        当前房间：<strong style="color:#303133">{{ room.room_number }}</strong>
+      </div>
+      <div v-if="roomsLoading" style="text-align:center;padding:20px;color:#999">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载房间列表中...
+      </div>
+      <div v-else-if="copyFloorOptions.length === 0" style="text-align:center;padding:20px;color:#999">
+        暂无其他房间可复用
+      </div>
+      <div v-else style="display:flex;gap:12px;margin-bottom:8px">
+        <el-select v-model="copyFloor" placeholder="选择楼层" style="flex:1" @change="onCopyFloorChange">
+          <el-option v-for="f in copyFloorOptions" :key="f" :label="f + '层'" :value="f" />
+        </el-select>
+        <el-select v-model="copyRoomNumber" placeholder="选择房间号" style="flex:1" :disabled="!copyFloor" @change="onCopyRoomChange">
+          <el-option v-for="r in copyRoomOptions" :key="r.room_number" :label="r.room_number" :value="r.room_number" />
+        </el-select>
+      </div>
+      <template #footer>
+        <el-button @click="copyMediaVisible = false">取消</el-button>
+        <el-button type="primary" :loading="copying" :disabled="!copyRoomNumber" @click="handleCopyMedia">
+          确认复用
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="copyConfirmVisible" title="确认删除当前房间媒体" width="420px" align-center>
+      <div style="color:#666;font-size:14px;line-height:1.8">
+        <div style="margin-bottom:8px">即将执行以下操作：</div>
+        <div style="padding-left:8px;color:#303133">
+          1. <strong style="color:#e6a23c">删除</strong>当前房间（{{ room.room_number }}）的所有照片和视频<br>
+          2. 复用房间 <strong style="color:#303133">{{ copyRoomNumber }}</strong> 的所有照片和视频
+        </div>
+        <div style="margin-top:12px;color:#f56c6c;font-weight:500">此操作不可恢复，确定继续吗？</div>
+      </div>
+      <template #footer>
+        <el-button @click="copyConfirmVisible = false">取消</el-button>
+        <el-button type="danger" :loading="copying" @click="confirmCopyMedia">
+          确认删除并复用
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Picture, VideoCamera } from '@element-plus/icons-vue'
-import { buildingUploadMedia, getUploadToken, confirmMediaUpload } from '../../api'
+import { Plus, Picture, VideoCamera, CopyDocument, Loading } from '@element-plus/icons-vue'
+import { buildingUploadMedia, getUploadToken, confirmMediaUpload, buildingCopyMedia, buildingGetRooms } from '../../api'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -193,6 +248,68 @@ function mgmtFeeLabel(fee) {
 }
 
 const emit = defineEmits(['renew', 'rent', 'vacant', 'reserve', 'confirm-sign', 'cancel-reserve', 'upload-success'])
+
+const copyMediaVisible = ref(false)
+const copyConfirmVisible = ref(false)
+const copying = ref(false)
+const copyFloor = ref('')
+const copyRoomNumber = ref('')
+const allRooms = ref([])
+const roomsLoading = ref(false)
+
+const copyFloorOptions = computed(() => {
+  const floors = new Set()
+  for (const r of allRooms.value) {
+    if (r.id !== props.room.id && r.floor) floors.add(String(r.floor))
+  }
+  return [...floors].sort((a, b) => Number(a) - Number(b))
+})
+
+const copyRoomOptions = computed(() => {
+  if (!copyFloor.value) return []
+  return allRooms.value.filter(r => String(r.floor) === copyFloor.value && r.id !== props.room.id)
+})
+
+function openCopyMediaDialog() {
+  copyFloor.value = ''
+  copyRoomNumber.value = ''
+  copyMediaVisible.value = true
+  fetchAllRooms()
+}
+
+async function fetchAllRooms() {
+  roomsLoading.value = true
+  try {
+    const res = await buildingGetRooms({ page: 1, page_size: 100 })
+    const data = res?.data
+    allRooms.value = data?.rooms || (Array.isArray(data) ? data : [])
+  } catch { allRooms.value = [] } finally { roomsLoading.value = false }
+}
+
+function onCopyFloorChange() {
+  copyRoomNumber.value = ''
+}
+
+function onCopyRoomChange() {}
+
+function handleCopyMedia() {
+  if (!copyRoomNumber.value) return
+  copyMediaVisible.value = false
+  copyConfirmVisible.value = true
+}
+
+async function confirmCopyMedia() {
+  copying.value = true
+  try {
+    const res = await buildingCopyMedia(props.room.id, copyRoomNumber.value)
+    ElMessage.success(res?.message || '复用成功')
+    copyConfirmVisible.value = false
+    copyRoomNumber.value = ''
+    emit('upload-success')
+  } catch { /* handled by interceptor */ } finally {
+    copying.value = false
+  }
+}
 
 const imageCount = computed(() => {
   const media = props.room?.media || []
@@ -423,6 +540,8 @@ function beforeUploadVideo(file) {
 .sidebar-actions { display: flex; flex-direction: column; gap: 8px; }
 .sidebar-actions .el-button { width: 100%; margin-left: 0 !important; }
 .upload-actions { display: flex; flex-direction: column; gap: 8px; }
+.upload-actions :deep(.el-upload) { width: 100%; }
+.upload-actions :deep(.el-upload .el-button) { width: 100%; }
 
 @media (max-width: 768px) {
   .sidebar-card { padding: 16px; }

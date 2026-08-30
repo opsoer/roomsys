@@ -18,7 +18,7 @@
           <el-option label="全部户型" value="" />
           <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
         </el-select>
-        <el-button type="primary" @click="showAddDialog = true">
+        <el-button type="primary" @click="openAddDialog">
           <el-icon><Plus /></el-icon> 添加房间
         </el-button>
       </div>
@@ -138,6 +138,16 @@
         <el-form-item label="描述" prop="description">
           <el-input v-model="addForm.description" type="textarea" :rows="3" />
         </el-form-item>
+        <el-form-item label="复用媒体">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="addCopyFloor" placeholder="选择楼层" clearable style="flex:1" @change="addCopyRoom = ''">
+              <el-option v-for="f in addCopyFloorOptions" :key="f" :label="f + '层'" :value="f" />
+            </el-select>
+            <el-select v-model="addCopyRoom" placeholder="选择房间号" clearable style="flex:1" :disabled="!addCopyFloor">
+              <el-option v-for="r in addCopyRoomOptions" :key="r.id" :label="r.room_number" :value="r.id" />
+            </el-select>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showAddDialog = false">取消</el-button>
@@ -148,7 +158,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetRooms, buildingCreateRoom } from '../api'
 import { ElMessage } from 'element-plus'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
@@ -156,6 +166,19 @@ import { mediaUrl, statusLabel } from '../utils/format'
 
 const floorOptions = FLOOR_OPTIONS
 const layoutOptions = LAYOUT_OPTIONS
+
+const addCopyFloorOptions = computed(() => {
+  const floors = new Set()
+  for (const r of addCopyAllRooms.value) {
+    if (r.floor) floors.add(r.floor)
+  }
+  return [...floors].sort()
+})
+
+const addCopyRoomOptions = computed(() => {
+  if (!addCopyFloor.value) return []
+  return addCopyAllRooms.value.filter(r => r.floor === addCopyFloor.value)
+})
 
 const rooms = ref([])
 const loading = ref(true)
@@ -169,6 +192,9 @@ const showAddDialog = ref(false)
 const submitting = ref(false)
 const addForm = ref({ room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null })
 const addFormRef = ref(null)
+const addCopyFloor = ref('')
+const addCopyRoom = ref('')
+const addCopyAllRooms = ref([])
 const roomTotal = ref(0)
 const roomPageSize = 20
 
@@ -237,15 +263,29 @@ function mgmtFee(room) {
   return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
 }
 
+async function openAddDialog() {
+  addCopyFloor.value = ''
+  addCopyRoom.value = ''
+  showAddDialog.value = true
+  try {
+    const res = await buildingGetRooms({ page: 1, page_size: 100 })
+    addCopyAllRooms.value = res?.data?.rooms || []
+  } catch { addCopyAllRooms.value = [] }
+}
+
 async function handleAdd() {
   const valid = await addFormRef.value.validate().catch(() => false)
   if (!valid) return
   submitting.value = true
   try {
-    await buildingCreateRoom(addForm.value)
+    const payload = { ...addForm.value }
+    if (addCopyRoom.value) payload.copy_from_room_id = addCopyRoom.value
+    await buildingCreateRoom(payload)
     ElMessage.success('添加成功')
     showAddDialog.value = false
     addForm.value = { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
+    addCopyFloor.value = ''
+    addCopyRoom.value = ''
     await fetchRooms()
   } catch {
     ElMessage.error('添加房间失败')

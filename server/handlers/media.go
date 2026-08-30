@@ -457,6 +457,113 @@ func (h *MediaHandler) PfopCallback(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0})
 }
 
+// pfopStatus 查询七牛持久化处理状态
+func (h *MediaHandler) pfopStatus(persistentID string) (string, string, error) {
+	if !h.useQiniu() {
+		return "", "", fmt.Errorf("未配置七牛云")
+	}
+	url := fmt.Sprintf("https://api.qiniu.com/status/get/prefop?id=%s", persistentID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", "", err
+	}
+	token, err := h.qiniuMac().SignRequest(req)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "QBox "+token)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Code  int    `json:"code"`
+		Desc  string `json:"desc"`
+		Items []struct {
+			Code int    `json:"code"`
+			Key  string `json:"key"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("查询转码状态失败: %d %s", resp.StatusCode, string(body))
+	}
+	status := "processing"
+	if result.Code == 0 && len(result.Items) > 0 && result.Items[0].Code == 0 {
+		status = "ready"
+	} else if result.Code != 0 || (len(result.Items) > 0 && result.Items[0].Code != 0) {
+		status = "failed"
+	}
+	key := ""
+	if len(result.Items) > 0 {
+		key = result.Items[0].Key
+	}
+	return status, key, nil
+}
+
+// CheckTranscodeStatus 主动查询转码状态（补偿回调不可达的场景）
+func (h *MediaHandler) CheckTranscodeStatus(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	roomID := c.Param("id")
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+	if _, err := h.MediaService.GetRoomByID(uint(rid), bid); err != nil {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return
+	}
+
+	var processingVideos []models.RoomMedia
+	h.DB.Where("room_id = ? AND type = 'video' AND status = 'processing' AND transcode_id != ''", rid).Find(&processingVideos)
+
+	updated := 0
+	for _, v := range processingVideos {
+		status, newKey, err := h.pfopStatus(v.TranscodeID)
+		if err != nil {
+			logger.Log.Warn().Err(err).Uint("media_id", v.ID).Str("transcode_id", v.TranscodeID).Msg("查询转码状态失败")
+			continue
+		}
+		if status == "ready" && newKey != "" {
+			newSize := int64(0)
+			if h.useQiniu() {
+				cfg := h.qiniuConfig()
+				bm := storage.NewBucketManager(h.qiniuMac(), &cfg)
+				if info, e := bm.Stat(h.Cfg.QiniuBucket, newKey); e == nil {
+					newSize = info.Fsize
+				}
+			}
+			updates := map[string]interface{}{
+				"status":       "ready",
+				"file_path":    newKey,
+				"file_size":    newSize,
+				"transcode_id": "",
+			}
+			h.MediaService.UpdateMedia(&v, updates)
+			if v.FilePath != newKey {
+				h.deleteFile(v.FilePath)
+			}
+			updated++
+			logger.Log.Info().Uint("media_id", v.ID).Str("from", v.FilePath).Str("to", newKey).Msg("轮询补转码完成")
+		} else if status == "failed" {
+			h.MediaService.UpdateMedia(&v, map[string]interface{}{"status": "failed", "transcode_id": ""})
+			updated++
+		}
+	}
+
+	utils.Success(c, gin.H{"updated": updated})
+}
+
 // Upload 上传媒体文件到房间，支持图片压缩和视频上传
 func (h *MediaHandler) Upload(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
@@ -616,16 +723,29 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	h.deleteFile(media.FilePath)
-	if media.ThumbnailPath != "" {
-		h.deleteFile(media.ThumbnailPath)
-	}
+	filePath := media.FilePath
+	thumbPath := media.ThumbnailPath
 
 	if err := h.MediaService.DeleteMedia(media); err != nil {
 		logger.Log.Error().Err(err).Uint("media_id", media.ID).Msg("删除媒体记录失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
+
+	// 记录删除后检查引用计数，无其他房间引用时才真正删除存储文件
+	if filePath != "" {
+		count, _ := h.MediaService.CountFileReferences(filePath)
+		if count == 0 {
+			h.deleteFile(filePath)
+		}
+	}
+	if thumbPath != "" {
+		count, _ := h.MediaService.CountThumbnailReferences(thumbPath)
+		if count == 0 {
+			h.deleteFile(thumbPath)
+		}
+	}
+
 	logger.Log.Info().Uint("media_id", media.ID).Uint("room_id", room.ID).Str("file_path", media.FilePath).Msg("媒体文件已删除")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
@@ -859,6 +979,118 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 		Str("key", req.Key).
 		Msg("直传文件确认成功")
 	utils.Created(c, "上传成功", gin.H{"media": media})
+}
+
+// CopyMediaReq 复用媒体请求
+type CopyMediaReq struct {
+	SourceRoomNumber string `json:"source_room_number" binding:"required"`
+}
+
+// CopyMedia 复用其他房间的照片和视频到当前房间（共享同一份存储文件）
+func (h *MediaHandler) CopyMedia(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	roomID := c.Param("id")
+	rid, err := strconv.ParseUint(roomID, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+	currentRoom, err := h.MediaService.GetRoomByID(uint(rid), bid)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, "当前房间不存在")
+		return
+	}
+
+	var req CopyMediaReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	sourceRoom, err := h.MediaService.GetRoomByNumber(bid, req.SourceRoomNumber)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, "源房间不存在")
+		return
+	}
+	if sourceRoom.ID == currentRoom.ID {
+		utils.Error(c, http.StatusBadRequest, "不能复用自己房间的媒体")
+		return
+	}
+
+	sourceMedia, err := h.MediaService.GetMediaByRoom(sourceRoom.ID)
+	if err != nil || len(sourceMedia) == 0 {
+		utils.Error(c, http.StatusBadRequest, "源房间没有媒体文件")
+		return
+	}
+
+	// 收集当前房间的旧文件路径（用于后续检查是否删除）
+	type oldFile struct {
+		FilePath      string
+		ThumbnailPath string
+	}
+	var oldFiles []oldFile
+	for _, m := range currentRoom.Media {
+		oldFiles = append(oldFiles, oldFile{FilePath: m.FilePath, ThumbnailPath: m.ThumbnailPath})
+	}
+
+	// 删除当前房间的媒体记录（不删除存储文件）
+	if err := h.MediaService.DeleteMediaByRoom(currentRoom.ID); err != nil {
+		logger.Log.Error().Err(err).Uint("room_id", currentRoom.ID).Msg("删除当前房间媒体记录失败")
+		utils.Error(c, http.StatusInternalServerError, "清理当前房间媒体失败")
+		return
+	}
+
+	// 检查旧文件是否还被其他房间引用，无引用则删除存储文件
+	for _, f := range oldFiles {
+		if f.FilePath != "" {
+			count, _ := h.MediaService.CountFileReferences(f.FilePath)
+			if count == 0 {
+				h.deleteFile(f.FilePath)
+			}
+		}
+		if f.ThumbnailPath != "" {
+			count, _ := h.MediaService.CountThumbnailReferences(f.ThumbnailPath)
+			if count == 0 {
+				h.deleteFile(f.ThumbnailPath)
+			}
+		}
+	}
+
+	// 为当前房间创建新的媒体记录（指向源文件路径）
+	for _, sm := range sourceMedia {
+		status := sm.Status
+		// 视频如果正在转码或转码失败，复制后新记录没有 transcode_id，回调无法匹配，
+		// 且源转码完成后会删除原片只留 _720p 版本，新记录指向的原片会丢失，
+		// 因此统一设为 ready（原文件当前可访问）。
+		if sm.Type == "video" && (status == "processing" || status == "failed") {
+			status = "ready"
+		}
+		newMedia := models.RoomMedia{
+			RoomID:        currentRoom.ID,
+			Type:          sm.Type,
+			Category:      sm.Category,
+			FilePath:      sm.FilePath,
+			ThumbnailPath: sm.ThumbnailPath,
+			FileName:      sm.FileName,
+			FileSize:      sm.FileSize,
+			Status:        status,
+			SortOrder:     sm.SortOrder,
+		}
+		if err := h.MediaService.CreateMedia(&newMedia); err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", currentRoom.ID).Str("file_path", sm.FilePath).Msg("创建复用媒体记录失败")
+		}
+	}
+
+	logger.Log.Info().
+		Uint("room_id", currentRoom.ID).
+		Uint("source_room_id", sourceRoom.ID).
+		Int("media_count", len(sourceMedia)).
+		Msg("房间媒体复用成功")
+	utils.SuccessWithMsg(c, fmt.Sprintf("已复用 %d 个媒体文件", len(sourceMedia)), nil)
 }
 
 // Serve 提供媒体文件服务（支持本地和七牛云重定向）

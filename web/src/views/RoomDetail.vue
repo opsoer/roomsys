@@ -34,7 +34,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { buildingGetRoom, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo } from '../api'
+import { buildingGetRoom, buildingDeleteRoom, buildingDeleteMedia, getBuildingInfo, buildingCheckTranscode } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { showImagePreview } from 'vant'
 import RoomHero from '../components/room/RoomHero.vue'
@@ -129,6 +129,7 @@ function startTranscodePolling() {
   let tries = 0
   transcodeTimer = setInterval(async () => {
     tries++
+    try { await buildingCheckTranscode(route.params.id) } catch {}
     await fetchRoom(true)
     if (!videos.value.some(v => v.status === 'processing') || tries >= 20) {
       stopTranscodePolling()
@@ -200,8 +201,8 @@ async function fetchBuildingInfo() {
   }
 }
 
-onMounted(() => {
-  fetchRoom().catch(() => {})
+onMounted(async () => {
+  await fetchRoom().catch(() => {})
   fetchBuildingInfo()
   startTranscodePolling()
 })

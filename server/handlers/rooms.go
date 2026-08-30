@@ -47,6 +47,7 @@ type CreateRoomReq struct {
 	ManagementFee        *float64 `json:"management_fee" binding:"required"`
 	ElectricityUnitPrice *float64 `json:"electricity_unit_price" binding:"required"`
 	WaterUnitPrice       *float64 `json:"water_unit_price" binding:"required"`
+	CopyFromRoomID       *uint    `json:"copy_from_room_id"`
 }
 
 // UpdateRoomReq 更新房间请求参数
@@ -340,6 +341,31 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if req.CopyFromRoomID != nil && *req.CopyFromRoomID > 0 {
+		var sourceMedia []models.RoomMedia
+		h.DB.Where("room_id = ?", *req.CopyFromRoomID).Order("sort_order, id").Find(&sourceMedia)
+		for _, sm := range sourceMedia {
+			status := sm.Status
+			if sm.Type == "video" && (status == "processing" || status == "failed") {
+				status = "ready"
+			}
+			newMedia := models.RoomMedia{
+				RoomID:        room.ID,
+				Type:          sm.Type,
+				Category:      sm.Category,
+				FilePath:      sm.FilePath,
+				ThumbnailPath: sm.ThumbnailPath,
+				FileName:      sm.FileName,
+				FileSize:      sm.FileSize,
+				Status:        status,
+				SortOrder:     sm.SortOrder,
+			}
+			if err := h.DB.Create(&newMedia).Error; err != nil {
+				logger.Log.Error().Err(err).Uint("room_id", room.ID).Str("file_path", sm.FilePath).Msg("复用媒体记录失败")
+			}
+		}
+	}
+
 	utils.Created(c, "创建成功", gin.H{"room": room})
 }
 
@@ -429,9 +455,14 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// 删除记录后检查引用计数，无其他房间引用时才真正删除存储文件
 	for _, p := range append(mediaPaths, thumbPaths...) {
 		if p != "" {
-			deleteStoredFile(h.Cfg, p)
+			var refCount int64
+			h.DB.Table("room_media").Where("file_path = ? AND deleted_at IS NULL", p).Count(&refCount)
+			if refCount == 0 {
+				deleteStoredFile(h.Cfg, p)
+			}
 		}
 	}
 

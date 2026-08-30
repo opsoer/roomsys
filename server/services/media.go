@@ -73,3 +73,36 @@ func (s *MediaService) UpdateBuildingCover(buildingID uint, coverImage string) e
 func (s *MediaService) UpdateMedia(media *models.RoomMedia, updates map[string]interface{}) error {
 	return s.DB.Model(media).Updates(updates).Error
 }
+
+// GetMediaByRoom 获取指定房间的所有媒体资源
+func (s *MediaService) GetMediaByRoom(roomID uint) ([]models.RoomMedia, error) {
+	var medias []models.RoomMedia
+	err := s.DB.Where("room_id = ?", roomID).Order("sort_order, id").Find(&medias).Error
+	return medias, err
+}
+
+// GetRoomByNumber 根据楼栋ID和房间号查找房间
+func (s *MediaService) GetRoomByNumber(buildingID uint, roomNumber string) (*models.Room, error) {
+	var room models.Room
+	err := s.DB.Where("building_id = ? AND room_number = ?", buildingID, roomNumber).First(&room).Error
+	return &room, err
+}
+
+// CountFileReferences 统计某个文件路径被多少条媒体记录引用
+func (s *MediaService) CountFileReferences(filePath string) (int64, error) {
+	var count int64
+	err := s.DB.Model(&models.RoomMedia{}).Where("file_path = ? AND deleted_at IS NULL", filePath).Count(&count).Error
+	return count, err
+}
+
+// CountThumbnailReferences 统计某个缩略图路径被多少条媒体记录引用
+func (s *MediaService) CountThumbnailReferences(thumbPath string) (int64, error) {
+	var count int64
+	err := s.DB.Model(&models.RoomMedia{}).Where("thumbnail_path = ? AND deleted_at IS NULL", thumbPath).Count(&count).Error
+	return count, err
+}
+
+// DeleteMediaByRoom 删除指定房间的所有媒体记录（不删除存储文件）
+func (s *MediaService) DeleteMediaByRoom(roomID uint) error {
+	return s.DB.Where("room_id = ?", roomID).Delete(&models.RoomMedia{}).Error
+}
