@@ -247,6 +247,10 @@ export function buildingGetBillTrend(params) {
   return api.get('/building/bills/trend', { params })
 }
 
+export function buildingExportBills(params) {
+  return api.get('/building/bills/export', { params, responseType: 'blob' })
+}
+
 export function buildingGetDividendPredict(params) {
   return api.get('/building/dividends/predict', { params })
 }

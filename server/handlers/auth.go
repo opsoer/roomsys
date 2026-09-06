@@ -61,25 +61,31 @@ func cleanupLoginAttempts() {
 	}
 }
 
-// checkLoginRateLimit 检查指定IP的登录频率是否超限
-func checkLoginRateLimit(ip string) bool {
+// isLoginRateLimited 检查指定 IP 的登录失败次数是否已超限
+func isLoginRateLimited(ip string) bool {
+	rateLimitMu.Lock()
+	defer rateLimitMu.Unlock()
+	now := time.Now()
+	if entry, ok := rateLimitData[ip]; ok {
+		if now.Sub(entry.windowStart) < rateLimitWindow && entry.count >= maxLoginAttempts {
+			return true
+		}
+	}
+	return false
+}
+
+// recordLoginFailure 记录一次登录失败（仅失败计入限流，成功登录不影响计数）
+func recordLoginFailure(ip string) {
 	rateLimitMu.Lock()
 	defer rateLimitMu.Unlock()
 	now := time.Now()
 	if entry, ok := rateLimitData[ip]; ok {
 		if now.Sub(entry.windowStart) < rateLimitWindow {
-			if entry.count >= maxLoginAttempts {
-				return false
-			}
 			entry.count++
-			return true
+			return
 		}
-		entry.windowStart = now
-		entry.count = 1
-		return true
 	}
 	rateLimitData[ip] = &rateLimitEntry{windowStart: now, count: 1}
-	return true
 }
 
 // rateLimitEntry 登录频率限制条目，记录窗口起始时间和请求次数
@@ -104,7 +110,7 @@ type LoginReq struct {
 // Login 处理用户登录，验证用户名密码并返回令牌
 func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
-	if !checkLoginRateLimit(ip) {
+	if isLoginRateLimited(ip) {
 		logger.Log.Warn().Str("ip", ip).Msg("登录失败: 频率超限")
 		utils.Error(c, http.StatusTooManyRequests, "登录过于频繁，请稍后再试")
 		return
@@ -117,11 +123,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	user, err := h.AuthService.GetUserByUsername(req.Username)
 	if err != nil {
+		recordLoginFailure(ip)
 		logger.Log.Warn().Str("username", req.Username).Str("ip", ip).Msg("登录失败: 账号不存在")
 		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
 	if !h.AuthService.CheckPassword(user.PasswordHash, req.Password) {
+		recordLoginFailure(ip)
 		logger.Log.Warn().Str("username", req.Username).Str("ip", ip).Msg("登录失败: 密码错误")
 		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return

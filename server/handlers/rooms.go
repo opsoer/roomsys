@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -81,6 +82,45 @@ type UpdateRoomStatusReq struct {
 type UpdateContractReq struct {
 	EndDate   string  `json:"end_date" binding:"required"`
 	RentPrice float64 `json:"rent_price"`
+}
+
+// roomOwnedByBuilding 校验房间属于当前管理员的楼栋，防止跨公寓越权访问（IDOR）。
+// 校验失败时已写入错误响应并返回 false。
+func (h *RoomHandler) roomOwnedByBuilding(c *gin.Context, roomID uint) (*models.Room, bool) {
+	room, err := h.RoomService.GetByID(roomID)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return nil, false
+	}
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return nil, false
+	}
+	if room.BuildingID != bid {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return nil, false
+	}
+	return room, true
+}
+
+// validateContractDates 校验合同起止日期：格式 YYYY-MM-DD、起租早于结束
+func validateContractDates(startDate, endDate string) error {
+	if startDate == "" || endDate == "" {
+		return errors.New("请填写起租日期和结束日期")
+	}
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return errors.New("起租日期格式错误，请使用 YYYY-MM-DD")
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return errors.New("结束日期格式错误，请使用 YYYY-MM-DD")
+	}
+	if !start.Before(end) {
+		return errors.New("起租日期必须早于结束日期")
+	}
+	return nil
 }
 
 // GetPublic 获取公开房间详情（含租期状态）
@@ -274,6 +314,9 @@ func (h *RoomHandler) Get(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "房间不存在")
 		return
 	}
+	if _, ok := h.roomOwnedByBuilding(c, uint(rid)); !ok {
+		return
+	}
 
 	type RoomDetail struct {
 		models.Room
@@ -378,6 +421,11 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
+	room, ok := h.roomOwnedByBuilding(c, uint(rid))
+	if !ok {
+		return
+	}
+
 	var req UpdateRoomReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
@@ -413,6 +461,17 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		updates["water_unit_price"] = *req.WaterUnitPrice
 	}
 
+	if req.RoomNumber != "" && req.RoomNumber != room.RoomNumber {
+		var dup int64
+		h.DB.Model(&models.Room{}).
+			Where("building_id = ? AND room_number = ? AND id <> ? AND deleted_at IS NULL", room.BuildingID, req.RoomNumber, room.ID).
+			Count(&dup)
+		if dup > 0 {
+			utils.Error(c, http.StatusConflict, "房间号已存在")
+			return
+		}
+	}
+
 	if err := h.RoomService.Update(uint(rid), updates); err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE") {
 			utils.Error(c, http.StatusConflict, "房间号已存在")
@@ -432,6 +491,10 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	rid, err := strconv.ParseUint(roomID, 10, 32)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+
+	if _, ok := h.roomOwnedByBuilding(c, uint(rid)); !ok {
 		return
 	}
 
@@ -484,15 +547,22 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	room, err := h.RoomService.GetByID(uint(rid))
-	if err != nil {
-		utils.Error(c, http.StatusNotFound, "房间不存在")
+	room, ok := h.roomOwnedByBuilding(c, uint(rid))
+	if !ok {
 		return
 	}
 
 	if req.Status != "rented" && req.Status != "vacant" && req.Status != "reserved" {
 		utils.Error(c, http.StatusBadRequest, "无效的状态值，仅支持 rented、vacant 或 reserved")
 		return
+	}
+
+	// 出租/预订均需合法的起止日期（YYYY-MM-DD 且起租早于结束）
+	if req.Status == "rented" || req.Status == "reserved" {
+		if err := validateContractDates(req.StartDate, req.EndDate); err != nil {
+			utils.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	userID, _ := c.Get("user_id")
@@ -596,10 +666,6 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		if !isPrepaid {
 			now := utils.Now()
 			datePart := now.Format("20060102")
-			var count int64
-			tx.Model(&models.Bill{}).
-				Where("bill_no LIKE ?", "B"+datePart+"%").
-				Count(&count)
 
 			if req.RentPrice > 0 {
 				startDate, _ := time.Parse("2006-01-02", req.StartDate)
@@ -629,7 +695,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 
 				totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
 
-				rentNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+				rentNo := utils.NextBillNo(tx, datePart)
 				rentBill := models.Bill{
 					BillNo:      rentNo,
 					Type:        "income",
@@ -648,11 +714,10 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 					utils.Error(c, http.StatusInternalServerError, "创建出租账单失败")
 					return
 				}
-				count++
 			}
 
 			if req.Deposit > 0 {
-				depositNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+				depositNo := utils.NextBillNo(tx, datePart)
 				depositBill := models.Bill{
 					BillNo:      depositNo,
 					Type:        "income",
@@ -671,7 +736,6 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 					utils.Error(c, http.StatusInternalServerError, "创建出租账单失败")
 					return
 				}
-				count++
 			}
 		}
 
@@ -694,6 +758,16 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 	} else if req.Status == "vacant" {
 		if room.Status == "reserved" {
 			h.cancelReservation(c, room, &req)
+			return
+		}
+
+		// 退租前提：房间当前存在生效中的合同（防止对空置房间误操作产生押金退还账单）
+		var activeContract int64
+		h.DB.Model(&models.RentalContract{}).
+			Where("room_id = ? AND status = ?", room.ID, "active").
+			Count(&activeContract)
+		if activeContract == 0 {
+			utils.Error(c, http.StatusBadRequest, "该房间当前没有生效中的合同，无法办理退租")
 			return
 		}
 
@@ -726,10 +800,6 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		if *req.RefundedDeposit > 0 {
 			now := utils.Now()
 			datePart := now.Format("20060102")
-			var count int64
-			tx.Model(&models.Bill{}).
-				Where("bill_no LIKE ?", "B"+datePart+"%").
-				Count(&count)
 
 			deducted := originalDeposit - *req.RefundedDeposit
 			desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, *req.RefundedDeposit)
@@ -738,7 +808,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			}
 
 			bill := models.Bill{
-				BillNo:      fmt.Sprintf("B%s%05d", datePart, count+1),
+				BillNo:      utils.NextBillNo(tx, datePart),
 				Type:        "expense",
 				Subtype:     "押金退还",
 				Amount:      *req.RefundedDeposit,
@@ -907,13 +977,9 @@ func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *
 	if diff != 0 {
 		now := utils.Now()
 		datePart := now.Format("20060102")
-		var count int64
-		tx.Model(&models.Bill{}).
-			Where("bill_no LIKE ?", "B"+datePart+"%").
-			Count(&count)
 
 		bill := models.Bill{
-			BillNo:      fmt.Sprintf("B%s%05d", datePart, count+1),
+			BillNo:      utils.NextBillNo(tx, datePart),
 			BuildingID:  room.BuildingID,
 			RoomID:      &room.ID,
 			Subtype:     "定金违约",
@@ -971,6 +1037,10 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 		return
 	}
 
+	if _, ok := h.roomOwnedByBuilding(c, uint(rid)); !ok {
+		return
+	}
+
 	contract, err := h.RoomService.GetActiveContract(uint(rid))
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "无有效合同")
@@ -985,6 +1055,10 @@ func (h *RoomHandler) GetRoomContracts(c *gin.Context) {
 	rid, err := strconv.ParseUint(roomID, 10, 32)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+
+	if _, ok := h.roomOwnedByBuilding(c, uint(rid)); !ok {
 		return
 	}
 
@@ -1011,6 +1085,15 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 	var req UpdateContractReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	if _, ok := h.roomOwnedByBuilding(c, uint(rid)); !ok {
+		return
+	}
+
+	if _, err := time.Parse("2006-01-02", req.EndDate); err != nil {
+		utils.Error(c, http.StatusBadRequest, "退租日期格式错误，请使用 YYYY-MM-DD")
 		return
 	}
 
@@ -1055,9 +1138,8 @@ func (h *RoomHandler) PrepayContract(c *gin.Context) {
 		return
 	}
 
-	room, err := h.RoomService.GetByID(uint(rid))
-	if err != nil {
-		utils.Error(c, http.StatusNotFound, "房间不存在")
+	room, ok := h.roomOwnedByBuilding(c, uint(rid))
+	if !ok {
 		return
 	}
 
@@ -1103,13 +1185,8 @@ func (h *RoomHandler) PrepayContract(c *gin.Context) {
 		return
 	}
 
-	var count int64
-	tx.Model(&models.Bill{}).
-		Where("bill_no LIKE ?", "B"+datePart+"%").
-		Count(&count)
-
 	if req.Deposit > 0 {
-		depositNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+		depositNo := utils.NextBillNo(tx, datePart)
 		depositBill := models.Bill{
 			BillNo:      depositNo,
 			Type:        "income",
@@ -1128,7 +1205,6 @@ func (h *RoomHandler) PrepayContract(c *gin.Context) {
 			utils.Error(c, http.StatusInternalServerError, "创建押金账单失败")
 			return
 		}
-		count++
 	}
 
 	// 首期租金：按合同约定起租日折算至当月月末（不足整月按天算）
@@ -1160,7 +1236,7 @@ func (h *RoomHandler) PrepayContract(c *gin.Context) {
 				}
 				totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
 				if totalAmount > 0 {
-					rentNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+					rentNo := utils.NextBillNo(tx, datePart)
 					rentBill := models.Bill{
 						BillNo:      rentNo,
 						Type:        "income",

@@ -74,7 +74,7 @@ export function statusLabel(status) {
     vacant: '未出租',
     reserved: '已预订',
     rented: '已出租',
-    expiring: '即将退租',
+    expiring: '即将到期',
     expired: '已过期',
   }
   return labels[status] || status

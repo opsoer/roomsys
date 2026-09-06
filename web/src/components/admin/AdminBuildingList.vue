@@ -64,7 +64,7 @@
                 <span style="color:#999;">🚪</span>
                 房间 {{ b.room_count }} 间
                 <el-tag v-if="b.vacant_count > 0" size="small" type="success" style="margin-left:6px;">可租 {{ b.vacant_count }}</el-tag>
-                <span v-else style="margin-left:6px;color:#999;">已满</span>
+                <span v-else-if="b.room_count > 0" style="margin-left:6px;color:#999;">已满</span>
               </div>
               <div v-if="b.contract_date">
                 <span style="color:#999;">📅</span>

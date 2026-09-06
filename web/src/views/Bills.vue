@@ -5,7 +5,7 @@
       <el-tab-pane label="账单列表" name="list">
         <BillList ref="billListRef" :bills="bills" :loading="billLoading"
           :rooms="allRooms"
-          @search="fetchBills" @add="openAddDialog" @edit="handleEdit" />
+          @search="fetchBills" @add="openAddDialog" @edit="handleEdit" @export="handleExport" />
       </el-tab-pane>
 
       <el-tab-pane label="月度统计" name="monthly">
@@ -41,7 +41,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { buildingGetBills, buildingGetRooms } from '../api'
+import { buildingGetBills, buildingGetRooms, buildingExportBills } from '../api'
 import { ElMessage } from 'element-plus'
 import BillList from '../components/bill/BillList.vue'
 import BillStats from '../components/bill/BillStats.vue'
@@ -114,6 +114,23 @@ function setupInfiniteScroll() {
 
 function openAddDialog() {
   billDialogRef.value?.open()
+}
+
+// 按当前筛选条件导出账单 CSV
+async function handleExport() {
+  try {
+    const params = billListRef.value?.getFilterParams() || {}
+    const res = await buildingExportBills(params)
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `bills-${params.start_date || ''}_${params.end_date || ''}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 function handleEdit(row) {

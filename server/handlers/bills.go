@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"rental-server/logger"
 	"rental-server/models"
@@ -16,6 +17,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// sanitizeCSVCell 防止 CSV 公式注入：以 = + - @ 开头的单元格加前缀使其按文本处理
+func sanitizeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
 
 // isMonthSettled 检查指定公寓的某个月份是否已结算分红
 func isMonthSettled(db *gorm.DB, buildingID uint, billDate string) bool {
@@ -119,6 +132,18 @@ func (h *BillHandler) Create(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "类型必须为 income 或 expense")
 		return
 	}
+	if _, err := time.Parse("2006-01-02", req.BillDate); err != nil {
+		utils.Error(c, http.StatusBadRequest, "账单日期格式错误，请使用 YYYY-MM-DD")
+		return
+	}
+	// 关联房间必须属于本公寓，防止跨楼栋引用
+	if req.RoomID != nil && *req.RoomID > 0 {
+		var roomBuildingID uint
+		if err := h.DB.Model(&models.Room{}).Where("id = ?", *req.RoomID).Select("building_id").Scan(&roomBuildingID).Error; err != nil || roomBuildingID != bid {
+			utils.Error(c, http.StatusBadRequest, "关联房间不存在或不属于本公寓")
+			return
+		}
+	}
 	if isMonthSettled(h.DB, bid, req.BillDate) {
 		logger.Log.Warn().Uint("building_id", bid).Str("bill_date", req.BillDate).Msg("创建账单失败: 该月已结算")
 		utils.Error(c, http.StatusBadRequest, "该月已结算分红，无法创建账单")
@@ -207,6 +232,10 @@ func (h *BillHandler) Update(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请填写修改原因")
 		return
 	}
+	if req.Amount != nil && *req.Amount < 0 {
+		utils.Error(c, http.StatusBadRequest, "账单金额不能为负数")
+		return
+	}
 	oldAmount := bill.Amount
 	newAmount := bill.Amount
 	if req.Amount != nil {
@@ -258,6 +287,11 @@ func (h *BillHandler) Delete(c *gin.Context) {
 	bill, err := h.BillService.GetByID(uint(billID))
 	if err != nil || bill.BuildingID != bid {
 		utils.Error(c, http.StatusNotFound, "账单不存在")
+		return
+	}
+	if isMonthSettled(h.DB, bid, bill.BillDate) {
+		logger.Log.Warn().Uint("bill_id", bill.ID).Msg("删除账单失败: 该月已结算")
+		utils.Error(c, http.StatusBadRequest, "该月已结算分红，无法删除账单")
 		return
 	}
 	if err := h.BillService.Delete(bill.ID); err != nil {
@@ -356,7 +390,7 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 			b.Subtype,
 			fmt.Sprintf("%.2f", b.Amount),
 			room,
-			b.Description,
+			sanitizeCSVCell(b.Description),
 		})
 	}
 }

@@ -163,6 +163,13 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.POST("/auth/create-admin", authH.CreateRegularAdmin)
 		building.GET("/auth/users", authH.ListBuildingUsers)
 
+		// 待办任务（不限制套餐：到期提醒/预订超时等待办由系统对所有公寓生成，基础套餐也需可见可处理）
+		taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
+		building.GET("/tasks", taskH.List)
+		building.POST("/tasks/:id/process", taskH.Process)
+		building.PUT("/tasks/:id/complete", taskH.Complete)
+		building.DELETE("/tasks/:id", taskH.Delete)
+
 		// 数据统计
 		statsH := &handlers.StatsHandler{DB: db}
 		building.GET("/stats/pv", statsH.MyBuildingStats)
@@ -191,13 +198,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			fullPkg.PUT("/dividends/shareholders/:id", divH.UpdateShareholder)
 			fullPkg.DELETE("/dividends/shareholders/:id", divH.DeleteShareholder)
 			fullPkg.GET("/dividends/predict", divH.Predict)
-
-			// 待办任务
-			taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
-			fullPkg.GET("/tasks", taskH.List)
-			fullPkg.POST("/tasks/:id/process", taskH.Process)
-			fullPkg.PUT("/tasks/:id/complete", taskH.Complete)
-			fullPkg.DELETE("/tasks/:id", taskH.Delete)
 		}
 	}
 }

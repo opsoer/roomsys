@@ -13,11 +13,13 @@
           <el-table-column prop="role" label="角色" width="140">
             <template #default="{ row }">
               <el-tag :type="row.role === 'super_admin' ? 'danger' : 'primary'" size="small">
-                {{ row.role === 'super_admin' ? '超级管理员' : '普通管理员' }}
+                {{ roleLabel(row.role) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" />
+          <el-table-column label="创建时间">
+            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="160">
             <template #default="{ row }">
               <el-button v-if="currentUserRole === 'super_admin'" size="small" type="primary" text @click="openEditDialog(row)">编辑</el-button>
@@ -46,7 +48,7 @@
           <div class="uc-head">
             <span class="uc-name">{{ item.username }}</span>
             <el-tag :type="item.role === 'super_admin' ? 'danger' : 'primary'" size="small" effect="dark" round>
-              {{ item.role === 'super_admin' ? '超级管理员' : '普通管理员' }}
+              {{ roleLabel(item.role) }}
             </el-tag>
           </div>
           <div class="uc-field">
@@ -55,7 +57,7 @@
           </div>
           <div class="uc-field">
             <span class="uc-label">创建时间</span>
-            <span class="uc-value">{{ item.created_at }}</span>
+            <span class="uc-value">{{ formatTime(item.created_at) }}</span>
           </div>
           <div class="uc-foot">
             <el-button v-if="currentUserRole === 'super_admin'" size="small" type="primary" text @click="openEditDialog(item)">编辑</el-button>
@@ -92,8 +94,23 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import dayjs from 'dayjs'
 import { buildingCreateAdmin, buildingGetUsers, adminUpdateUser, adminDeleteUser } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+// 角色显示名（楼栋管理员与普通管理员区分展示）
+function roleLabel(role) {
+  if (role === 'super_admin') return '超级管理员'
+  if (role === 'building_admin') return '楼栋管理员'
+  return '普通管理员'
+}
+
+// 创建时间格式化为 YYYY-MM-DD HH:mm
+function formatTime(t) {
+  if (!t) return '-'
+  const d = dayjs(t)
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : t
+}
 
 const users = ref([])
 const loading = ref(false)

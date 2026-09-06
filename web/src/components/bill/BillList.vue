@@ -35,6 +35,7 @@
         <el-option v-for="r in rooms" :key="r.id" :label="r.room_number" :value="r.room_number" />
       </el-select>
       <el-button type="primary" @click="$emit('add')">新增账单</el-button>
+      <el-button @click="$emit('export')">导出CSV</el-button>
     </div>
 
     <div class="desktop-table">
@@ -102,7 +103,7 @@ const props = defineProps({
   rooms: { type: Array, default: () => [] },
 })
 
-defineEmits(['search', 'add', 'edit'])
+defineEmits(['search', 'add', 'edit', 'export'])
 
 const filter = reactive({ type: '', subtype: '', room_number: '' })
 const now = dayjs()

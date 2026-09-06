@@ -40,53 +40,6 @@ func (s *DividendService) DeleteShareholder(id uint) error {
 	return s.DB.Delete(&models.Shareholder{}, id).Error
 }
 
-// Calculate 计算指定月份的分红（收入-支出=净利润，按比例分配）
-func (s *DividendService) Calculate(buildingID uint, month string) (map[string]interface{}, error) {
-	var bills []models.Bill
-	startDate := month + "-01"
-	endDate := utils.Now().AddDate(0, 1, -1).Format("2006-01-02")
-
-	err := s.DB.Where("building_id = ? AND bill_date >= ? AND bill_date <= ?", buildingID, startDate, endDate).
-		Find(&bills).Error
-	if err != nil {
-		return nil, err
-	}
-
-	var totalIncome, totalExpense float64
-	for _, b := range bills {
-		if b.Type == "income" {
-			totalIncome += b.Amount
-		} else {
-			totalExpense += b.Amount
-		}
-	}
-
-	netProfit := totalIncome - totalExpense
-
-	shareholders, err := s.GetShareholders(buildingID)
-	if err != nil {
-		return nil, err
-	}
-
-	var dividends []map[string]interface{}
-	for _, sh := range shareholders {
-		dividends = append(dividends, map[string]interface{}{
-			"shareholder_id":   sh.ID,
-			"shareholder_name": sh.Name,
-			"share_ratio":      sh.ShareRatio,
-			"dividend_amount":  netProfit * sh.ShareRatio / 100,
-		})
-	}
-
-	return map[string]interface{}{
-		"month":         month,
-		"total_income":  totalIncome,
-		"total_expense": totalExpense,
-		"net_profit":    netProfit,
-		"dividends":     dividends,
-	}, nil
-}
-
 // List 分页查询分红记录
 // 双模式分页：lastID > 0 时走游标分页（按 settle_month + id 定位下一批），不再重查总数（total 返回 -1）
 func (s *DividendService) List(buildingID uint, page, lastID, size int, lastKey string) ([]models.Dividend, int64, error) {
@@ -117,29 +70,37 @@ func (s *DividendService) Settle(dividend *models.Dividend) error {
 	return s.DB.Create(dividend).Error
 }
 
-// Predict 预测未来数月的分红收益
+// Predict 基于当前生效租约预测未来数月的应收租金：
+// 预计租金收入 = 所有生效合同的月租金+管理费合计；
+// 可分配净利润 = 预计租金收入 - 近3个月月均支出。
 func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]interface{}, error) {
-	var recentBills []models.Bill
-	err := s.DB.Where("building_id = ?", buildingID).
-		Order("bill_date DESC").
-		Limit(12).
-		Find(&recentBills).Error
-	if err != nil {
+	var contracts []models.RentalContract
+	if err := s.DB.Where("building_id = ? AND status = ?", buildingID, "active").Find(&contracts).Error; err != nil {
 		return nil, err
 	}
-
-	var avgIncome, avgExpense float64
-	if len(recentBills) > 0 {
-		for _, b := range recentBills {
-			if b.Type == "income" {
-				avgIncome += b.Amount
-			} else {
-				avgExpense += b.Amount
-			}
-		}
-		avgIncome /= float64(len(recentBills))
-		avgExpense /= float64(len(recentBills))
+	var monthlyRent float64
+	for _, ct := range contracts {
+		monthlyRent += ct.RentPrice + ct.ManagementFee
 	}
+
+	// 近3个月月均支出（不含押金退还前先按全部支出统计，保守估计）
+	expenseStart := utils.Now().AddDate(0, -3, 0).Format("2006-01-02")
+	var expenseBills []models.Bill
+	if err := s.DB.Where("building_id = ? AND type = ? AND bill_date >= ?", buildingID, "expense", expenseStart).
+		Find(&expenseBills).Error; err != nil {
+		return nil, err
+	}
+	expenseByMonth := make(map[string]float64)
+	for _, b := range expenseBills {
+		if len(b.BillDate) >= 7 {
+			expenseByMonth[b.BillDate[:7]] += b.Amount
+		}
+	}
+	var expenseSum float64
+	for _, v := range expenseByMonth {
+		expenseSum += v
+	}
+	avgExpense := expenseSum / 3.0
 
 	var predictions []map[string]interface{}
 	now := utils.Now()
@@ -149,9 +110,9 @@ func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]int
 
 		predictions = append(predictions, map[string]interface{}{
 			"month":     month,
-			"rent":      avgIncome,
+			"rent":      monthlyRent,
 			"deposit":   0.0,
-			"available": avgIncome - avgExpense,
+			"available": monthlyRent - avgExpense,
 		})
 	}
 

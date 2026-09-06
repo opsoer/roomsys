@@ -211,12 +211,7 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 	}
 
 	now := utils.Now()
-	datePart := now.Format("20060102")
-	var count int64
-	tx.Model(&models.Bill{}).
-		Where("bill_no LIKE ?", "B"+datePart+"%").
-		Count(&count)
-	billNo := fmt.Sprintf("B%s%05d", datePart, count+1)
+	billNo := utils.NextBillNo(tx, now.Format("20060102"))
 
 	deducted := originalDeposit - refundedDeposit
 	desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, refundedDeposit)

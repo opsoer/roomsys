@@ -9,13 +9,13 @@
           <el-input v-model="rentForm.tenant_phone" />
         </el-form-item>
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input-number v-model="rentForm.rent_price" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="rentForm.rent_price" @update:model-value="v => rentForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
         </el-form-item>
         <el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-          <el-input-number v-model="rentForm.management_fee" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="rentForm.management_fee" @update:model-value="v => rentForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
         </el-form-item>
         <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input-number v-model="rentForm.deposit" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="rentForm.deposit" @update:model-value="v => rentForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
         </el-form-item>
         <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
           <el-date-picker v-model="rentForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
@@ -39,17 +39,17 @@
           <el-input v-model="reserveForm.tenant_phone" />
         </el-form-item>
         <el-form-item label="定金金额" prop="earnest_money" :rules="[{ required: true, message: '请输入定金金额' }, { validator: (_, v) => v > 0, message: '定金必须大于0' }]">
-          <el-input-number v-model="reserveForm.earnest_money" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="reserveForm.earnest_money" @update:model-value="v => reserveForm.earnest_money = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="定金金额" style="width:100%" />
         </el-form-item>
         <el-divider>约定信息（正式签约时可微调）</el-divider>
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input-number v-model="reserveForm.rent_price" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="reserveForm.rent_price" @update:model-value="v => reserveForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
         </el-form-item>
 		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-		  <el-input-number v-model="reserveForm.management_fee" :min="0" :precision="2" style="width:100%" />
+		  <el-input :model-value="reserveForm.management_fee" @update:model-value="v => reserveForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
 		</el-form-item>
         <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input-number v-model="reserveForm.deposit" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="reserveForm.deposit" @update:model-value="v => reserveForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
         </el-form-item>
         <el-form-item label="预计起租" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
           <el-date-picker v-model="reserveForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
@@ -73,13 +73,13 @@
           <el-input v-model="signForm.tenant_phone" />
         </el-form-item>
         <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input-number v-model="signForm.rent_price" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="signForm.rent_price" @update:model-value="v => signForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
         </el-form-item>
 		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-		  <el-input-number v-model="signForm.management_fee" :min="0" :precision="2" style="width:100%" />
+		  <el-input :model-value="signForm.management_fee" @update:model-value="v => signForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
 		</el-form-item>
 		<el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input-number v-model="signForm.deposit" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="signForm.deposit" @update:model-value="v => signForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
         </el-form-item>
         <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
           <el-date-picker v-model="signForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
@@ -105,7 +105,7 @@
       <el-form ref="cancelFormRef" :model="cancelForm" label-width="100px">
         <el-form-item label="退还定金" prop="refunded_deposit"
           :rules="[{ required: true, message: '请填写退还给定金的金额（不退填0）' }]">
-          <el-input-number v-model="cancelForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="cancelForm.refunded_deposit" @update:model-value="v => cancelForm.refunded_deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退还定金" style="width:100%" />
         </el-form-item>
       </el-form>
       <div v-if="earnestMoney - cancelForm.refunded_deposit > 0" class="vacate-deduction-note">
@@ -126,7 +126,7 @@
           <el-date-picker v-model="endDateForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择退租日期" style="width:100%" />
         </el-form-item>
         <el-form-item label="退租租金" prop="rent_price" :rules="[{ required: true, message: '请输入退租租金' }]">
-          <el-input-number v-model="endDateForm.rent_price" :min="0" :precision="2" style="width:100%" />
+          <el-input :model-value="endDateForm.rent_price" @update:model-value="v => endDateForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退租租金" style="width:100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -147,7 +147,7 @@
         <el-form ref="vacateFormRef" :model="vacateForm" label-width="100px">
           <el-form-item label="退还押金" prop="refunded_deposit"
             :rules="[{ required: true, message: '请填写退还给租客的押金金额（不退还填0）' }]">
-            <el-input-number v-model="vacateForm.refunded_deposit" :min="0" :precision="2" style="width:100%" />
+            <el-input :model-value="vacateForm.refunded_deposit" @update:model-value="v => vacateForm.refunded_deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退还押金" style="width:100%" />
           </el-form-item>
         </el-form>
         <div v-if="vacateForm.refunded_deposit > 0" class="vacate-deduction-note">

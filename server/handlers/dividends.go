@@ -243,6 +243,12 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的股东ID")
 		return
 	}
+	// 股东必须属于当前公寓，防止跨公寓越权修改
+	var sh models.Shareholder
+	if err := h.DB.First(&sh, uint(shareholderID)).Error; err != nil || sh.BuildingID != bid {
+		utils.Error(c, http.StatusNotFound, "股东不存在")
+		return
+	}
 	var req struct {
 		Name       string  `json:"name"`
 		ShareRatio float64 `json:"share_ratio"`
@@ -277,6 +283,12 @@ func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 	shareholderID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "无效的股东ID")
+		return
+	}
+	// 股东必须属于当前公寓，防止跨公寓越权删除
+	var sh models.Shareholder
+	if err := h.DB.First(&sh, uint(shareholderID)).Error; err != nil || sh.BuildingID != bid {
+		utils.Error(c, http.StatusNotFound, "股东不存在")
 		return
 	}
 	if err := h.DividendService.DeleteShareholder(uint(shareholderID)); err != nil {
