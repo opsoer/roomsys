@@ -449,10 +449,10 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,0.6);
 }
 .skeleton-wrap {
-  padding: 12px 12px 0;
+  padding: 16px 16px 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 .skeleton-card {
   background: #fff;
@@ -460,10 +460,10 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 .building-list {
-  padding: 12px 12px 0;
+  padding: 16px 16px 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 .load-more-wrap {
   grid-column: 1 / -1;
@@ -489,7 +489,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 8px rgba(0,0,0,0.06);
 }
 .card-img {
-  height: 140px;
+  height: 160px;
   background: #e9ecef;
   overflow: hidden;
 }
@@ -584,6 +584,20 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 14px;
   font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .skeleton-wrap {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 12px 12px 0;
+  }
+  .building-list {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 12px 12px 0;
+  }
+  .card-img { height: 140px; }
 }
 
 </style>

@@ -550,9 +550,9 @@ onBeforeUnmount(() => {
 }
 .room-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 8px 12px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 8px 16px 16px;
 }
 .load-more-wrap {
   grid-column: 1 / -1;
@@ -579,7 +579,7 @@ onBeforeUnmount(() => {
 }
 .room-card-img {
   position: relative;
-  height: 110px;
+  height: 160px;
   background: #e9ecef;
   overflow: hidden;
 }
@@ -638,5 +638,13 @@ onBeforeUnmount(() => {
   padding: 24px 16px;
   color: #aaa;
   font-size: 12px;
+}
+@media (max-width: 768px) {
+  .room-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 8px 12px 12px;
+  }
+  .room-card-img { height: 110px; }
 }
 </style>

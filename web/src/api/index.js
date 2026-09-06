@@ -51,9 +51,9 @@ api.interceptors.response.use(
       }
     } else if (data?.code === 1006) {
       return Promise.reject(err)
-    } else if (msg) {
+    } else if (msg && !err.config?.silent) {
       ElMessage.error(msg)
-    } else {
+    } else if (!err.config?.silent) {
       ElMessage.error('请求失败')
     }
     return Promise.reject(err)
@@ -174,8 +174,8 @@ export function buildingGetRooms(params) {
   return api.get('/building/rooms', { params })
 }
 
-export function buildingCreateRoom(data) {
-  return api.post('/building/rooms', data)
+export function buildingCreateRoom(data, config) {
+  return api.post('/building/rooms', data, config)
 }
 
 export function buildingGetRoom(id) {

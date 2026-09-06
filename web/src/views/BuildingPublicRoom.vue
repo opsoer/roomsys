@@ -546,4 +546,13 @@ onMounted(async () => {
   color: #aaa;
   font-size: 12px;
 }
+/* 桌面端内容限宽居中，避免卡片被拉满全屏 */
+@media (min-width: 769px) {
+  .room-section,
+  .room-price-card {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
 </style>

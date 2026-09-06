@@ -109,8 +109,17 @@
         已带入房间 <strong>{{ copySourceRoomNumber }}</strong> 的全部信息，确认或修改后填写新房间号即可；照片和视频默认复用该房间。
       </div>
       <el-form v-if="addMode !== 'copy' || copyCreateStep === 2" ref="addFormRef" :model="addForm" label-width="90px">
-        <el-form-item label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }]">
+        <el-form-item v-if="addMode === 'copy'" label="批量创建">
+          <el-switch v-model="batchCreate" active-text="以相同信息一次创建多个房间" />
+        </el-form-item>
+        <el-form-item v-if="!(addMode === 'copy' && batchCreate)" label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }]">
           <el-input v-model="addForm.room_number" />
+        </el-form-item>
+        <el-form-item v-else label="房间号" required>
+          <div style="width:100%">
+            <el-input v-model="batchRoomNumbersText" type="textarea" :rows="4" placeholder="每行一个房间号，也可用逗号、空格分隔，自动去重" />
+            <div v-if="batchRoomNumbers.length" class="batch-hint">将创建 {{ batchRoomNumbers.length }} 个房间，均使用上方表单信息</div>
+          </div>
         </el-form-item>
         <el-form-item label="楼层" prop="floor" :rules="[{ required: true, message: '请选择楼层' }]">
           <el-select v-model="addForm.floor" placeholder="选择楼层" style="width: 100%">
@@ -183,8 +192,28 @@
         <template v-else>
           <el-button v-if="addMode === 'copy'" @click="copyCreateStep = 1">上一步</el-button>
           <el-button v-else @click="showAddDialog = false">取消</el-button>
-          <el-button type="primary" :loading="submitting" @click="handleAdd">确定</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleAdd">
+            {{ addMode === 'copy' && batchCreate ? (batchRoomNumbers.length ? `批量创建（${batchRoomNumbers.length}）` : '批量创建') : '确定' }}
+          </el-button>
         </template>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showBatchResult" title="批量创建结果" width="420px">
+      <div v-if="batchSuccessCount > 0" class="batch-result-summary ok">
+        成功创建 {{ batchSuccessCount }} 个房间
+      </div>
+      <div v-if="batchFailures.length">
+        <div class="batch-result-summary fail">以下 {{ batchFailures.length }} 个房间创建失败：</div>
+        <div class="batch-failure-list">
+          <div v-for="f in batchFailures" :key="f.room_number" class="batch-failure-item">
+            <span class="num">{{ f.room_number }}</span>
+            <span class="reason">{{ f.reason }}</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="showBatchResult = false">知道了</el-button>
       </template>
     </el-dialog>
   </div>
@@ -251,11 +280,36 @@ const copySourceRoomId = ref(null)
 const copySourceRoomNumber = ref('')
 const copyCreateCopyMedia = ref(true)
 const copySourceLoading = ref(false)
+// 批量创建：以同一表单信息一次创建多个房间
+const batchCreate = ref(false)
+const batchRoomNumbersText = ref('')
+const showBatchResult = ref(false)
+const batchFailures = ref([])
+const batchSuccessCount = ref(0)
 const roomTotal = ref(0)
 const roomPageSize = 20
 
 function blankForm() {
   return { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
+}
+
+// 解析批量房间号：换行/逗号/顿号/分号/空格均可分隔，自动去重
+const batchRoomNumbers = computed(() => {
+  const parts = batchRoomNumbersText.value.split(/[\n,，、;；\s]+/).map(s => s.trim()).filter(Boolean)
+  return [...new Set(parts)]
+})
+
+function resetDialogFormState() {
+  addForm.value = blankForm()
+  addCopyFloor.value = ''
+  addCopyRoom.value = ''
+  copyCreateStep.value = 1
+  copySourceFloor.value = ''
+  copySourceRoomId.value = null
+  copySourceRoomNumber.value = ''
+  copyCreateCopyMedia.value = true
+  batchCreate.value = false
+  batchRoomNumbersText.value = ''
 }
 
 const dialogTitle = computed(() => {
@@ -363,12 +417,7 @@ async function openBlankAddDialog() {
 
 async function openCopyCreateDialog() {
   addMode.value = 'copy'
-  copyCreateStep.value = 1
-  copySourceFloor.value = ''
-  copySourceRoomId.value = null
-  copySourceRoomNumber.value = ''
-  copyCreateCopyMedia.value = true
-  addForm.value = blankForm()
+  resetDialogFormState()
   showAddDialog.value = true
   addCopyAllRooms.value = await fetchAllRoomsForPicker()
 }
@@ -403,6 +452,10 @@ async function goCopyCreateStep2() {
 }
 
 async function handleAdd() {
+  if (addMode.value === 'copy' && batchCreate.value) {
+    await handleBatchAdd()
+    return
+  }
   const valid = await addFormRef.value.validate().catch(() => false)
   if (!valid) return
   submitting.value = true
@@ -416,19 +469,63 @@ async function handleAdd() {
     await buildingCreateRoom(payload)
     ElMessage.success('添加成功')
     showAddDialog.value = false
-    addForm.value = blankForm()
-    addCopyFloor.value = ''
-    addCopyRoom.value = ''
-    copyCreateStep.value = 1
-    copySourceFloor.value = ''
-    copySourceRoomId.value = null
-    copySourceRoomNumber.value = ''
-    copyCreateCopyMedia.value = true
+    resetDialogFormState()
     await fetchRooms()
   } catch {
     ElMessage.error('添加房间失败')
   } finally {
     submitting.value = false
+  }
+}
+
+// 批量创建：逐个房间调用创建接口，允许部分成功；
+// 有失败时弹窗列出失败房间号和原因；全部失败时保留创建弹窗便于修改后重试
+async function handleBatchAdd() {
+  const valid = await addFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  const numbers = batchRoomNumbers.value
+  if (numbers.length === 0) {
+    ElMessage.warning('请输入至少一个房间号')
+    return
+  }
+  const tooLong = numbers.filter(n => n.length > 20)
+  if (tooLong.length > 0) {
+    ElMessage.warning(`房间号不能超过20个字符：${tooLong.join('、')}`)
+    return
+  }
+  submitting.value = true
+  const failures = []
+  let successCount = 0
+  try {
+    for (const num of numbers) {
+      const payload = { ...addForm.value, room_number: num }
+      if (copyCreateCopyMedia.value) payload.copy_from_room_id = copySourceRoomId.value
+      try {
+        await buildingCreateRoom(payload, { silent: true })
+        successCount++
+      } catch (err) {
+        failures.push({
+          room_number: num,
+          reason: err?.response?.data?.message || err?.response?.data?.error || '创建失败',
+        })
+      }
+    }
+  } finally {
+    submitting.value = false
+  }
+  if (successCount > 0) await fetchRooms()
+  if (failures.length === 0) {
+    ElMessage.success(`批量创建成功，共 ${successCount} 个房间`)
+    showAddDialog.value = false
+    resetDialogFormState()
+  } else {
+    batchFailures.value = failures
+    batchSuccessCount.value = successCount
+    if (successCount > 0) {
+      showAddDialog.value = false
+      resetDialogFormState()
+    }
+    showBatchResult.value = true
   }
 }
 
@@ -442,6 +539,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .page-home { min-height: 100vh; background: transparent; }
 .copy-create-tip { background: #f0f9eb; border: 1px solid #e1f3d8; color: #529b2e; font-size: 13px; line-height: 1.6; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; }
+.batch-hint { margin-top: 6px; font-size: 12px; color: #909399; }
+.batch-result-summary { font-size: 14px; margin-bottom: 10px; }
+.batch-result-summary.ok { color: #67c23a; }
+.batch-result-summary.fail { color: #f56c6c; }
+.batch-failure-list { max-height: 240px; overflow-y: auto; border: 1px solid #fde2e2; border-radius: 6px; }
+.batch-failure-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #fde2e2; }
+.batch-failure-item:last-child { border-bottom: none; }
+.batch-failure-item .num { font-weight: 600; color: #303133; }
+.batch-failure-item .reason { color: #f56c6c; text-align: right; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .section-header h2 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
 .section-actions { display: flex; gap: 10px; }
