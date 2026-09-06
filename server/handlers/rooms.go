@@ -351,6 +351,16 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 复用媒体源房间必须属于本公寓，防止跨公寓拉取他人媒体（IDOR）
+	if req.CopyFromRoomID != nil && *req.CopyFromRoomID > 0 {
+		var cnt int64
+		h.DB.Model(&models.Room{}).Where("id = ? AND building_id = ?", *req.CopyFromRoomID, bid).Count(&cnt)
+		if cnt == 0 {
+			utils.Error(c, http.StatusBadRequest, "复用源房间不存在")
+			return
+		}
+	}
+
 	if *req.RentPrice <= 0 || *req.ManagementFee < 0 || *req.ElectricityUnitPrice < 0 || *req.WaterUnitPrice < 0 {
 		utils.Error(c, http.StatusBadRequest, "价格信息不能为负数")
 		return

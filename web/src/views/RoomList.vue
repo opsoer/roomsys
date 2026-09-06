@@ -18,8 +18,11 @@
           <el-option label="全部户型" value="" />
           <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
         </el-select>
-        <el-button type="primary" @click="openAddDialog">
+        <el-button type="primary" @click="openBlankAddDialog">
           <el-icon><Plus /></el-icon> 添加房间
+        </el-button>
+        <el-button type="success" @click="openCopyCreateDialog">
+          <el-icon><CopyDocument /></el-icon> 复用房间创建新房间
         </el-button>
       </div>
     </div>
@@ -84,8 +87,28 @@
     </div>
     <div ref="sentinel" class="load-more-sentinel"></div>
 
-    <el-dialog v-model="showAddDialog" title="添加房间" width="500px">
-      <el-form ref="addFormRef" :model="addForm" label-width="90px">
+    <el-dialog v-model="showAddDialog" :title="dialogTitle" width="500px">
+      <div v-if="addMode === 'copy' && copyCreateStep === 1">
+        <div class="copy-create-tip">
+          选择一个已有房间作为模板，下一步会自动带出它的全部信息（户型、价格、描述等），只需填写新房间号即可完成创建。
+        </div>
+        <el-form label-width="90px">
+          <el-form-item label="楼层" required>
+            <el-select v-model="copySourceFloor" placeholder="选择楼层" style="width: 100%" @change="copySourceRoomId = null">
+              <el-option v-for="f in copySourceFloorOptions" :key="f" :label="f + '层'" :value="f" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="房间号" required>
+            <el-select v-model="copySourceRoomId" placeholder="请先选择楼层" style="width: 100%" :disabled="!copySourceFloor">
+              <el-option v-for="r in copySourceRoomOptions" :key="r.id" :label="r.room_number" :value="r.id" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </div>
+      <div v-else-if="addMode === 'copy' && copyCreateStep === 2" class="copy-create-tip">
+        已带入房间 <strong>{{ copySourceRoomNumber }}</strong> 的全部信息，确认或修改后填写新房间号即可；照片和视频默认复用该房间。
+      </div>
+      <el-form v-if="addMode !== 'copy' || copyCreateStep === 2" ref="addFormRef" :model="addForm" label-width="90px">
         <el-form-item label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }]">
           <el-input v-model="addForm.room_number" />
         </el-form-item>
@@ -139,7 +162,10 @@
           <el-input v-model="addForm.description" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item label="复用媒体">
-          <div style="display:flex;gap:8px;width:100%">
+          <el-checkbox v-if="addMode === 'copy'" v-model="copyCreateCopyMedia">
+            复用房间 {{ copySourceRoomNumber }} 的照片和视频
+          </el-checkbox>
+          <div v-else style="display:flex;gap:8px;width:100%">
             <el-select v-model="addCopyFloor" placeholder="选择楼层" clearable style="flex:1" @change="addCopyRoom = ''">
               <el-option v-for="f in addCopyFloorOptions" :key="f" :label="f + '层'" :value="f" />
             </el-select>
@@ -150,8 +176,15 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleAdd">确定</el-button>
+        <template v-if="addMode === 'copy' && copyCreateStep === 1">
+          <el-button @click="showAddDialog = false">取消</el-button>
+          <el-button type="primary" :loading="copySourceLoading" :disabled="!copySourceRoomId" @click="goCopyCreateStep2">下一步</el-button>
+        </template>
+        <template v-else>
+          <el-button v-if="addMode === 'copy'" @click="copyCreateStep = 1">上一步</el-button>
+          <el-button v-else @click="showAddDialog = false">取消</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleAdd">确定</el-button>
+        </template>
       </template>
     </el-dialog>
   </div>
@@ -159,8 +192,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { buildingGetRooms, buildingCreateRoom } from '../api'
+import { buildingGetRooms, buildingCreateRoom, buildingGetRoom } from '../api'
 import { ElMessage } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 import { mediaUrl, statusLabel } from '../utils/format'
 
@@ -172,12 +206,26 @@ const addCopyFloorOptions = computed(() => {
   for (const r of addCopyAllRooms.value) {
     if (r.floor) floors.add(r.floor)
   }
-  return [...floors].sort()
+  return [...floors].sort((a, b) => Number(a) - Number(b))
 })
 
 const addCopyRoomOptions = computed(() => {
   if (!addCopyFloor.value) return []
   return addCopyAllRooms.value.filter(r => r.floor === addCopyFloor.value)
+})
+
+// 复用房间创建：第一步选择源房间（楼层 → 房间号联动）
+const copySourceFloorOptions = computed(() => {
+  const floors = new Set()
+  for (const r of addCopyAllRooms.value) {
+    if (r.floor) floors.add(r.floor)
+  }
+  return [...floors].sort((a, b) => Number(a) - Number(b))
+})
+
+const copySourceRoomOptions = computed(() => {
+  if (!copySourceFloor.value) return []
+  return addCopyAllRooms.value.filter(r => r.floor === copySourceFloor.value)
 })
 
 const rooms = ref([])
@@ -190,13 +238,32 @@ const floorFilter = ref('')
 const layoutFilter = ref('')
 const showAddDialog = ref(false)
 const submitting = ref(false)
-const addForm = ref({ room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null })
+const addForm = ref(blankForm())
 const addFormRef = ref(null)
 const addCopyFloor = ref('')
 const addCopyRoom = ref('')
 const addCopyAllRooms = ref([])
+// 复用房间创建：blank = 普通添加，copy = 以已有房间为模板
+const addMode = ref('blank')
+const copyCreateStep = ref(1)
+const copySourceFloor = ref('')
+const copySourceRoomId = ref(null)
+const copySourceRoomNumber = ref('')
+const copyCreateCopyMedia = ref(true)
+const copySourceLoading = ref(false)
 const roomTotal = ref(0)
 const roomPageSize = 20
+
+function blankForm() {
+  return { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
+}
+
+const dialogTitle = computed(() => {
+  if (addMode.value === 'copy') {
+    return copyCreateStep.value === 1 ? '复用房间创建新房间 · 选择源房间' : '复用房间创建新房间 · 填写新房间信息'
+  }
+  return '添加房间'
+})
 
 async function fetchRooms(append = false) {
   if (!append) {
@@ -263,14 +330,76 @@ function mgmtFee(room) {
   return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
 }
 
-async function openAddDialog() {
+// 拉取全部房间供选择器使用（page_size 上限 100，超过时用游标分页循环取完）
+async function fetchAllRoomsForPicker() {
+  const all = []
+  let lastId = 0
+  let lastKey = ''
+  try {
+    for (let i = 0; i < 20; i++) {
+      const params = { page: 1, page_size: 100 }
+      if (lastId) {
+        params.last_id = lastId
+        params.last_key = lastKey
+      }
+      const res = await buildingGetRooms(params)
+      const list = res?.data?.rooms || []
+      all.push(...list)
+      if (list.length === 0 || all.length >= (res?.data?.total || 0)) break
+      lastId = list[list.length - 1].id
+      lastKey = list[list.length - 1].room_number
+    }
+  } catch { /* 网络异常时保留已取到的部分 */ }
+  return all
+}
+
+async function openBlankAddDialog() {
+  addMode.value = 'blank'
   addCopyFloor.value = ''
   addCopyRoom.value = ''
   showAddDialog.value = true
+  addCopyAllRooms.value = await fetchAllRoomsForPicker()
+}
+
+async function openCopyCreateDialog() {
+  addMode.value = 'copy'
+  copyCreateStep.value = 1
+  copySourceFloor.value = ''
+  copySourceRoomId.value = null
+  copySourceRoomNumber.value = ''
+  copyCreateCopyMedia.value = true
+  addForm.value = blankForm()
+  showAddDialog.value = true
+  addCopyAllRooms.value = await fetchAllRoomsForPicker()
+}
+
+// 第二步：取源房间详情，全部带入表单（房间号留空），复用媒体默认勾选
+async function goCopyCreateStep2() {
+  if (!copySourceRoomId.value) return
+  copySourceLoading.value = true
   try {
-    const res = await buildingGetRooms({ page: 1, page_size: 100 })
-    addCopyAllRooms.value = res?.data?.rooms || []
-  } catch { addCopyAllRooms.value = [] }
+    const res = await buildingGetRoom(copySourceRoomId.value)
+    const room = res?.data?.room
+    if (!room) throw new Error('房间不存在')
+    copySourceRoomNumber.value = room.room_number || ''
+    addForm.value = {
+      room_number: '',
+      floor: room.floor || '',
+      layout: room.layout || '',
+      description: room.description || '',
+      rent_price: room.rent_price ?? null,
+      deposit_months: room.deposit_months ?? null,
+      management_fee: room.management_fee ?? null,
+      electricity_unit_price: room.electricity_unit_price ?? null,
+      water_unit_price: room.water_unit_price ?? null,
+    }
+    copyCreateCopyMedia.value = true
+    copyCreateStep.value = 2
+  } catch {
+    ElMessage.error('获取房间信息失败')
+  } finally {
+    copySourceLoading.value = false
+  }
 }
 
 async function handleAdd() {
@@ -279,13 +408,22 @@ async function handleAdd() {
   submitting.value = true
   try {
     const payload = { ...addForm.value }
-    if (addCopyRoom.value) payload.copy_from_room_id = addCopyRoom.value
+    if (addMode.value === 'copy') {
+      if (copyCreateCopyMedia.value) payload.copy_from_room_id = copySourceRoomId.value
+    } else if (addCopyRoom.value) {
+      payload.copy_from_room_id = addCopyRoom.value
+    }
     await buildingCreateRoom(payload)
     ElMessage.success('添加成功')
     showAddDialog.value = false
-    addForm.value = { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
+    addForm.value = blankForm()
     addCopyFloor.value = ''
     addCopyRoom.value = ''
+    copyCreateStep.value = 1
+    copySourceFloor.value = ''
+    copySourceRoomId.value = null
+    copySourceRoomNumber.value = ''
+    copyCreateCopyMedia.value = true
     await fetchRooms()
   } catch {
     ElMessage.error('添加房间失败')
@@ -303,6 +441,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .page-home { min-height: 100vh; background: transparent; }
+.copy-create-tip { background: #f0f9eb; border: 1px solid #e1f3d8; color: #529b2e; font-size: 13px; line-height: 1.6; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .section-header h2 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
 .section-actions { display: flex; gap: 10px; }
