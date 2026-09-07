@@ -2,10 +2,12 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"rental-server/database"
 	"rental-server/models"
 	"rental-server/utils"
 
@@ -175,16 +177,17 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 
 		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		var result []trendItem
-		rows, err := h.DB.Raw(`
-			SELECT DATE(created_at) as date,
+		dayExpr := database.DayExpr(h.DB, "created_at")
+		rows, err := h.DB.Raw(fmt.Sprintf(`
+			SELECT %s as date,
 			       COUNT(*) as pv,
 			       COUNT(DISTINCT ip) as uv,
 			       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
 			FROM page_views
 			WHERE created_at >= ?
-			GROUP BY DATE(created_at)
+			GROUP BY %s
 			ORDER BY date
-		`, cutoff).Rows()
+		`, dayExpr, dayExpr), cutoff).Rows()
 		if err != nil {
 			return nil, err
 		}
@@ -376,16 +379,17 @@ func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 
 		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		var result []trendItem
-		rows, err := h.DB.Raw(`
-			SELECT DATE(created_at) as date,
+		dayExpr := database.DayExpr(h.DB, "created_at")
+		rows, err := h.DB.Raw(fmt.Sprintf(`
+			SELECT %s as date,
 			       COUNT(*) as pv,
 			       COUNT(DISTINCT ip) as uv,
 			       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
 			FROM page_views
 			WHERE (page_type IN ('building_detail','room_detail','landlord_view')) AND building_id = ? AND created_at >= ?
-			GROUP BY DATE(created_at)
+			GROUP BY %s
 			ORDER BY date
-		`, bid, cutoff).Rows()
+		`, dayExpr, dayExpr), bid, cutoff).Rows()
 		if err != nil {
 			return nil, err
 		}

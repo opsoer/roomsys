@@ -6,18 +6,15 @@ import (
 	"path/filepath"
 
 	"rental-server/config"
+	"rental-server/database"
 	"rental-server/models"
 
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
 )
 
 func main() {
 	cfg := config.Load()
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := database.Open(cfg)
 	if err != nil {
 		panic(err)
 	}

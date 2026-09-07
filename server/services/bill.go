@@ -158,7 +158,8 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	}
 	var sums []monthlySum
 	s.DB.Model(&models.Bill{}).
-		Select("DATE_FORMAT(bill_date, '%Y-%m') as month, type, SUM(amount) as amount").
+		// bill_date 为 'YYYY-MM-DD' 字符串，SUBSTR 截前 7 位在 MySQL/SQLite 下语义一致
+		Select("SUBSTR(bill_date, 1, 7) as month, type, SUM(amount) as amount").
 		Where("building_id = ? AND bill_date >= ? AND bill_date <= ?", buildingID, startDate, endDate).
 		Group("month, type").
 		Order("month").

@@ -5,10 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+)
+
+// 存储后端驱动选项，db_driver 配置二选一。
+const (
+	DriverMySQL  = "mysql"
+	DriverSQLite = "sqlite"
 )
 
 // Config 存储所有应用程序配置项。
 type Config struct {
+	// DBDriver 存储后端选择：mysql（默认，兼容老配置）或 sqlite。
+	DBDriver string `json:"db_driver"`
+	// DBPath SQLite 数据库文件路径，仅 db_driver=sqlite 时使用。
+	DBPath string `json:"db_path"`
+	// DBHost 以下为 MySQL 连接参数，仅 db_driver=mysql 时使用。
 	DBHost     string `json:"db_host"`
 	DBPort     string `json:"db_port"`
 	DBUser     string `json:"db_user"`
@@ -50,6 +62,8 @@ type Config struct {
 // defaults 返回默认配置值。
 func defaults() *Config {
 	return &Config{
+		DBDriver:       DriverMySQL,
+		DBPath:         "./storage/rental.db",
 		DBHost:         "127.0.0.1",
 		DBPort:         "3306",
 		DBUser:         "root",
@@ -77,7 +91,9 @@ func Load() *Config {
 
 	envOverrides(cfg)
 
-	if cfg.DBPassword == "" {
+	normalize(cfg)
+
+	if cfg.DBDriver == DriverMySQL && cfg.DBPassword == "" {
 		panic(fmt.Sprintf("database password is required: set db_password in config.json or DB_PASSWORD env"))
 	}
 	if cfg.JWTSecret == "" {
@@ -85,6 +101,20 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// normalize 归一化驱动选项：小写、空值与非法值兜底，补齐 SQLite 文件路径默认值。
+func normalize(cfg *Config) {
+	cfg.DBDriver = strings.ToLower(strings.TrimSpace(cfg.DBDriver))
+	if cfg.DBDriver == "" {
+		cfg.DBDriver = DriverMySQL
+	}
+	if cfg.DBDriver != DriverMySQL && cfg.DBDriver != DriverSQLite {
+		panic(fmt.Sprintf("不支持的 db_driver: %q（可选 mysql / sqlite）", cfg.DBDriver))
+	}
+	if cfg.DBPath == "" {
+		cfg.DBPath = "./storage/rental.db"
+	}
 }
 
 // loadFile 从 JSON 文件读取配置并解析到 Config 结构体。
@@ -100,6 +130,12 @@ func loadFile(path string, cfg *Config) {
 
 // envOverrides 用环境变量覆盖配置项。
 func envOverrides(cfg *Config) {
+	if v := os.Getenv("DB_DRIVER"); v != "" {
+		cfg.DBDriver = v
+	}
+	if v := os.Getenv("DB_PATH"); v != "" {
+		cfg.DBPath = v
+	}
 	if v := os.Getenv("DB_HOST"); v != "" {
 		cfg.DBHost = v
 	}

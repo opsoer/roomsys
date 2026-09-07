@@ -3,7 +3,6 @@ package main
 
 import (
 	"compress/gzip"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"rental-server/config"
+	"rental-server/database"
 	"rental-server/logger"
 	"rental-server/utils"
 	"rental-server/handlers"
@@ -22,7 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -36,23 +35,11 @@ func main() {
 	})
 	logger.Log.Info().Str("level", cfg.LogLevel).Str("dir", cfg.LogDir).Msg("日志系统初始化完成")
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := database.Open(cfg)
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("数据库连接失败")
 	}
-	logger.Log.Info().Msg("数据库连接成功")
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		logger.Log.Fatal().Err(err).Msg("获取数据库连接实例失败")
-	}
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
-	logger.Log.Info().Int("max_idle", 10).Int("max_open", 100).Msg("数据库连接池已配置")
+	logger.Log.Info().Str("driver", cfg.DBDriver).Msg("数据库连接成功")
 
 	if os.Getenv("RESET_DATABASE") == "true" {
 		logger.Log.Warn().Msg("检测到 RESET_DATABASE=true，将删除所有表并重建")
