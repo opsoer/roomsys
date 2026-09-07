@@ -1,15 +1,42 @@
 // seed 通过 HTTP API 生成演示数据：100 个公寓（含房东信息）+ 每栋 50 套房 + 约 70% 房间签约出租。
-// 所有操作（创建公寓、创建楼栋管理员、登录、创建房间、出租签约）全部走真实 HTTP 接口。
+// 所有操作（创建公寓、创建楼栋管理员、登录、创建房间、出租签约）全部走真实 HTTP 接口，
+// 因此数据与手工在管理后台录入完全一致（含账单、待办等派生数据）。
+//
+// 使用场景：
+//   - 本地/演示环境快速灌入大批量逼真数据，验证列表分页、地图筛选、统计图表等在真实数据量下的表现
+//   - 演示环境给客户看效果（配合 scripts/seedmedia 补充图片）
+//   注意：会写入约 100 公寓 + 5000 房间 + 数千账单，只可用于可丢弃的数据库，严禁对生产库运行。
+//
+// 执行流程（main → seedBuildings → seedRooms）：
+//  1. root/root 登录超级管理员，拿 JWT
+//  2. 循环随机生成 100 个公寓（深圳各区/街道/小区名去重），POST /api/admin/buildings
+//     （全套餐 full，contract_date=当天，到期日由后端按一年自动算出）
+//  3. GET /api/admin/buildings 拉回全部公寓（不依赖自增 ID 连续）
+//  4. 每个公寓：POST /api/admin/auth/create-building-admin 建管理员（用户名=密码=公寓 id），
+//     再以该管理员身份登录
+//  5. 每公寓创建 50 套房（25 单间 / 13 一室一厅 / 12 两房，随机楼层与房号），POST /api/building/rooms
+//  6. 每公寓按 70% 概率随机选房，PUT /api/building/rooms/:id/status 设为 rented，
+//     由后端自动生成租客、合同与账单
+//
+// 限流说明：服务端有全局 IP 限流（默认 240 次/分钟，见 middleware/ratelimit.go），
+// 本脚本全速跑约 9000 个请求必触发 429。因此脚本默认自限速 200 次/分钟，
+// 且收到 429 后自动等待限流窗口重置再重试，无需人工干预。
+//
+// 环境变量：
+//   SEED_BASE_URL      后端地址，默认 http://127.0.0.1:8081（与 config.json 的 server_port 对应）
+//   SEED_RATE_PER_MIN  脚本自限速（次/分钟），默认 200；若启动后端时已调大
+//                      RATE_LIMIT_PER_MIN，可设为 0 关闭自限速以提速
 //
 // 默认约定：
 //   - 每个公寓创建 1 个管理账号，用户名与密码均为公寓 id（如公寓 3 → 3 / 3）
 //   - 公寓一律全套餐（full），签约时间（contract_date）为跑脚本当天，到期时间自动为一年后
 //
 // 前置条件：
-//  1. 后端服务已在默认地址运行（可用环境变量 SEED_BASE_URL 覆盖，默认 http://127.0.0.1:8081）
-//  2. 数据库中已有超级管理员 root（首次启动自动创建）
+//  1. 后端服务已在 SEED_BASE_URL 运行，且数据库已清空（脚本要求公宓名单恰好为空后再建 100 个）
+//  2. 数据库中已有超级管理员 root/root（后端每次启动都会把 root 密码重置为 root）
 //
 // 运行方式（在 server 目录下）：go run ./scripts/seed
+// 预计耗时：默认自限速下约 45 分钟（约 9000 个请求）；关闭自限速并调大服务端限流后约 3~5 分钟。
 package main
 
 import (
@@ -19,6 +46,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -27,6 +55,46 @@ var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 const defaultBaseURL = "http://127.0.0.1:8081"
 
 var baseURL = os.Getenv("SEED_BASE_URL")
+
+// reqLimiter 全局请求节流器，避免触发服务端每 IP 限流（默认 240 次/分钟）
+var reqLimiter = newThrottle(envInt("SEED_RATE_PER_MIN", 200))
+
+// envInt 读取整型环境变量，未设置或非法时返回默认值
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &def); n == 1 && err == nil {
+			return def
+		}
+	}
+	return def
+}
+
+// throttle 串行化所有请求的发起时刻，保证请求频率不超过 perMinute 次/分钟。
+// 原理：记录下一次允许请求的时间点，每个请求先排队等到自己的时间片。
+func newThrottle(perMinute int) *throttle {
+	if perMinute <= 0 {
+		return &throttle{} // 0 或负数 = 关闭自限速
+	}
+	return &throttle{minInterval: time.Minute / time.Duration(perMinute)}
+}
+
+type throttle struct {
+	mu          sync.Mutex
+	next        time.Time
+	minInterval time.Duration
+}
+
+func (t *throttle) wait() {
+	if t.minInterval <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if now := time.Now(); t.next.After(now) {
+		time.Sleep(t.next.Sub(now))
+	}
+	t.next = time.Now().Add(t.minInterval)
+}
 
 // 每栋楼房间数量与户型比例：一半单间、四分之一一室一厅、四分之一两房
 const (
@@ -55,7 +123,8 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("HTTP %d (code %d): %s", e.Status, e.Code, e.Message)
 }
 
-// do 发送请求并解析统一响应，失败时自动重试（网络错误与 5xx）
+// do 发送请求并解析统一响应。自动重试三类失败：网络错误、5xx、429 限流；
+// 其余 4xx（参数/权限/冲突等）直接返回错误不重试。
 func do(method, path, token string, body interface{}, out interface{}) error {
 	var bodyBytes []byte
 	if body != nil {
@@ -67,13 +136,18 @@ func do(method, path, token string, body interface{}, out interface{}) error {
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
 		}
 		if err := doOnce(method, path, token, bodyBytes, out); err != nil {
 			lastErr = err
 			ae, ok := err.(*apiError)
+			if ok && ae.Status == http.StatusTooManyRequests {
+				// 撞上服务端限流：限流窗口为 1 分钟，等窗口重置后重试
+				time.Sleep(65 * time.Second)
+				continue
+			}
 			if ok && ae.Status < 500 {
 				return err
 			}
@@ -85,6 +159,7 @@ func do(method, path, token string, body interface{}, out interface{}) error {
 }
 
 func doOnce(method, path, token string, bodyBytes []byte, out interface{}) error {
+	reqLimiter.wait()
 	req, err := http.NewRequest(method, baseURL+path, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return err

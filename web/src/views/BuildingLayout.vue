@@ -208,7 +208,9 @@ const authStore = useAuthStore()
 const buildingName = ref('')
 const buildingPackage = ref('basic')
 const buildingInfo = ref({})
-const { isMobile } = useMobile()
+// 桌面头部（7个菜单项+用户区）需约1300px才放得下，≤1080 的平板/小窗口
+// 直接用移动端抽屉布局，避免菜单文字与用户区重叠、页面横向滚动
+const { isMobile } = useMobile(1080)
 const pendingTaskCount = ref(0)
 let taskPollTimer = null
 
@@ -342,6 +344,17 @@ onUnmounted(() => {
 .layout-user { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .user-text { font-size: 14px; }
 .layout-main { background: #f5f7fa; padding: 20px; }
+
+/* 中等宽度桌面头部紧凑化：1081~1330 区间压缩留白，防止菜单文字压住右侧用户区 */
+@media (min-width: 1081px) and (max-width: 1330px) {
+  .layout-header { padding: 0 12px; }
+  .layout-logo { margin-right: 12px; }
+  .layout-menu .el-menu-item { padding: 0 8px; }
+  .layout-user { gap: 6px; }
+  .layout-user .user-text { display: none; }
+  .layout-user .el-tag { display: none; }
+  .layout-user .el-button { padding: 5px 10px; }
+}
 
 /* 移动端布局 */
 .mobile-header {

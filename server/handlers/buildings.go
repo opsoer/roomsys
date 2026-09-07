@@ -4,6 +4,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -320,7 +321,7 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	keyword := c.Query("keyword")
 	page, size := utils.ParsePage(c)
 	lastID, _ := strconv.Atoi(c.Query("last_id"))
-	buildings, total, err := h.BuildingService.List(status, keyword, "", "", "", page, lastID, size, true)
+	buildings, total, err := h.BuildingService.List(services.BuildingListFilter{Status: status, Keyword: keyword}, page, lastID, size, true)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -329,14 +330,23 @@ func (h *BuildingHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
-// ListPublic 获取公寓列表（公开端，排除不可见公寓），按地区筛选并记录访问
+// ListPublic 获取公寓列表（公开端，排除不可见公寓），支持位置/价格区间/户型筛选并记录访问。
+// 位置、价格、户型之间为 AND 关系；价格与户型要求公寓下存在满足条件的可见房间
+// （未出租或即将到期），全部条件都不满足时返回空列表。
 func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	page, size := utils.ParsePage(c)
-	district := c.Query("district")
-	street := c.Query("street")
-	village := c.Query("village")
 	lastID, _ := strconv.Atoi(c.Query("last_id"))
-	buildings, total, err := h.BuildingService.List("", "", district, street, village, page, lastID, size, false)
+	minPrice, _ := strconv.ParseFloat(c.Query("min_price"), 64)
+	maxPrice, _ := strconv.ParseFloat(c.Query("max_price"), 64)
+	filter := services.BuildingListFilter{
+		District: c.Query("district"),
+		Street:   c.Query("street"),
+		Village:  c.Query("village"),
+		MinPrice: minPrice,
+		MaxPrice: maxPrice,
+		Layout:   c.Query("layout"),
+	}
+	buildings, total, err := h.BuildingService.List(filter, page, lastID, size, false)
 	if err != nil {
 		logger.Log.Error().Err(err).Msg("查询公寓列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -344,6 +354,72 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 	}
 	go utils.RecordPageView(h.DB, "building_list", 0, 0, utils.GetRealIP(c))
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
+}
+
+// ListLocations 公开端位置聚合：返回所有可见公寓实际使用的 区域→街道→村/小区 数据，
+// 供租客端筛选下拉使用，保证筛选选项与真实房源一致（管理端录入时允许自由输入，可能超出静态列表）。
+func (h *BuildingHandler) ListLocations(c *gin.Context) {
+	today := utils.Now().Format("2006-01-02")
+	var rows []struct {
+		District string `gorm:"column:district"`
+		Street   string `gorm:"column:street"`
+		Village  string `gorm:"column:village"`
+	}
+	if err := h.DB.Table("buildings").
+		Select("district, street, village").
+		Where("deleted_at IS NULL AND status <> ? AND (expired_at = '' OR expired_at IS NULL OR expired_at >= ?)",
+			services.BuildingStatusHidden, today).
+		Where("district <> '' AND street <> '' AND village <> ''").
+		Find(&rows).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("查询位置聚合失败")
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+
+	type streetNode struct {
+		Name     string   `json:"name"`
+		Villages []string `json:"villages"`
+	}
+	type districtNode struct {
+		Name    string       `json:"name"`
+		Streets []streetNode `json:"streets"`
+	}
+
+	villageSet := map[string]map[string]map[string]bool{}
+	for _, r := range rows {
+		if villageSet[r.District] == nil {
+			villageSet[r.District] = map[string]map[string]bool{}
+		}
+		if villageSet[r.District][r.Street] == nil {
+			villageSet[r.District][r.Street] = map[string]bool{}
+		}
+		villageSet[r.District][r.Street][r.Village] = true
+	}
+
+	districtNames := make([]string, 0, len(villageSet))
+	for d := range villageSet {
+		districtNames = append(districtNames, d)
+	}
+	sort.Strings(districtNames)
+	locations := make([]districtNode, 0, len(districtNames))
+	for _, d := range districtNames {
+		streetNames := make([]string, 0, len(villageSet[d]))
+		for st := range villageSet[d] {
+			streetNames = append(streetNames, st)
+		}
+		sort.Strings(streetNames)
+		node := districtNode{Name: d, Streets: make([]streetNode, 0, len(streetNames))}
+		for _, st := range streetNames {
+			villages := make([]string, 0, len(villageSet[d][st]))
+			for v := range villageSet[d][st] {
+				villages = append(villages, v)
+			}
+			sort.Strings(villages)
+			node.Streets = append(node.Streets, streetNode{Name: st, Villages: villages})
+		}
+		locations = append(locations, node)
+	}
+	utils.Success(c, gin.H{"locations": locations})
 }
 
 // GetPublic 获取公寓详情（公开端），含统计信息并记录访问

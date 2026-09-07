@@ -236,7 +236,8 @@ onUnmounted(() => {
 }
 .detail-main { min-width: 0; }
 
-@media (max-width: 768px) {
+/* ≤900px 时主内容列会被 320px 侧栏挤到不足一半，收合为单栏 */
+@media (max-width: 900px) {
   .room-detail-page { padding: 0 12px 24px; }
   .detail-body { grid-template-columns: 1fr; }
 }

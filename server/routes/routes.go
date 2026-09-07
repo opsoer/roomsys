@@ -42,6 +42,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
+		public.GET("/buildings/locations", buildingH.ListLocations)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 

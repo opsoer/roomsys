@@ -88,6 +88,11 @@ export function getBuildings(params) {
   return api.get('/buildings', { params })
 }
 
+// 公开位置聚合：可见公寓实际使用的 区域→街道→村/小区
+export function getBuildingLocations() {
+  return api.get('/buildings/locations', { silent: true })
+}
+
 export function getBuildingDetail(id) {
   return api.get(`/buildings/${id}`)
 }

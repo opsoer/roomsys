@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"rental-server/models"
@@ -192,11 +193,31 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 	}, nil
 }
 
+// BuildingListFilter 公寓列表筛选条件。
+// MinPrice/MaxPrice/Layout 属于房间级条件：要求公寓下至少存在一间
+// 「普通用户可见」的房间（未出租，或已出租但合同30天内到期）满足全部已选条件；
+// 位置条件与房间条件之间为 AND 关系，未提供的条件不参与筛选。
+type BuildingListFilter struct {
+	Status   string
+	Keyword  string
+	District string
+	Street   string
+	Village  string
+	MinPrice float64
+	MaxPrice float64
+	Layout   string
+}
+
+// HasRoomFilter 是否包含房间级筛选条件（价格/户型）
+func (f BuildingListFilter) HasRoomFilter() bool {
+	return f.MinPrice > 0 || f.MaxPrice > 0 || f.Layout != ""
+}
+
 // List 分页查询楼栋列表（支持状态、关键词、区域筛选）
 // includeHidden 为 false 时排除被超级管理员设为不可见（status=hidden）的公寓，用于公开端
 // 双模式分页：lastID > 0 时走游标分页（只返回 id 大于 lastID 的下一批，避免 OFFSET 深翻页变慢，且不再重查总数，total 返回 -1）；
 // lastID == 0 时保持原有 page/OFFSET 分页并统计 total（兼容未升级的客户端）
-func (s *BuildingService) List(status, keyword, district, street, village string, page, lastID, size int, includeHidden bool) ([]BuildingWithStats, int64, error) {
+func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, includeHidden bool) ([]BuildingWithStats, int64, error) {
 	var buildings []models.Building
 	query := s.DB
 
@@ -215,8 +236,8 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 	today := utils.Now().Format("2006-01-02")
 	thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
 
-	if status != "" {
-		switch status {
+	if f.Status != "" {
+		switch f.Status {
 		case "normal":
 			query = query.Where("expired_at = '' OR expired_at IS NULL OR expired_at > ?", thirtyDaysLater)
 		case "expiring":
@@ -226,19 +247,24 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 		}
 	}
 
-	if keyword != "" {
+	if f.Keyword != "" {
 		query = query.Where("name LIKE ? OR id IN (SELECT building_id FROM building_landlords WHERE phone LIKE ?)",
-			"%"+keyword+"%", "%"+keyword+"%")
+			"%"+f.Keyword+"%", "%"+f.Keyword+"%")
 	}
 
-	if district != "" {
-		query = query.Where("district = ?", district)
+	if f.District != "" {
+		query = query.Where("district = ?", f.District)
 	}
-	if street != "" {
-		query = query.Where("street = ?", street)
+	if f.Street != "" {
+		query = query.Where("street = ?", f.Street)
 	}
-	if village != "" {
-		query = query.Where("village = ?", village)
+	if f.Village != "" {
+		query = query.Where("village = ?", f.Village)
+	}
+
+	if f.HasRoomFilter() {
+		cond, args := buildVisibleRoomCondition(f, today, thirtyDaysLater)
+		query = query.Where(cond, args...)
 	}
 
 	var total int64
@@ -316,6 +342,33 @@ func (s *BuildingService) List(status, keyword, district, street, village string
 	}
 
 	return result, total, nil
+}
+
+// buildVisibleRoomCondition 构造「公寓下存在满足条件的可见房间」的 EXISTS 子句及其参数。
+// 可见房间的定义与公开端房间列表接口一致：未出租（vacant），
+// 或已出租（rented）但存在30天内到期的活跃合同（即「即将到期」）。
+// 长租中（rented 且未临期）、已到期等状态对普通租客不可见，不参与匹配。
+func buildVisibleRoomCondition(f BuildingListFilter, today, thirtyDaysLater string) (string, []interface{}) {
+	conds := []string{
+		"(r.status = 'vacant' OR (r.status = 'rented' AND EXISTS (" +
+			"SELECT 1 FROM rental_contracts rc WHERE rc.room_id = r.id AND rc.deleted_at IS NULL AND rc.status = 'active' " +
+			"AND rc.end_date >= ? AND rc.end_date < ?)))",
+	}
+	args := []interface{}{today, thirtyDaysLater}
+	if f.MinPrice > 0 {
+		conds = append(conds, "r.rent_price IS NOT NULL AND r.rent_price >= ?")
+		args = append(args, f.MinPrice)
+	}
+	if f.MaxPrice > 0 {
+		conds = append(conds, "r.rent_price IS NOT NULL AND r.rent_price <= ?")
+		args = append(args, f.MaxPrice)
+	}
+	if f.Layout != "" {
+		conds = append(conds, "r.layout = ?")
+		args = append(args, f.Layout)
+	}
+	return "EXISTS (SELECT 1 FROM rooms r WHERE r.building_id = buildings.id AND r.deleted_at IS NULL AND " +
+		strings.Join(conds, " AND ") + ")", args
 }
 
 // Create 创建楼栋

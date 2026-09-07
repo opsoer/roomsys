@@ -20,18 +20,28 @@
       </div>
     </van-sticky>
     <div class="filter-bar">
-      <div class="filter-tab" :class="{ active: filterOpen }" @click="filterOpen = true">
-        <span>{{ filterText }}</span>
-        <van-icon name="arrow-down" size="12" />
+      <div class="filter-tabs">
+        <div class="filter-tab" :class="{ active: locationActive || filterOpen }" @click="openFilter">
+          <span>{{ locationText }}</span>
+          <van-icon name="arrow-down" size="12" />
+        </div>
+        <div class="filter-tab" :class="{ active: priceActive }" @click="openFilter">
+          <span>{{ priceText }}</span>
+          <van-icon name="arrow-down" size="12" />
+        </div>
+        <div class="filter-tab" :class="{ active: layoutActive }" @click="openFilter">
+          <span>{{ layoutText }}</span>
+          <van-icon name="arrow-down" size="12" />
+        </div>
       </div>
-      <span class="filter-count">共 {{ buildings.length }} 栋</span>
+      <span class="filter-count">共 {{ total > 0 ? total : buildings.length }} 栋</span>
     </div>
 
-    <van-popup v-model:show="filterOpen" position="bottom" round :style="{ height: '60vh' }">
+    <van-popup v-model:show="filterOpen" position="bottom" round :style="{ height: '72vh' }">
       <div class="filter-popup">
         <div class="filter-popup-header">
           <span class="fp-btn" @click="resetFilter">重置</span>
-          <span class="fp-title">选择位置</span>
+          <span class="fp-title">筛选</span>
           <span class="fp-btn fp-confirm" @click="confirmFilter">确认</span>
         </div>
         <div class="filter-popup-body">
@@ -42,7 +52,7 @@
                 <div class="filter-col-item all-item" :class="{ active: !stepDistrict }" @click="stepDistrict = null; stepStreet = null; stepVillage = ''">
                   全部深圳市区
                 </div>
-                <div v-for="d in shenzhen" :key="d.value" class="filter-col-item" :class="{ active: stepDistrict?.value === d.value }" @click="stepDistrict = d; stepStreet = null; stepVillage = ''">
+                <div v-for="d in districtOptions" :key="d.value" class="filter-col-item" :class="{ active: stepDistrict?.value === d.value }" @click="stepDistrict = d; stepStreet = null; stepVillage = ''">
                   {{ d.label }}
                 </div>
               </div>
@@ -70,6 +80,55 @@
               </div>
             </div>
           </div>
+          <div class="filter-sections">
+            <div class="filter-section">
+              <div class="filter-section-title">价格（元/月）</div>
+              <div class="chip-wrap">
+                <span class="chip" :class="{ active: stepMinPrice == null && stepMaxPrice == null }" @click="clearStepPrice">不限</span>
+                <span
+                  v-for="p in PRICE_PRESETS"
+                  :key="p.label"
+                  class="chip"
+                  :class="{ active: isPresetActive(p) }"
+                  @click="togglePreset(p)"
+                >{{ p.label }}</span>
+              </div>
+              <div class="custom-price">
+                <span class="cp-label">自定义</span>
+                <input
+                  class="cp-input"
+                  type="number"
+                  inputmode="numeric"
+                  placeholder="最低价"
+                  :value="stepMinPrice == null ? '' : stepMinPrice"
+                  @input="onCustomPriceInput('min', $event)"
+                />
+                <span class="cp-sep">—</span>
+                <input
+                  class="cp-input"
+                  type="number"
+                  inputmode="numeric"
+                  placeholder="最高价"
+                  :value="stepMaxPrice == null ? '' : stepMaxPrice"
+                  @input="onCustomPriceInput('max', $event)"
+                />
+                <span class="cp-unit">元/月</span>
+              </div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-section-title">户型</div>
+              <div class="chip-wrap">
+                <span class="chip" :class="{ active: !stepLayout }" @click="stepLayout = ''">不限</span>
+                <span
+                  v-for="l in LAYOUT_OPTIONS"
+                  :key="l"
+                  class="chip"
+                  :class="{ active: stepLayout === l }"
+                  @click="stepLayout = stepLayout === l ? '' : l"
+                >{{ l }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </van-popup>
@@ -88,7 +147,7 @@
       </div>
 
       <template v-else-if="buildings.length === 0">
-        <van-empty description="暂无可租公寓" />
+        <van-empty :description="hasAnyFilter ? '没有符合筛选条件的公寓，试试放宽筛选' : '暂无可租公寓'" />
       </template>
 
       <div v-else class="building-list">
@@ -154,12 +213,13 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import { getBuildings } from '../api'
+import { getBuildings, getBuildingLocations } from '../api'
 import { siteHomeUrl, generateSiteQrDataUrl, downloadQrImage } from '../utils/qr'
 import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useUtils } from '../composables/useUtils'
 import shenzhen from '../utils/shenzhen'
+import { LAYOUT_OPTIONS } from '../utils/constants'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const router = useRouter()
@@ -169,12 +229,34 @@ const buildings = ref([])
 const loading = ref(true)
 const refreshing = ref(false)
 const filterOpen = ref(false)
+
+// 价格区间预设（元/月），min/max 为 null 表示该侧不限制
+const PRICE_PRESETS = [
+  { label: '1000以下', min: null, max: 1000 },
+  { label: '1000-2000', min: 1000, max: 2000 },
+  { label: '2000-3000', min: 2000, max: 3000 },
+  { label: '3000-5000', min: 3000, max: 5000 },
+  { label: '5000以上', min: 5000, max: null },
+]
+
+// 已生效的筛选条件（点「确认」后写入）
 const filterDistrict = ref('')
 const filterStreet = ref('')
 const filterVillage = ref('')
+const filterMinPrice = ref(null)
+const filterMaxPrice = ref(null)
+const filterLayout = ref('')
+// 弹窗内待确认的筛选条件
 const stepDistrict = ref(null)
 const stepStreet = ref(null)
 const stepVillage = ref('')
+const stepMinPrice = ref(null)
+const stepMaxPrice = ref(null)
+const stepLayout = ref('')
+
+// 数据库中可见公寓实际使用的位置数据（房东录入村/小区时可自由输入，可能超出静态列表）
+const dbLocations = ref([])
+
 const total = ref(0)
 const pageSize = 20
 const loadingMore = ref(false)
@@ -214,10 +296,52 @@ function downloadQrCard() {
   showToast({ message: '二维码已保存', duration: 1500 })
 }
 
+// dbLocations 转成 区域 → { 街道 → [村/小区] } 的映射，便于合并
+const dbLocationMap = computed(() => {
+  const map = {}
+  for (const d of dbLocations.value) {
+    const streets = {}
+    for (const s of d.streets || []) streets[s.name] = s.villages || []
+    map[d.name] = streets
+  }
+  return map
+})
+
+// 区域选项：静态行政区划 + 数据库中出现但静态列表没有的区域（兜底）
+const districtOptions = computed(() => {
+  const staticNames = new Set(shenzhen.map(d => d.label))
+  const extras = dbLocations.value
+    .filter(d => !staticNames.has(d.name))
+    .map(d => ({
+      value: d.name, label: d.name,
+      streets: (d.streets || []).map(s => ({ value: s.name, label: s.name, villages: s.villages || [] })),
+    }))
+  return [...shenzhen, ...extras]
+})
+
+// 村/小区合并：数据库中真实存在的（有房源）排前面，静态列表补充其后，去重
+function mergeVillages(districtLabel, streetLabel, staticVillages) {
+  const dbStreets = dbLocationMap.value[districtLabel] || {}
+  const dbVillages = dbStreets[streetLabel] || []
+  const set = new Set(staticVillages)
+  return [...dbVillages.filter(v => !set.has(v)), ...staticVillages]
+}
+
 const currentStreets = computed(() => {
   if (!stepDistrict.value) return []
-  const d = shenzhen.find(x => x.value === stepDistrict.value.value)
-  return d ? d.streets : []
+  const staticD = shenzhen.find(x => x.value === stepDistrict.value.value)
+  const staticStreets = staticD ? staticD.streets : []
+  const dbStreets = dbLocationMap.value[stepDistrict.value.label] || {}
+  const staticNames = new Set(staticStreets.map(s => s.label))
+  // 数据库中有房源、但静态列表没有的街道（自由输入）排在前面
+  const dbFirst = Object.keys(dbStreets)
+    .filter(n => !staticNames.has(n))
+    .map(n => ({ value: n, label: n, villages: dbStreets[n] }))
+  const mergedStatic = staticStreets.map(s => ({
+    ...s,
+    villages: mergeVillages(stepDistrict.value.label, s.label, s.villages || []),
+  }))
+  return [...dbFirst, ...mergedStatic]
 })
 
 const currentVillages = computed(() => {
@@ -225,28 +349,110 @@ const currentVillages = computed(() => {
   return stepStreet.value.villages || []
 })
 
-const filterText = computed(() => {
+const locationActive = computed(() => !!(filterDistrict.value || filterStreet.value || filterVillage.value))
+const priceActive = computed(() => filterMinPrice.value != null || filterMaxPrice.value != null)
+const layoutActive = computed(() => !!filterLayout.value)
+const hasAnyFilter = computed(() => locationActive.value || priceActive.value || layoutActive.value)
+
+const locationText = computed(() => {
   if (filterVillage.value) return `${filterDistrict.value} ${filterStreet.value} ${filterVillage.value}`
   if (filterStreet.value) return `${filterDistrict.value} ${filterStreet.value}`
   if (filterDistrict.value) return filterDistrict.value
-  return '全部位置'
+  return '位置'
 })
+
+const priceText = computed(() => formatPriceRange(filterMinPrice.value, filterMaxPrice.value) || '租金')
+
+const layoutText = computed(() => filterLayout.value || '户型')
+
+function toNum(v) {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function formatPriceRange(min, max) {
+  const mn = toNum(min)
+  const mx = toNum(max)
+  if (mn == null && mx == null) return ''
+  if (mn != null && mx != null) return `${mn}-${mx}元`
+  if (mn != null) return `${mn}元以上`
+  return `${mx}元以下`
+}
+
+function isPresetActive(p) {
+  return toNum(stepMinPrice.value) === toNum(p.min) && toNum(stepMaxPrice.value) === toNum(p.max)
+}
+
+function togglePreset(p) {
+  if (isPresetActive(p)) {
+    clearStepPrice()
+    return
+  }
+  stepMinPrice.value = p.min
+  stepMaxPrice.value = p.max
+}
+
+function clearStepPrice() {
+  stepMinPrice.value = null
+  stepMaxPrice.value = null
+}
+
+function onCustomPriceInput(which, e) {
+  const v = toNum(e.target.value)
+  if (v != null && v < 0) {
+    e.target.value = ''
+    return
+  }
+  if (which === 'min') stepMinPrice.value = v
+  else stepMaxPrice.value = v
+}
+
+// 打开弹窗：把已生效的筛选条件同步到弹窗，避免上次未确认的选择残留
+function openFilter() {
+  stepDistrict.value = filterDistrict.value
+    ? (districtOptions.value.find(d => d.label === filterDistrict.value) || { value: filterDistrict.value, label: filterDistrict.value, streets: [] })
+    : null
+  stepStreet.value = filterStreet.value
+    ? (currentStreets.value.find(s => s.label === filterStreet.value) || { value: filterStreet.value, label: filterStreet.value, villages: [] })
+    : null
+  stepVillage.value = filterVillage.value || ''
+  stepMinPrice.value = filterMinPrice.value
+  stepMaxPrice.value = filterMaxPrice.value
+  stepLayout.value = filterLayout.value || ''
+  filterOpen.value = true
+}
 
 function resetFilter() {
   stepDistrict.value = null
   stepStreet.value = null
   stepVillage.value = ''
+  stepMinPrice.value = null
+  stepMaxPrice.value = null
+  stepLayout.value = ''
   filterDistrict.value = ''
   filterStreet.value = ''
   filterVillage.value = ''
+  filterMinPrice.value = null
+  filterMaxPrice.value = null
+  filterLayout.value = ''
   filterOpen.value = false
   fetchBuildings()
 }
 
 function confirmFilter() {
+  const min = toNum(stepMinPrice.value)
+  const max = toNum(stepMaxPrice.value)
+  if (min != null && max != null && min > max) {
+    showToast('最低价格不能高于最高价格')
+    return
+  }
   filterDistrict.value = stepDistrict.value ? stepDistrict.value.label : ''
   filterStreet.value = stepStreet.value ? stepStreet.value.label : ''
   filterVillage.value = stepVillage.value || ''
+  filterMinPrice.value = min
+  filterMaxPrice.value = max
+  filterLayout.value = stepLayout.value || ''
   filterOpen.value = false
   fetchBuildings()
 }
@@ -270,6 +476,9 @@ async function fetchBuildings(append = false) {
     if (filterDistrict.value) params.district = filterDistrict.value
     if (filterStreet.value) params.street = filterStreet.value
     if (filterVillage.value) params.village = filterVillage.value
+    if (filterMinPrice.value != null) params.min_price = filterMinPrice.value
+    if (filterMaxPrice.value != null) params.max_price = filterMaxPrice.value
+    if (filterLayout.value) params.layout = filterLayout.value
     const res = await getBuildings(params)
     const data = res.data.buildings || []
     if (!append) total.value = res.data.total || 0
@@ -317,12 +526,24 @@ function setupInfiniteScroll() {
 }
 
 async function onRefresh() {
+  fetchLocations()
   await fetchBuildings()
   refreshing.value = false
   showToast('刷新成功')
 }
 
+// 拉取可见公寓的真实位置数据（区域→街道→村/小区），失败时静默降级为仅静态列表
+async function fetchLocations() {
+  try {
+    const res = await getBuildingLocations()
+    dbLocations.value = res.data.locations || []
+  } catch (e) {
+    dbLocations.value = []
+  }
+}
+
 onMounted(async () => {
+  fetchLocations()
   await fetchBuildings()
 })
 
@@ -400,10 +621,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 10px 16px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;
 }
+.filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.filter-tabs::-webkit-scrollbar { display: none; }
 .filter-tab {
   display: flex;
   align-items: center;
@@ -553,12 +784,15 @@ onBeforeUnmount(() => {
   padding: 16px; border-bottom: 1px solid #f0f0f0;
 }
 .filter-popup-body {
-  height: calc(60vh - 53px); overflow: hidden;
+  height: calc(72vh - 53px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .fp-btn { font-size: 14px; color: #999; cursor: pointer; }
 .fp-confirm { color: #1989fa; font-weight: 600; }
 .fp-title { font-size: 16px; font-weight: 600; color: #1a1a2e; }
-.filter-cols { display: flex; height: 100%; }
+.filter-cols { display: flex; flex: 1; min-height: 0; }
 .filter-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #f0f0f0; }
 .filter-col:last-child { border-right: none; }
 .filter-col-title {
@@ -572,6 +806,40 @@ onBeforeUnmount(() => {
 }
 .filter-col-item.active { color: #fff; background: #1989fa; font-weight: 600; }
 .all-item { color: #e6a23c; }
+.filter-sections {
+  flex-shrink: 0;
+  max-height: 46%;
+  overflow-y: auto;
+  border-top: 1px solid #f0f0f0;
+  padding: 2px 12px 12px;
+  background: #fff;
+}
+.filter-section + .filter-section { border-top: 1px dashed #f0f0f0; }
+.filter-section-title {
+  font-size: 12px; color: #999; padding: 10px 0 8px;
+}
+.chip-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 5px 12px; font-size: 12px; color: #333;
+  background: #f5f6fa; border: 1px solid transparent; border-radius: 14px;
+  cursor: pointer; white-space: nowrap;
+}
+.chip.active {
+  color: #1989fa; background: #e8f3ff; border-color: #1989fa; font-weight: 600;
+}
+.custom-price {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+}
+.cp-label { font-size: 12px; color: #666; flex-shrink: 0; }
+.cp-input {
+  width: 72px; padding: 4px 8px; font-size: 12px; color: #333;
+  border: 1px solid #e5e6eb; border-radius: 6px; outline: none; background: #fff;
+}
+.cp-input:focus { border-color: #1989fa; }
+.cp-input::-webkit-outer-spin-button,
+.cp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cp-sep { color: #999; font-size: 12px; }
+.cp-unit { font-size: 12px; color: #999; }
 .recruit-banner {
   background: linear-gradient(135deg, #e6a23c, #f56c6c);
   padding: 10px 16px;

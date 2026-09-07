@@ -1,14 +1,34 @@
 // seedmedia 通过 HTTP API 为已有演示数据补充图片：
 //   - 每个公寓 1 张封面（POST /api/building/cover）
 //   - 每个房间 1 张照片（POST /api/building/rooms/:id/media）
-// 图片从 picsum.photos 下载（稳定 seed，可复现）。
+//
+// 使用场景：跑完 scripts/seed 后公寓/房间没有图片，前端列表与详情页观感差；
+// 本脚本按公寓 id / 房间 id 作稳定 seed 从 picsum.photos 拉取随机图片，
+// 同一 id 永远得到同一张图，可重复运行（已存在的下载缓存与上传结果不重复处理）。
+//
+// 执行流程（main 三阶段）：
+//  1. root/root 登录，GET /api/admin/buildings 拉全部公寓；逐个公寓用「公寓 id」账号登录，
+//     GET /api/building/rooms 拉房间列表（注意：单页最多 100 条，每公寓超过 100 间需自行改分页）
+//  2. 阶段一：16 并发从 picsum.photos 下载图片到本地缓存目录（封面 1200x800 / 房间图 800x600）
+//  3. 阶段二：8 并发上传，每个公寓先登录拿 token 再依次传封面 + 房间图
+//
+// 限流说明：服务端有全局 IP 限流（默认 240 次/分钟，见 middleware/ratelimit.go），
+// 数千次上传必触发 429。脚本默认自限速 200 次/分钟（仅约束对后端的请求，
+// 下载图片不受影响），收到 429 自动等限流窗口重置后重试。
+//
+// 环境变量：
+//   SEED_BASE_URL  后端地址，默认 http://127.0.0.1:8081
+//   SEED_TMP_DIR   图片下载缓存目录，默认 <系统临时目录>/seedmedia
+//   SEED_RATE_PER_MIN  脚本自限速（次/分钟），默认 200；后端已调大 RATE_LIMIT_PER_MIN 时
+//                      可设 0 关闭以提速
 //
 // 前置条件：
 //  1. 后端已运行，且已通过 ./scripts/seed 生成公寓/房间数据
 //  2. 楼栋管理员账号存在（用户名与密码均为公寓 id，如公寓 3 → 3 / 3）
+//  3. 机器能访问 picsum.photos（外网）
 //
 // 运行方式（在 server 目录下）：go run ./scripts/seedmedia
-// 可选环境变量：SEED_BASE_URL（默认 http://127.0.0.1:8081）、SEED_TMP_DIR（下载缓存目录）
+// 预计耗时：5000+ 张图在默认自限速下约 25~30 分钟（大头是上传）。
 package main
 
 import (
@@ -33,6 +53,47 @@ const defaultBaseURL = "http://127.0.0.1:8081"
 var baseURL = os.Getenv("SEED_BASE_URL")
 
 var tmpDir = os.Getenv("SEED_TMP_DIR")
+
+// reqLimiter 全局请求节流器，约束对后端的请求频率，避免触发服务端每 IP 限流。
+// 下载/上传在多个 goroutine 间并发，靠共享的时间片排队实现全局限速。
+var reqLimiter = newThrottle(envInt("SEED_RATE_PER_MIN", 200))
+
+// envInt 读取整型环境变量，未设置或非法时返回默认值
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &def); n == 1 && err == nil {
+			return def
+		}
+	}
+	return def
+}
+
+// throttle 串行化所有请求的发起时刻，保证请求频率不超过 perMinute 次/分钟。
+// 原理：记录下一次允许请求的时间点，每个请求先排队等到自己的时间片。
+func newThrottle(perMinute int) *throttle {
+	if perMinute <= 0 {
+		return &throttle{} // 0 或负数 = 关闭自限速
+	}
+	return &throttle{minInterval: time.Minute / time.Duration(perMinute)}
+}
+
+type throttle struct {
+	mu          sync.Mutex
+	next        time.Time
+	minInterval time.Duration
+}
+
+func (t *throttle) wait() {
+	if t.minInterval <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if now := time.Now(); t.next.After(now) {
+		time.Sleep(t.next.Sub(now))
+	}
+	t.next = time.Now().Add(t.minInterval)
+}
 
 const (
 	downloadWorkers = 16
@@ -95,16 +156,25 @@ func doUpload(path, token, field, filename string, data []byte, extra map[string
 	return doReq("POST", path, token, writer.FormDataContentType(), body.Bytes(), out)
 }
 
+// doReq 发送请求，自动重试三类失败：网络错误、5xx、429 限流；
+// 其余 4xx（参数/权限/冲突等）直接返回错误不重试。
 func doReq(method, path, token, contentType string, bodyBytes []byte, out interface{}) error {
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
 		}
 		if err := doOnce(method, path, token, contentType, bodyBytes, out); err != nil {
 			lastErr = err
-			if ae, ok := err.(*apiError); ok && ae.Status < 500 {
-				return err
+			if ae, ok := err.(*apiError); ok {
+				if ae.Status == http.StatusTooManyRequests {
+					// 撞上服务端限流：限流窗口为 1 分钟，等窗口重置后重试
+					time.Sleep(65 * time.Second)
+					continue
+				}
+				if ae.Status < 500 {
+					return err
+				}
 			}
 			continue
 		}
@@ -114,6 +184,7 @@ func doReq(method, path, token, contentType string, bodyBytes []byte, out interf
 }
 
 func doOnce(method, path, token, contentType string, bodyBytes []byte, out interface{}) error {
+	reqLimiter.wait()
 	req, err := http.NewRequest(method, baseURL+path, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return err

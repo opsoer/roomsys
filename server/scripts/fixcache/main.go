@@ -1,3 +1,23 @@
+// fixcache 给七牛 bucket 中所有已存在的对象补写 Cache-Control 响应缓存头
+// （public, max-age=31536000, immutable），跑一次即可。
+//
+// 使用场景：
+//   - 存量文件是一次性修复：早期版本上传到七牛的图片/视频没有缓存元数据，
+//     CDN 和浏览器每次都回源拉取，白白消耗七牛流量费用。
+//     新代码上传时已自动带缓存头（handlers/media.go 的 x-qn-meta-cache-control），
+//     因此本脚本只用于给「修复之前」上传的文件补写，重复运行无害但没必要。
+//
+// 基本原理：
+//  1. 读取 config.json（或 CONFIG_PATH）拿到七牛 AK/SK/bucket/区域
+//  2. 用 BucketManager.ListFiles 分页（每页 1000）遍历 bucket 内全部对象
+//  3. 逐个 ChangeMeta 写入 cache-control 元数据并打印进度
+//
+// 注意：
+//   - 必须在 server 目录下运行（要读 config.json）；未配置七牛时会直接跳过
+//   - 文件名都是 UUID，内容不会变化，所以 immutable 缓存策略是安全的
+//   - 对象较多时会发起等量次数的 ChangeMeta 请求，属于七牛管理类接口，正常计费无额外费用
+//
+// 运行方式（在 server 目录下）：go run ./scripts/fixcache
 package main
 
 import (
