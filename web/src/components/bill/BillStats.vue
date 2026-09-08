@@ -5,18 +5,26 @@
         :format="mode === 'monthly' ? 'YYYY-MM' : 'YYYY'" :value-format="mode === 'monthly' ? 'YYYY-MM' : 'YYYY'"
         @change="fetchData" />
     </div>
-    <div v-if="stats" style="display: flex; gap: 20px; margin-bottom: 20px">
-      <el-card style="flex: 1">
-        <div style="color: #67c23a; font-size: 14px">{{ mode === 'monthly' ? '总' : '年度总' }}收入</div>
-        <div style="font-size: 28px; font-weight: bold; color: #67c23a">{{ stats.total_income.toFixed(2) }}</div>
+    <div v-if="stats" class="summary-cards">
+      <el-card>
+        <div class="sum-label income-label">{{ mode === 'monthly' ? '总' : '年度总' }}收入</div>
+        <div class="sum-value income-value">{{ fmtMoney(stats.total_income) }}</div>
       </el-card>
-      <el-card style="flex: 1">
-        <div style="color: #f56c6c; font-size: 14px">{{ mode === 'monthly' ? '总' : '年度总' }}支出</div>
-        <div style="font-size: 28px; font-weight: bold; color: #f56c6c">{{ stats.total_expense.toFixed(2) }}</div>
+      <el-card>
+        <div class="sum-label expense-label">{{ mode === 'monthly' ? '总' : '年度总' }}支出</div>
+        <div class="sum-value expense-value">{{ fmtMoney(stats.total_expense) }}</div>
       </el-card>
-      <el-card style="flex: 1">
-        <div style="color: #409eff; font-size: 14px">{{ mode === 'monthly' ? '净' : '年度净' }}利润</div>
-        <div style="font-size: 28px; font-weight: bold; color: #409eff">{{ stats.net_profit.toFixed(2) }}</div>
+      <el-card>
+        <div class="sum-label profit-label">{{ mode === 'monthly' ? '净' : '年度净' }}利润</div>
+        <div class="sum-value" :class="(stats.net_profit || 0) >= 0 ? 'profit-value' : 'expense-value'">{{ fmtMoney(stats.net_profit) }}</div>
+      </el-card>
+      <el-card>
+        <div class="sum-label count-label">利润率</div>
+        <div class="sum-value count-value">{{ profitRate(stats) }}</div>
+      </el-card>
+      <el-card>
+        <div class="sum-label count-label">账单笔数</div>
+        <div class="sum-value count-value">{{ stats.bill_count ?? 0 }}</div>
       </el-card>
     </div>
     <el-row :gutter="20">
@@ -37,7 +45,7 @@
       <el-col :span="8">
         <el-card>
           <h4>收支对比</h4>
-          <v-chart :option="compareOption(stats)" style="height:240px" autoresize />
+          <v-chart v-if="stats" :option="compareOption(stats)" style="height:240px" autoresize />
         </el-card>
       </el-col>
     </el-row>
@@ -62,6 +70,18 @@ const selectedMonth = ref(props.mode === 'monthly'
   : now.format('YYYY'))
 const stats = ref(null)
 
+function fmtMoney(n) {
+  if (n == null) return '-'
+  return '¥' + Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function profitRate(stats) {
+  const income = stats?.total_income || 0
+  const profit = stats?.net_profit || 0
+  if (income <= 0) return '-'
+  return (profit / income * 100).toFixed(1) + '%'
+}
+
 function pieOption(data, color) {
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c}元 ({d}%)' },
@@ -77,17 +97,23 @@ function pieOption(data, color) {
 
 function incomePieOption(data) { return pieOption(data, ['#67c23a', '#67CC6A', '#67D67A', '#67E08A', '#67EA9A']) }
 function expensePieOption(data) { return pieOption(data, ['#f56c6c', '#f08080', '#e9967a', '#eea2ad', '#f4b4c2']) }
+// 收入/支出/净利润三根柱对比，比饼图多呈现净利润绝对值
 function compareOption(stats) {
   if (!stats) return {}
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c}元 ({d}%)' },
+    tooltip: { trigger: 'axis', valueFormatter: v => fmtMoney(v) },
+    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
+    xAxis: { type: 'category', data: ['收入', '支出', '净利润'], axisLabel: { fontSize: 12 } },
+    yAxis: { type: 'value' },
     series: [{
-      type: 'pie', radius: ['30%', '70%'],
+      type: 'bar',
+      barWidth: '40%',
       data: [
-        { name: '收入', value: stats.total_income || 0, itemStyle: { color: '#67c23a' } },
-        { name: '支出', value: stats.total_expense || 0, itemStyle: { color: '#f56c6c' } },
+        { value: stats.total_income || 0, itemStyle: { color: '#67c23a' } },
+        { value: stats.total_expense || 0, itemStyle: { color: '#f56c6c' } },
+        { value: stats.net_profit || 0, itemStyle: { color: '#409eff' } },
       ],
-      label: { show: true, formatter: '{b}\n{d}%', fontSize: 13 },
+      label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10 },
     }],
   }
 }
@@ -106,3 +132,22 @@ async function fetchData() {
 
 onMounted(fetchData)
 </script>
+
+<style scoped>
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.sum-label { font-size: 14px; }
+.sum-value { font-size: 24px; font-weight: bold; margin-top: 6px; }
+.income-label { color: #67c23a; }
+.income-value { color: #67c23a; }
+.expense-label { color: #f56c6c; }
+.expense-value { color: #f56c6c; }
+.profit-label { color: #409eff; }
+.profit-value { color: #409eff; }
+.count-label { color: #909399; }
+.count-value { color: #606266; }
+</style>

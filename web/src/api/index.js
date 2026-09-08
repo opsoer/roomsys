@@ -179,8 +179,16 @@ export function buildingGetRooms(params) {
   return api.get('/building/rooms', { params })
 }
 
+export function buildingGetContracts(params) {
+  return api.get('/building/contracts', { params })
+}
+
 export function buildingCreateRoom(data, config) {
   return api.post('/building/rooms', data, config)
+}
+
+export function buildingImportRentedRooms(data, config) {
+  return api.post('/building/rooms/import-rented', data, config)
 }
 
 export function buildingGetRoom(id) {

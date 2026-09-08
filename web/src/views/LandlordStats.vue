@@ -2,30 +2,46 @@
   <div class="stats-page">
     <h2 class="page-title">📊 数据看板</h2>
 
-    <div class="stats-cards">
-      <el-card shadow="hover" class="stat-card stat-gold" style="cursor:pointer" @click="selectMetric('pv')">
+    <div class="stats-cards" v-loading="statsLoading">
+      <el-card shadow="hover" class="stat-card stat-gold" :class="{ active: selectedMetric === 'pv' }" style="cursor:pointer" @click="selectMetric('pv')">
         <div class="stat-value">{{ formatNum(stats?.pv) }}</div>
         <div class="stat-label">总浏览量</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-blue" style="cursor:pointer" @click="selectMetric('uv')">
+      <el-card shadow="hover" class="stat-card stat-blue" :class="{ active: selectedMetric === 'uv' }" style="cursor:pointer" @click="selectMetric('uv')">
         <div class="stat-value">{{ formatNum(stats?.uv) }}</div>
         <div class="stat-label">总访客数</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-red" style="cursor:pointer" @click="selectMetric('landlord_view')">
+      <el-card shadow="hover" class="stat-card stat-red" :class="{ active: selectedMetric === 'landlord_view' }" style="cursor:pointer" @click="selectMetric('landlord_view')">
         <div class="stat-value">{{ formatNum(stats?.landlord_view) }}</div>
         <div class="stat-label">房东信息获取</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-green" style="cursor:pointer" @click="selectMetric('pv')">
+      <el-card shadow="hover" class="stat-card stat-green" :class="{ active: selectedMetric === 'pv' }" style="cursor:pointer" @click="selectMetric('pv')">
         <div class="stat-value">{{ formatNum(stats?.today_pv) }}</div>
         <div class="stat-label">今日浏览</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-purple" style="cursor:pointer" @click="selectMetric('uv')">
+      <el-card shadow="hover" class="stat-card stat-purple" :class="{ active: selectedMetric === 'uv' }" style="cursor:pointer" @click="selectMetric('uv')">
         <div class="stat-value">{{ formatNum(stats?.today_uv) }}</div>
         <div class="stat-label">今日访客</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-cyan" style="cursor:pointer" @click="selectMetric('phone_rate')">
+      <el-card shadow="hover" class="stat-card stat-cyan" :class="{ active: selectedMetric === 'phone_rate' }" style="cursor:pointer" @click="selectMetric('phone_rate')">
         <div class="stat-value">{{ stats?.phone_rate != null ? stats.phone_rate.toFixed(1) + '%' : '-' }}</div>
         <div class="stat-label">获电率</div>
+      </el-card>
+      <el-card shadow="hover" class="stat-card stat-teal" style="cursor:default">
+        <div class="stat-value">{{ stats?.occupancy_rate != null ? stats.occupancy_rate.toFixed(1) + '%' : '-' }}</div>
+        <div class="stat-label">出租率</div>
+      </el-card>
+      <el-card shadow="hover" class="stat-card stat-orange" style="cursor:default">
+        <div class="stat-value">{{ formatNum(stats?.room_total) }}</div>
+        <div class="stat-label">总房间</div>
+      </el-card>
+      <el-card shadow="hover" class="stat-card stat-rose" style="cursor:default">
+        <div class="stat-value">{{ formatNum(stats?.room_vacant) }}</div>
+        <div class="stat-label">空置房间</div>
+      </el-card>
+      <el-card shadow="hover" class="stat-card stat-olive" style="cursor:default">
+        <div class="stat-value">{{ formatNum(stats?.room_rented) }}</div>
+        <div class="stat-label">已租房间</div>
       </el-card>
     </div>
 
@@ -75,14 +91,15 @@ import VChart from 'vue-echarts'
 import '../utils/echarts'
 
 const stats = ref(null)
+const statsLoading = ref(false)
 const trendLoading = ref(false)
 const trendDays = ref('30')
 const trendData = ref([])
 const selectedMetric = ref('pv')
 
 const metricConfig = {
-  pv: { label: '总浏览量', color: '#e6a23c' },
-  uv: { label: '总访客数', color: '#409eff' },
+  pv: { label: '浏览量', color: '#e6a23c' },
+  uv: { label: '访客数', color: '#409eff' },
   landlord_view: { label: '房东获取', color: '#f56c6c' },
   phone_rate: { label: '获电率', color: '#13c2c2' },
 }
@@ -121,10 +138,12 @@ const trendOption = computed(() => ({
 }))
 
 async function fetchStats() {
+  statsLoading.value = true
   try {
     const res = await buildingGetMyStats()
     stats.value = res.data.stats
   } catch { ElMessage.error('获取统计数据失败') }
+  finally { statsLoading.value = false }
 }
 
 async function fetchTrend() {
@@ -147,6 +166,7 @@ onMounted(() => {
 .page-title { font-size: 20px; margin-bottom: 20px; color: #1a1a2e; }
 .stats-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .stat-card { text-align: center; cursor: default; }
+.stat-card.active { outline: 2px solid #409eff; outline-offset: -2px; border-radius: 6px; }
 .stat-value { font-size: 26px; font-weight: 700; line-height: 1.2; }
 .stat-label { font-size: 13px; color: #999; margin-top: 4px; }
 .stat-gold .stat-value { color: #e6a23c; }
@@ -155,6 +175,10 @@ onMounted(() => {
 .stat-purple .stat-value { color: #722ed1; }
 .stat-cyan .stat-value { color: #13c2c2; }
 .stat-red .stat-value { color: #f56c6c; }
+.stat-teal .stat-value { color: #0aa870; }
+.stat-orange .stat-value { color: #fa8c16; }
+.stat-rose .stat-value { color: #eb2f96; }
+.stat-olive .stat-value { color: #7cb305; }
 .chart-section { margin-bottom: 20px; }
 .card-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .card-header-row h4 { margin: 0; font-size: 15px; }

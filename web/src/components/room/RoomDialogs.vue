@@ -23,6 +23,12 @@
         <el-form-item label="结束日期" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
           <el-date-picker v-model="rentForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
+        <div v-if="isHistoricalStart" class="rent-historical-hint">
+          起租日期早于本月：系统只补记本月租金账单，之前月份的账单不再补录。
+          <el-checkbox v-if="rentForm.deposit > 0" v-model="rentForm.record_deposit_bill">
+            补记押金收入账单（勾选后押金计入本月收入；历史押金通常无需勾选）
+          </el-checkbox>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="showRentDialog = false">取消</el-button>
@@ -233,8 +239,16 @@ const emit = defineEmits(['save-success'])
 
 const showRentDialog = ref(false)
 const rentSubmitting = ref(false)
-const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
+const rentForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', record_deposit_bill: false })
 const rentFormRef = ref(null)
+
+// 起租日期早于本月：录入的是在租历史租约，只补记本月租金账单
+const isHistoricalStart = computed(() => {
+  if (!rentForm.value.start_date) return false
+  const now = new Date()
+  const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  return rentForm.value.start_date < first
+})
 
 const showReserveDialog = ref(false)
 const reserveSubmitting = ref(false)
@@ -277,7 +291,7 @@ const editForm = ref({})
 const editFormRef = ref(null)
 
 function openRent() {
-  rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' }
+  rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', record_deposit_bill: false }
   showRentDialog.value = true
 }
 
@@ -381,10 +395,13 @@ async function handleRent() {
   }
   rentSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(props.roomId, { status: 'rented', ...rentForm.value })
+    const payload = { status: 'rented', ...rentForm.value }
+    // 非历史起租走后端默认（补记押金账单）；历史起租按勾选项决定
+    if (!isHistoricalStart.value) delete payload.record_deposit_bill
+    await buildingUpdateRoomStatus(props.roomId, payload)
     ElMessage.success('出租成功')
     showRentDialog.value = false
-    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '' }
+    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '', record_deposit_bill: false }
     emit('save-success')
   } finally {
     rentSubmitting.value = false
@@ -473,5 +490,20 @@ defineExpose({ openRent, openRenew, openVacant, openEdit, openReserve, openConfi
   font-size: 13px;
   color: #409eff;
   margin-top: 8px;
+}
+.rent-historical-hint {
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #e6a23c;
+  line-height: 1.6;
+  margin: 0 0 12px 12px;
+}
+.rent-historical-hint .el-checkbox {
+  display: flex;
+  margin-top: 4px;
+  white-space: normal;
 }
 </style>

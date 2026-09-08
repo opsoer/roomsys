@@ -94,11 +94,14 @@ const trendData = ref([])
 const growthData = ref([])
 
 const trendOption = computed(() => ({
-  tooltip: { trigger: 'axis' },
+  tooltip: {
+    trigger: 'axis',
+    valueFormatter: v => (v == null ? '-' : '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })),
+  },
   legend: { data: ['收入', '支出', '净利润'] },
-  grid: { left: 50, right: 20, bottom: 30, top: 40 },
+  grid: { left: 60, right: 20, bottom: 30, top: 40 },
   xAxis: { type: 'category', data: trendData.value.map(d => d.month), axisLabel: { rotate: 45 } },
-  yAxis: { type: 'value' },
+  yAxis: { type: 'value', axisLabel: { formatter: v => (v >= 10000 ? (v / 10000) + '万' : v) } },
   series: [
     { name: '收入', type: 'line', data: trendData.value.map(d => d.income), itemStyle: { color: '#67c23a' }, smooth: true },
     { name: '支出', type: 'line', data: trendData.value.map(d => d.expense), itemStyle: { color: '#f56c6c' }, smooth: true },

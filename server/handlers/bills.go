@@ -383,10 +383,14 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 		if b.Room.RoomNumber != "" {
 			room = b.Room.RoomNumber
 		}
+		typeLabel := "支出"
+		if b.Type == "income" {
+			typeLabel = "收入"
+		}
 		writer.Write([]string{
 			b.BillNo,
 			b.BillDate,
-			b.Type,
+			typeLabel,
 			b.Subtype,
 			fmt.Sprintf("%.2f", b.Amount),
 			room,

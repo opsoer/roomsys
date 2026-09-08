@@ -2,28 +2,34 @@
   <div class="stats-page">
     <h2 class="page-title">📊 数据看板</h2>
 
-    <div class="stats-cards">
-      <el-card shadow="hover" class="stat-card stat-gold" style="cursor:pointer" @click="selectMetric('pv')">
+    <div class="stats-cards" v-loading="overviewLoading">
+      <el-card shadow="hover" class="stat-card stat-gold" :class="{ active: selectedMetric === 'pv' }" style="cursor:pointer" @click="selectMetric('pv')">
         <div class="stat-value">{{ formatNum(overview?.total_pv) }}</div>
         <div class="stat-label">总浏览量</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-blue" style="cursor:pointer" @click="selectMetric('uv')">
+      <el-card shadow="hover" class="stat-card stat-blue" :class="{ active: selectedMetric === 'uv' }" style="cursor:pointer" @click="selectMetric('uv')">
         <div class="stat-value">{{ formatNum(overview?.total_uv) }}</div>
         <div class="stat-label">总访客数</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-red" style="cursor:pointer" @click="selectMetric('landlord_view')">
+      <el-card shadow="hover" class="stat-card stat-red" :class="{ active: selectedMetric === 'landlord_view' }" style="cursor:pointer" @click="selectMetric('landlord_view')">
         <div class="stat-value">{{ formatNum(overview?.total_landlord_view) }}</div>
         <div class="stat-label">房东信息获取</div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-green" style="cursor:pointer" @click="selectMetric('pv')">
+      <el-card shadow="hover" class="stat-card stat-green" :class="{ active: selectedMetric === 'pv' }" style="cursor:pointer" @click="selectMetric('pv')">
         <div class="stat-value">{{ formatNum(overview?.today_pv) }}</div>
         <div class="stat-label">今日浏览</div>
+        <div v-if="deltaPct(overview?.today_pv, overview?.yesterday_pv) != null" class="stat-delta" :style="{ color: deltaPct(overview.today_pv, overview.yesterday_pv) >= 0 ? '#67c23a' : '#f56c6c' }">
+          较昨日 {{ deltaPct(overview.today_pv, overview.yesterday_pv) >= 0 ? '+' : '' }}{{ deltaPct(overview.today_pv, overview.yesterday_pv).toFixed(1) }}%
+        </div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-purple" style="cursor:pointer" @click="selectMetric('uv')">
+      <el-card shadow="hover" class="stat-card stat-purple" :class="{ active: selectedMetric === 'uv' }" style="cursor:pointer" @click="selectMetric('uv')">
         <div class="stat-value">{{ formatNum(overview?.today_uv) }}</div>
         <div class="stat-label">今日访客</div>
+        <div v-if="deltaPct(overview?.today_uv, overview?.yesterday_uv) != null" class="stat-delta" :style="{ color: deltaPct(overview.today_uv, overview.yesterday_uv) >= 0 ? '#67c23a' : '#f56c6c' }">
+          较昨日 {{ deltaPct(overview.today_uv, overview.yesterday_uv) >= 0 ? '+' : '' }}{{ deltaPct(overview.today_uv, overview.yesterday_uv).toFixed(1) }}%
+        </div>
       </el-card>
-      <el-card shadow="hover" class="stat-card stat-cyan" style="cursor:pointer" @click="selectMetric('phone_rate')">
+      <el-card shadow="hover" class="stat-card stat-cyan" :class="{ active: selectedMetric === 'phone_rate' }" style="cursor:pointer" @click="selectMetric('phone_rate')">
         <div class="stat-value">{{ overview?.phone_rate != null ? overview.phone_rate.toFixed(1) + '%' : '-' }}</div>
         <div class="stat-label">获电率</div>
       </el-card>
@@ -134,6 +140,7 @@ import VChart from 'vue-echarts'
 import '../utils/echarts'
 
 const overview = ref(null)
+const overviewLoading = ref(false)
 const trendLoading = ref(false)
 const trendDays = ref('30')
 const trendData = ref([])
@@ -143,8 +150,8 @@ const drawerBuilding = ref(null)
 const selectedMetric = ref('pv')
 
 const metricConfig = {
-  pv: { label: '总浏览量', color: '#e6a23c' },
-  uv: { label: '总访客数', color: '#409eff' },
+  pv: { label: '浏览量', color: '#e6a23c' },
+  uv: { label: '访客数', color: '#409eff' },
   landlord_view: { label: '房东获取', color: '#f56c6c' },
   phone_rate: { label: '获电率', color: '#13c2c2' },
 }
@@ -156,6 +163,12 @@ function formatNum(n) {
   if (n == null) return '-'
   if (n >= 10000) return (n / 10000).toFixed(1) + '万'
   return n.toLocaleString()
+}
+
+// 今日与昨日的环比百分比；昨日无数据或为 0 时不展示
+function deltaPct(cur, prev) {
+  if (cur == null || prev == null || prev === 0) return null
+  return (cur - prev) / prev * 100
 }
 
 function formatDate(dateStr) {
@@ -183,10 +196,12 @@ const trendOption = computed(() => ({
 }))
 
 async function fetchOverview() {
+  overviewLoading.value = true
   try {
     const res = await adminGetStatsOverview()
     overview.value = res.data.overview
   } catch { ElMessage.error('获取概况失败') }
+  finally { overviewLoading.value = false }
 }
 
 async function fetchTrend() {
@@ -225,8 +240,10 @@ onMounted(() => {
 .page-title { font-size: 20px; margin-bottom: 20px; color: #1a1a2e; }
 .stats-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .stat-card { text-align: center; cursor: default; }
+.stat-card.active { outline: 2px solid #409eff; outline-offset: -2px; border-radius: 6px; }
 .stat-value { font-size: 26px; font-weight: 700; line-height: 1.2; }
 .stat-label { font-size: 13px; color: #999; margin-top: 4px; }
+.stat-delta { font-size: 12px; margin-top: 4px; }
 .stat-gold .stat-value { color: #e6a23c; }
 .stat-blue .stat-value { color: #409eff; }
 .stat-green .stat-value { color: #67c23a; }

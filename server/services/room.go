@@ -205,6 +205,48 @@ func (s *RoomService) ListRoomContracts(roomID uint) ([]models.RentalContract, e
 	return contracts, nil
 }
 
+// ListBuildingContracts 获取公寓全部合同（含租客与房间信息），支持房间/状态/关键词筛选，
+// 从新到旧排列；分页与房间列表保持同一约定（page 或 last_id+last_key 游标，lastID=0 时返回 total）
+func (s *RoomService) ListBuildingContracts(buildingID uint, page, lastID, size int, roomID uint, status, keyword, lastKey string) ([]models.RentalContract, int64, error) {
+	var contracts []models.RentalContract
+	query := s.DB.Where("building_id = ?", buildingID)
+
+	if roomID > 0 {
+		query = query.Where("room_id = ?", roomID)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where(
+			"(room_id IN (SELECT id FROM rooms WHERE deleted_at IS NULL AND room_number LIKE ?)"+
+				" OR tenant_id IN (SELECT id FROM tenants WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ?)))",
+			like, like, like,
+		)
+	}
+
+	// 游标分页：start_date DESC, id DESC（start_date 为 YYYY-MM-DD 字符串，字典序即时间序）
+	if lastID > 0 && lastKey != "" {
+		query = query.Where("(start_date < ? OR (start_date = ? AND id < ?))", lastKey, lastKey, lastID)
+	}
+
+	var total int64 = -1
+	if lastID == 0 {
+		if err := query.Model(&models.RentalContract{}).Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+
+	q := query.Preload("Tenant").Preload("Room").Order("start_date DESC, id DESC")
+	if lastID > 0 {
+		err := q.Limit(size).Find(&contracts).Error
+		return contracts, total, err
+	}
+	err := q.Offset((page - 1) * size).Limit(size).Find(&contracts).Error
+	return contracts, total, err
+}
+
 // GetActiveContractPublic 获取房间的活跃合同（公开，不含租客信息）
 func (s *RoomService) GetActiveContractPublic(roomID uint) (*models.RentalContract, error) {
 	var contract models.RentalContract

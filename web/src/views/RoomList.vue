@@ -24,6 +24,9 @@
         <el-button type="success" @click="openCopyCreateDialog">
           <el-icon><CopyDocument /></el-icon> 复用房间创建新房间
         </el-button>
+        <el-button type="warning" @click="openImportDialog">
+          <el-icon><DocumentAdd /></el-icon> 导入在租房间
+        </el-button>
       </div>
     </div>
 
@@ -199,7 +202,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showBatchResult" title="批量创建结果" width="420px">
+    <el-dialog v-model="showBatchResult" :title="batchResultTitle" width="420px">
       <div v-if="batchSuccessCount > 0" class="batch-result-summary ok">
         成功创建 {{ batchSuccessCount }} 个房间
       </div>
@@ -216,14 +219,149 @@
         <el-button type="primary" @click="showBatchResult = false">知道了</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showImportDialog" title="导入在租房间" width="1080px" top="5vh">
+      <div class="copy-create-tip">
+        适用于接管已有租客的公寓：一次创建多个房间并直接录入租客与租约。系统会自动建立生效合同、
+        补记本月租金账单（历史月份不补录），并按到期时间自动标记"即将到期"。楼层、户型等共用信息
+        填一次，不同楼层或户型请分批导入；租金、押金、管理费可按间调整。
+      </div>
+      <el-form ref="importBaseFormRef" :model="importBaseForm" label-width="90px">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="楼层" prop="floor" :rules="[{ required: true, message: '请选择楼层' }]">
+              <el-select v-model="importBaseForm.floor" placeholder="选择楼层" style="width: 100%">
+                <el-option v-for="f in floorOptions" :key="f" :label="f + '层'" :value="String(f)" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="户型" prop="layout" :rules="[{ required: true, message: '请选择户型' }]">
+              <el-select v-model="importBaseForm.layout" placeholder="选择户型" style="width: 100%">
+                <el-option v-for="lo in layoutOptions" :key="lo" :label="lo" :value="lo" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="租金（月）" prop="rent_price" :rules="[
+              { required: true, message: '请输入月租金' },
+              { validator: (_, v) => v > 0, message: '租金必须大于0' }
+            ]">
+              <el-input :model-value="importBaseForm.rent_price" @update:model-value="v => importBaseForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="新房间默认月租金" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="押金规则" prop="deposit_months" :rules="[
+              { required: true, message: '请选择押金规则' },
+              { validator: (_, v) => v >= 0 && v <= 3, message: '押金月数范围为0~3' }
+            ]">
+              <el-select v-model="importBaseForm.deposit_months" placeholder="选择押金规则" style="width:100%">
+                <el-option :value="0" label="无押金" />
+                <el-option :value="1" label="押一" />
+                <el-option :value="2" label="押二" />
+                <el-option :value="3" label="押三" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="管理费" prop="management_fee" :rules="[
+              { required: true, message: '请输入管理费' },
+              { validator: (_, v) => v >= 0, message: '管理费不能为负数' }
+            ]">
+              <el-input :model-value="importBaseForm.management_fee" @update:model-value="v => importBaseForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="每月管理费" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="电费单价" prop="electricity_unit_price" :rules="[
+              { required: true, message: '请输入电费单价' },
+              { validator: (_, v) => v >= 0, message: '电费单价不能为负数' }
+            ]">
+              <el-input :model-value="importBaseForm.electricity_unit_price" @update:model-value="v => importBaseForm.electricity_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/度" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="水费单价" prop="water_unit_price" :rules="[
+              { required: true, message: '请输入水费单价' },
+              { validator: (_, v) => v >= 0, message: '水费单价不能为负数' }
+            ]">
+              <el-input :model-value="importBaseForm.water_unit_price" @update:model-value="v => importBaseForm.water_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/吨" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="房间描述" prop="description">
+              <el-input v-model="importBaseForm.description" placeholder="选填，应用到本次导入的全部房间" clearable />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <el-divider>租约明细（每个房间的租客与租期可不同）</el-divider>
+      <div class="import-add-row">
+        <el-input v-model="importNumbersText" placeholder="输入房间号，可批量粘贴：逗号/空格/换行分隔，回车或点击添加" clearable @keyup.enter="addImportRows" />
+        <el-button type="primary" plain @click="addImportRows">添加</el-button>
+      </div>
+      <el-table :data="importRows" size="small" class="import-table" empty-text="先在上方添加房间号，再在此填写各房间的租约信息">
+        <el-table-column prop="room_number" label="房间号" min-width="80" />
+        <el-table-column label="租客姓名" min-width="110">
+          <template #default="{ row }">
+            <el-input v-model="row.tenant_name" placeholder="必填" />
+          </template>
+        </el-table-column>
+        <el-table-column label="联系电话" min-width="120">
+          <template #default="{ row }">
+            <el-input v-model="row.tenant_phone" />
+          </template>
+        </el-table-column>
+        <el-table-column label="月租金" min-width="100">
+          <template #default="{ row }">
+            <el-input :model-value="row.rent_price" @update:model-value="v => setRowRent(row, v)" type="number" step="0.01" min="0" />
+          </template>
+        </el-table-column>
+        <el-table-column label="管理费" min-width="110">
+          <template #default="{ row }">
+            <el-input :model-value="row.management_fee" @update:model-value="v => setRowManagementFee(row, v)" type="number" step="0.01" min="0" :placeholder="mgmtFeePlaceholder" />
+          </template>
+        </el-table-column>
+        <el-table-column label="押金" min-width="100">
+          <template #default="{ row }">
+            <el-input :model-value="row.deposit" @update:model-value="v => setRowDeposit(row, v)" type="number" step="0.01" min="0" />
+          </template>
+        </el-table-column>
+        <el-table-column label="入住时间" min-width="150">
+          <template #default="{ row }">
+            <el-date-picker v-model="row.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" placeholder="起租日期" />
+            <el-link v-if="row.start_date && importRows.length > 1" class="apply-all-link" type="primary" :underline="false" @click="applyDateToAll(row, 'start_date')">应用到全部</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column label="租约到期" min-width="150">
+          <template #default="{ row }">
+            <el-date-picker v-model="row.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" placeholder="到期日期" :disabled-date="disabledEndDate" />
+            <el-link v-if="row.end_date && importRows.length > 1" class="apply-all-link" type="primary" :underline="false" @click="applyDateToAll(row, 'end_date')">应用到全部</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="60" fixed="right">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="importRows.splice($index, 1)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-checkbox v-model="importRecordDepositBill" class="import-deposit-check">
+        补记押金收入账单（勾选后押金计入本月收入；历史押金通常无需勾选）
+      </el-checkbox>
+      <template #footer>
+        <el-button @click="showImportDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="importRows.length === 0" @click="handleImportRented">
+          {{ importRows.length ? `导入（${importRows.length} 间）` : '导入' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { buildingGetRooms, buildingCreateRoom, buildingGetRoom } from '../api'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { buildingGetRooms, buildingCreateRoom, buildingGetRoom, buildingImportRentedRooms } from '../api'
 import { ElMessage } from 'element-plus'
-import { CopyDocument } from '@element-plus/icons-vue'
+import { CopyDocument, DocumentAdd } from '@element-plus/icons-vue'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 import { mediaUrl, statusLabel } from '../utils/format'
 
@@ -286,8 +424,89 @@ const batchRoomNumbersText = ref('')
 const showBatchResult = ref(false)
 const batchFailures = ref([])
 const batchSuccessCount = ref(0)
+const batchResultTitle = ref('批量创建结果')
 const roomTotal = ref(0)
 const roomPageSize = 20
+
+// 导入在租房间：共用房间信息 + 逐间租约明细
+const showImportDialog = ref(false)
+const importBaseFormRef = ref(null)
+const importBaseForm = ref(blankImportBaseForm())
+const importNumbersText = ref('')
+const importRows = ref([])
+const importRecordDepositBill = ref(false)
+
+function blankImportBaseForm() {
+  return { floor: '', layout: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null, description: '' }
+}
+
+// 行内未手动改过押金时，押金默认 = 押金月数 × 月租金（行内租金优先，否则用共用租金）
+function rowDefaultDeposit(row, base) {
+  return ((base.deposit_months ?? 0) * (row.rent_price ?? base.rent_price ?? 0)) || 0
+}
+
+function blankImportRow(roomNumber, base) {
+  const row = {
+    room_number: roomNumber,
+    tenant_name: '',
+    tenant_phone: '',
+    rent_price: base.rent_price ?? null,
+    management_fee: null,
+    deposit: 0,
+    start_date: '',
+    end_date: '',
+    _deposit_edited: false,
+  }
+  row.deposit = rowDefaultDeposit(row, base)
+  return row
+}
+
+// 行内租金/押金、共用租金或押金规则变化时，未手动改过的押金自动重算
+function setRowRent(row, v) {
+  row.rent_price = v === '' ? null : Number(v)
+  if (!row._deposit_edited) row.deposit = rowDefaultDeposit(row, importBaseForm.value)
+}
+
+function setRowDeposit(row, v) {
+  row.deposit = v === '' ? 0 : Number(v)
+  row._deposit_edited = true
+}
+
+function setRowManagementFee(row, v) {
+  row.management_fee = v === '' ? null : Number(v)
+}
+
+watch(() => [importBaseForm.value.rent_price, importBaseForm.value.deposit_months], () => {
+  for (const row of importRows.value) {
+    if (!row._deposit_edited) row.deposit = rowDefaultDeposit(row, importBaseForm.value)
+  }
+})
+
+// 管理费留空表示沿用共用值，placeholder 实时提示当前的共用值
+const mgmtFeePlaceholder = computed(() => (
+  importBaseForm.value.management_fee != null ? `留空则用 ${importBaseForm.value.management_fee}` : '留空则用共用管理费'
+))
+
+// 租约到期不允许选择今天之前的日期（已到期的租约无需导入）
+function disabledEndDate(d) {
+  const t = new Date()
+  t.setHours(0, 0, 0, 0)
+  return d.getTime() < t.getTime()
+}
+
+// 将某行已选的日期一键应用到其余所有行，适合租约周期相同的批量录入
+function applyDateToAll(row, field) {
+  if (!row[field]) return
+  const label = field === 'start_date' ? '入住时间' : '租约到期'
+  let changed = 0
+  for (const r of importRows.value) {
+    if (r !== row && r[field] !== row[field]) {
+      r[field] = row[field]
+      changed++
+    }
+  }
+  if (changed > 0) ElMessage.success(`已将${label}应用到其余 ${changed} 间房`)
+}
 
 function blankForm() {
   return { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
@@ -521,11 +740,135 @@ async function handleBatchAdd() {
   } else {
     batchFailures.value = failures
     batchSuccessCount.value = successCount
+    batchResultTitle.value = '批量创建结果'
     if (successCount > 0) {
       showAddDialog.value = false
       resetDialogFormState()
     }
     showBatchResult.value = true
+  }
+}
+
+// 导入在租房间：打开弹窗时带出共用信息默认值
+function openImportDialog() {
+  importBaseForm.value = blankImportBaseForm()
+  importNumbersText.value = ''
+  importRows.value = []
+  importRecordDepositBill.value = false
+  showImportDialog.value = true
+}
+
+// 解析输入的房间号（换行/逗号/顿号/分号/空格分隔），去重后追加为租约明细行
+function addImportRows() {
+  const parts = importNumbersText.value.split(/[\n,，、;；\s]+/).map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) return
+  const existing = new Set(importRows.value.map(r => r.room_number))
+  const tooLong = []
+  let added = 0
+  let duplicated = 0
+  for (const num of parts) {
+    if (num.length > 20) {
+      tooLong.push(num)
+      continue
+    }
+    if (existing.has(num)) {
+      duplicated++
+      continue
+    }
+    importRows.value.push(blankImportRow(num, importBaseForm.value))
+    existing.add(num)
+    added++
+  }
+  const tips = []
+  if (tooLong.length) tips.push(`房间号不能超过20个字符：${tooLong.join('、')}`)
+  if (duplicated > 0) tips.push(`已跳过 ${duplicated} 个重复的房间号`)
+  if (tips.length) ElMessage.warning(tips.join('；'))
+  if (added > 0) importNumbersText.value = ''
+}
+
+// 提交导入：共用信息 + 逐间租约一次性发给后端，后端每间房独立事务，允许部分成功
+async function handleImportRented() {
+  const valid = await importBaseFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  if (importRows.value.length === 0) {
+    ElMessage.warning('请先添加房间号')
+    return
+  }
+  if (importRows.value.length > 200) {
+    ElMessage.error('单次最多导入200间，请分批操作')
+    return
+  }
+  const t = new Date()
+  const todayStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+  // 逐行本地校验，给出具体房间号提示
+  for (const row of importRows.value) {
+    if (!row.tenant_name?.trim()) {
+      ElMessage.error(`房间 ${row.room_number}：请填写租客姓名`)
+      return
+    }
+    if (!row.start_date || !row.end_date) {
+      ElMessage.error(`房间 ${row.room_number}：请选择入住时间和租约到期时间`)
+      return
+    }
+    if (row.end_date <= row.start_date) {
+      ElMessage.error(`房间 ${row.room_number}：租约到期时间必须晚于入住时间`)
+      return
+    }
+    if (row.end_date < todayStr) {
+      ElMessage.error(`房间 ${row.room_number}：租约到期时间不能早于今天，已到期的租约无需导入`)
+      return
+    }
+    if (!(row.rent_price > 0)) {
+      ElMessage.error(`房间 ${row.room_number}：请填写正确的月租金`)
+      return
+    }
+    if (row.management_fee != null && row.management_fee < 0) {
+      ElMessage.error(`房间 ${row.room_number}：管理费不能为负数`)
+      return
+    }
+    if (!(row.deposit >= 0)) {
+      ElMessage.error(`房间 ${row.room_number}：押金不能为负数`)
+      return
+    }
+  }
+  submitting.value = true
+  try {
+    const rooms = importRows.value.map(row => ({
+      room_number: row.room_number,
+      floor: importBaseForm.value.floor,
+      layout: importBaseForm.value.layout,
+      description: importBaseForm.value.description || '',
+      rent_price: row.rent_price,
+      deposit_months: importBaseForm.value.deposit_months,
+      management_fee: row.management_fee ?? importBaseForm.value.management_fee,
+      electricity_unit_price: importBaseForm.value.electricity_unit_price,
+      water_unit_price: importBaseForm.value.water_unit_price,
+      tenant_name: row.tenant_name.trim(),
+      tenant_phone: row.tenant_phone?.trim() || '',
+      deposit: row.deposit || 0,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      record_deposit_bill: importRecordDepositBill.value,
+    }))
+    const res = await buildingImportRentedRooms({ rooms }, { silent: true })
+    const data = res?.data || {}
+    const successCount = data.success_count || 0
+    const failures = data.failures || []
+    if (failures.length === 0) {
+      ElMessage.success(`导入成功，共 ${successCount} 间在租房间`)
+      showImportDialog.value = false
+    } else {
+      batchFailures.value = failures
+      batchSuccessCount.value = successCount
+      batchResultTitle.value = '导入在租房间结果'
+      if (successCount > 0) showImportDialog.value = false
+      showBatchResult.value = true
+    }
+    if (successCount > 0) await fetchRooms()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.response?.data?.error || '导入在租房间失败')
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -540,6 +883,10 @@ onBeforeUnmount(() => {
 .page-home { min-height: 100vh; background: transparent; }
 .copy-create-tip { background: #f0f9eb; border: 1px solid #e1f3d8; color: #529b2e; font-size: 13px; line-height: 1.6; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; }
 .batch-hint { margin-top: 6px; font-size: 12px; color: #909399; }
+.import-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.import-table { width: 100%; }
+.apply-all-link { font-size: 12px; margin-top: 2px; height: auto; }
+.import-deposit-check { margin-top: 10px; white-space: normal; height: auto; }
 .batch-result-summary { font-size: 14px; margin-bottom: 10px; }
 .batch-result-summary.ok { color: #67c23a; }
 .batch-result-summary.fail { color: #f56c6c; }

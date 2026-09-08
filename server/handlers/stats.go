@@ -22,13 +22,15 @@ type StatsHandler struct {
 
 // overviewData 概览统计数据
 type overviewData struct {
-	TotalPV          int64         `json:"total_pv"`
-	TotalUV          int64         `json:"total_uv"`
-	TodayPV          int64         `json:"today_pv"`
-	TodayUV          int64         `json:"today_uv"`
-	TotalLandlordView int64        `json:"total_landlord_view"`
-	PhoneRate        float64       `json:"phone_rate"`
-	VacancyRate      float64       `json:"vacancy_rate"`
+	TotalPV          int64              `json:"total_pv"`
+	TotalUV          int64              `json:"total_uv"`
+	YesterdayPV      int64              `json:"yesterday_pv"`
+	YesterdayUV      int64              `json:"yesterday_uv"`
+	TodayPV          int64              `json:"today_pv"`
+	TodayUV          int64              `json:"today_uv"`
+	TotalLandlordView int64             `json:"total_landlord_view"`
+	PhoneRate        float64            `json:"phone_rate"`
+	VacancyRate      float64            `json:"vacancy_rate"`
 	BuildingRank     []buildingRankItem `json:"building_rank"`
 }
 
@@ -49,6 +51,26 @@ type trendItem struct {
 	PV           int64  `json:"pv"`
 	UV           int64  `json:"uv"`
 	LandlordView int64  `json:"landlord_view"`
+}
+
+// fillTrendDays 把按天聚合结果补零填充为 [start, end] 的连续日序列。
+// GROUP BY 只返回有数据的日期，缺行会让趋势图 x 轴跳日、趋势失真。
+func fillTrendDays(rows []trendItem, start, end time.Time) []trendItem {
+	byDate := make(map[string]trendItem, len(rows))
+	for _, r := range rows {
+		byDate[r.Date] = r
+	}
+	days := int(end.Sub(start).Hours()/24) + 1
+	result := make([]trendItem, 0, days)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		key := d.Format("2006-01-02")
+		if item, ok := byDate[key]; ok {
+			result = append(result, item)
+		} else {
+			result = append(result, trendItem{Date: key})
+		}
+	}
+	return result
 }
 
 // priceRefItem 价格参考数据项
@@ -94,6 +116,9 @@ func (h *StatsHandler) Overview(c *gin.Context) {
 		h.DB.Model(&models.PageView{}).Select("COUNT(DISTINCT ip)").Scan(&result.TotalUV)
 		h.DB.Model(&models.PageView{}).Where("created_at >= ?", todayStart).Select("COUNT(*)").Scan(&result.TodayPV)
 		h.DB.Model(&models.PageView{}).Where("created_at >= ?", todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.TodayUV)
+		yesterdayStart := todayStart.AddDate(0, 0, -1)
+		h.DB.Model(&models.PageView{}).Where("created_at >= ? AND created_at < ?", yesterdayStart, todayStart).Select("COUNT(*)").Scan(&result.YesterdayPV)
+		h.DB.Model(&models.PageView{}).Where("created_at >= ? AND created_at < ?", yesterdayStart, todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.YesterdayUV)
 		h.DB.Model(&models.PageView{}).Where("page_type = ?", "landlord_view").Select("COUNT(*)").Scan(&result.TotalLandlordView)
 
 		// 获电率：房东获取数 / 总浏览量 * 100
@@ -147,13 +172,33 @@ func (h *StatsHandler) Overview(c *gin.Context) {
 			}
 		}
 
-		// 填充楼栋的房间数和空置数
-		for i, b := range result.BuildingRank {
-			var roomCount, vacantCount int64
-			h.DB.Model(&models.Room{}).Where("building_id = ?", b.BuildingID).Select("COUNT(*)").Scan(&roomCount)
-			h.DB.Model(&models.Room{}).Where("building_id = ? AND status = ?", b.BuildingID, "vacant").Select("COUNT(*)").Scan(&vacantCount)
-			result.BuildingRank[i].RoomCount = roomCount
-			result.BuildingRank[i].VacantCount = vacantCount
+		// 填充楼栋的房间数和空置数：单条 GROUP BY 聚合，替代逐楼栋两条查询的 N+1 写法
+		if len(result.BuildingRank) > 0 {
+			ids := make([]uint, 0, len(result.BuildingRank))
+			for _, b := range result.BuildingRank {
+				ids = append(ids, b.BuildingID)
+			}
+			type roomAgg struct {
+				BuildingID uint
+				Total      int64
+				Vacant     int64
+			}
+			var aggs []roomAgg
+			h.DB.Model(&models.Room{}).
+				Select("building_id, COUNT(*) as total, COALESCE(SUM(CASE WHEN status = 'vacant' THEN 1 ELSE 0 END), 0) as vacant").
+				Where("building_id IN ?", ids).
+				Group("building_id").
+				Scan(&aggs)
+			aggBy := make(map[uint]roomAgg, len(aggs))
+			for _, a := range aggs {
+				aggBy[a.BuildingID] = a
+			}
+			for i, b := range result.BuildingRank {
+				if a, ok := aggBy[b.BuildingID]; ok {
+					result.BuildingRank[i].RoomCount = a.Total
+					result.BuildingRank[i].VacantCount = a.Vacant
+				}
+			}
 		}
 
 		return &result, nil
@@ -172,11 +217,12 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 	if err != nil || days <= 0 || days > 365 {
 		days = 30
 	}
-	cutoff := time.Now().AddDate(0, 0, -days)
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	cutoff := todayStart.AddDate(0, 0, -(days - 1))
 	cacheKey := "stats_trend_" + daysStr
 
-		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
-		var result []trendItem
+	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		dayExpr := database.DayExpr(h.DB, "created_at")
 		rows, err := h.DB.Raw(fmt.Sprintf(`
 			SELECT %s as date,
@@ -192,13 +238,14 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 			return nil, err
 		}
 		defer rows.Close()
+		var result []trendItem
 		for rows.Next() {
 			var item trendItem
 			if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
 				result = append(result, item)
 			}
 		}
-		return result, nil
+		return fillTrendDays(result, cutoff, todayStart), nil
 	})
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
@@ -312,13 +359,17 @@ func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 
 	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		type myStats struct {
-			PV             int64          `json:"pv"`
-			UV             int64          `json:"uv"`
-			TodayPV        int64          `json:"today_pv"`
-			TodayUV        int64          `json:"today_uv"`
-			LandlordView   int64          `json:"landlord_view"`
-			PhoneRate      float64        `json:"phone_rate"`
-			RoomRank       []roomRankItem `json:"room_rank"`
+			PV            int64          `json:"pv"`
+			UV            int64          `json:"uv"`
+			TodayPV       int64          `json:"today_pv"`
+			TodayUV       int64          `json:"today_uv"`
+			LandlordView  int64          `json:"landlord_view"`
+			PhoneRate     float64        `json:"phone_rate"`
+			RoomTotal     int64          `json:"room_total"`
+			RoomVacant    int64          `json:"room_vacant"`
+			RoomRented    int64          `json:"room_rented"`
+			OccupancyRate float64        `json:"occupancy_rate"`
+			RoomRank      []roomRankItem `json:"room_rank"`
 		}
 		var s myStats
 		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -331,6 +382,22 @@ func (h *StatsHandler) MyBuildingStats(c *gin.Context) {
 
 		if s.PV > 0 {
 			s.PhoneRate = float64(s.LandlordView) / float64(s.PV) * 100
+		}
+
+		// 房间状态概况：单条聚合查出总数与空置数，出租率按非空置口径计算
+		var roomAgg struct {
+			Total  int64
+			Vacant int64
+		}
+		h.DB.Model(&models.Room{}).
+			Where("building_id = ?", bid).
+			Select("COUNT(*) as total, COALESCE(SUM(CASE WHEN status = 'vacant' THEN 1 ELSE 0 END), 0) as vacant").
+			Scan(&roomAgg)
+		s.RoomTotal = roomAgg.Total
+		s.RoomVacant = roomAgg.Vacant
+		s.RoomRented = roomAgg.Total - roomAgg.Vacant
+		if s.RoomTotal > 0 {
+			s.OccupancyRate = float64(s.RoomRented) / float64(s.RoomTotal) * 100
 		}
 
 		rows, err := h.DB.Raw(`
@@ -374,11 +441,12 @@ func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 	if err != nil || days <= 0 || days > 365 {
 		days = 30
 	}
-	cutoff := time.Now().AddDate(0, 0, -days)
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	cutoff := todayStart.AddDate(0, 0, -(days - 1))
 	cacheKey := "my_trend_" + strconv.Itoa(int(bid)) + "_" + daysStr
 
-		data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
-		var result []trendItem
+	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		dayExpr := database.DayExpr(h.DB, "created_at")
 		rows, err := h.DB.Raw(fmt.Sprintf(`
 			SELECT %s as date,
@@ -394,13 +462,14 @@ func (h *StatsHandler) MyBuildingTrend(c *gin.Context) {
 			return nil, err
 		}
 		defer rows.Close()
+		var result []trendItem
 		for rows.Next() {
 			var item trendItem
 			if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
 				result = append(result, item)
 			}
 		}
-		return result, nil
+		return fillTrendDays(result, cutoff, todayStart), nil
 	})
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")

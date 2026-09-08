@@ -76,6 +76,87 @@ type UpdateRoomStatusReq struct {
 	StartDate       string   `json:"start_date"`
 	EndDate         string   `json:"end_date"`
 	RefundedDeposit *float64 `json:"refunded_deposit"`
+	RecordDepositBill *bool  `json:"record_deposit_bill"` // 是否补记押金收入账单（历史租约押金是以前收的，可不记）
+}
+
+// rentedBillsParams 出租时需要生成的账单参数
+type rentedBillsParams struct {
+	RentPrice         float64
+	ManagementFee     float64
+	Deposit           float64
+	StartDate         string
+	EndDate           string
+	RecordDepositBill *bool // 为 nil 时按起租日期自动判断：本月及以后起租默认补记，历史起租默认不补记
+}
+
+// createRentedBills 在事务内创建出租相关账单（收入、已收款）：
+//   - 租金账单：租金+管理费合计，账单期间取租期与"本月"的交集。
+//     录入在租历史租约（起租日在过去）时只补记本月，之前月份不补录；
+//     起租日在未来月份时本月不记，由月度租金定时任务在起租当月生成。
+//   - 押金账单：可选项。RecordDepositBill 为 nil 时按起租日期自动判断，
+//     历史租约的押金是以前收的，默认不补记以免虚增本月收入。
+func createRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p rentedBillsParams) error {
+	now := utils.Now()
+	datePart := now.Format("20060102")
+	monthStart := utils.FirstDayOfMonth(now)
+	monthEnd := utils.LastDayOfMonth(now)
+
+	startDate, err1 := time.Parse("2006-01-02", p.StartDate)
+	endDate, err2 := time.Parse("2006-01-02", p.EndDate)
+	if err1 != nil || err2 != nil {
+		return errors.New("起租或到期日期格式错误")
+	}
+
+	billStart, billEnd := billPeriod(startDate, endDate, monthStart, monthEnd)
+	daysInMonth := monthEnd.Day()
+
+	if p.RentPrice > 0 && !billStart.After(billEnd) {
+		fullMonth := billStart.Equal(monthStart) && billEnd.Equal(monthEnd)
+		rentAmount, mgmtAmount := rentAndMgmtAmounts(p.RentPrice, p.ManagementFee, fullMonth, billStart, billEnd, daysInMonth)
+		totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
+
+		if totalAmount > 0 {
+			rentDesc := billStart.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
+			rentBill := models.Bill{
+				BillNo:      utils.NextBillNo(tx, datePart),
+				Type:        "income",
+				Subtype:     "租金",
+				Amount:      totalAmount,
+				BuildingID:  buildingID,
+				RoomID:      &roomID,
+				Description: fmt.Sprintf("租金：%.2f元，管理费：%.2f元（%s）", rentAmount, mgmtAmount, rentDesc),
+				BillDate:    now.Format("2006-01-02"),
+				PaidStatus:  "paid",
+				CreatedBy:   uid,
+			}
+			if err := tx.Create(&rentBill).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	recordDeposit := !startDate.Before(monthStart) // nil 默认：本月及以后起租补记，历史起租不补记
+	if p.RecordDepositBill != nil {
+		recordDeposit = *p.RecordDepositBill
+	}
+	if p.Deposit > 0 && recordDeposit {
+		depositBill := models.Bill{
+			BillNo:      utils.NextBillNo(tx, datePart),
+			Type:        "income",
+			Subtype:     "押金",
+			Amount:      p.Deposit,
+			BuildingID:  buildingID,
+			RoomID:      &roomID,
+			Description: "押金：出租押金（已收款）",
+			BillDate:    now.Format("2006-01-02"),
+			PaidStatus:  "paid",
+			CreatedBy:   uid,
+		}
+		if err := tx.Create(&depositBill).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdateContractReq 续租合同请求参数
@@ -674,78 +755,18 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		isPrepaid := reservedContract != nil && reservedContract.Prepaid
 
 		if !isPrepaid {
-			now := utils.Now()
-			datePart := now.Format("20060102")
-
-			if req.RentPrice > 0 {
-				startDate, _ := time.Parse("2006-01-02", req.StartDate)
-				endDate, _ := time.Parse("2006-01-02", req.EndDate)
-				monthEnd := time.Date(startDate.Year(), startDate.Month()+1, 0, 0, 0, 0, 0, startDate.Location())
-				daysInMonth := monthEnd.Day()
-
-				var billEnd time.Time
-				if endDate.Before(monthEnd) || endDate.Equal(monthEnd) {
-					billEnd = endDate
-				} else {
-					billEnd = monthEnd
-				}
-
-				var rentAmount float64
-				var mgmtAmount float64
-				var rentDesc string
-				if startDate.Day() == 1 && billEnd.Equal(monthEnd) {
-					rentAmount = float64(int(req.RentPrice*100)) / 100
-					mgmtAmount = float64(int(*req.ManagementFee*100)) / 100
-					rentDesc = monthEnd.Format("2006-01") + "-01 ~ " + billEnd.Format("2006-01-02")
-				} else {
-					rentAmount = utils.CalcProratedAmount(req.RentPrice, startDate, billEnd, daysInMonth)
-					mgmtAmount = utils.CalcProratedAmount(*req.ManagementFee, startDate, billEnd, daysInMonth)
-					rentDesc = startDate.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
-				}
-
-				totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
-
-				rentNo := utils.NextBillNo(tx, datePart)
-				rentBill := models.Bill{
-					BillNo:      rentNo,
-					Type:        "income",
-					Subtype:     "租金",
-					Amount:      totalAmount,
-					BuildingID:  room.BuildingID,
-					RoomID:      &room.ID,
-					Description: fmt.Sprintf("租金：%.2f元，管理费：%.2f元", rentAmount, mgmtAmount) + "（" + rentDesc + "）",
-					BillDate:    now.Format("2006-01-02"),
-					PaidStatus:  "paid",
-					CreatedBy:   uid,
-				}
-				if err := tx.Create(&rentBill).Error; err != nil {
-					tx.Rollback()
-					logger.Log.Error().Err(err).Msg("创建出租租金账单失败")
-					utils.Error(c, http.StatusInternalServerError, "创建出租账单失败")
-					return
-				}
-			}
-
-			if req.Deposit > 0 {
-				depositNo := utils.NextBillNo(tx, datePart)
-				depositBill := models.Bill{
-					BillNo:      depositNo,
-					Type:        "income",
-					Subtype:     "押金",
-					Amount:      req.Deposit,
-					BuildingID:  room.BuildingID,
-					RoomID:      &room.ID,
-					Description: "押金：出租押金（已收款）",
-					BillDate:    now.Format("2006-01-02"),
-					PaidStatus:  "paid",
-					CreatedBy:   uid,
-				}
-				if err := tx.Create(&depositBill).Error; err != nil {
-					tx.Rollback()
-					logger.Log.Error().Err(err).Msg("创建出租押金账单失败")
-					utils.Error(c, http.StatusInternalServerError, "创建出租账单失败")
-					return
-				}
+			if err := createRentedBills(tx, room.BuildingID, room.ID, uid, rentedBillsParams{
+				RentPrice:         req.RentPrice,
+				ManagementFee:     *req.ManagementFee,
+				Deposit:           req.Deposit,
+				StartDate:         req.StartDate,
+				EndDate:           req.EndDate,
+				RecordDepositBill: req.RecordDepositBill,
+			}); err != nil {
+				tx.Rollback()
+				logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("创建出租账单失败")
+				utils.Error(c, http.StatusInternalServerError, "创建出租账单失败")
+				return
 			}
 		}
 
@@ -1057,6 +1078,33 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 		return
 	}
 	utils.Success(c, gin.H{"contract": contract})
+}
+
+// ListBuildingContracts 获取当前公寓的全部合同列表（分页/筛选/关键词搜索）
+func (h *RoomHandler) ListBuildingContracts(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+
+	page, size := utils.ParsePage(c)
+	lastID, _ := strconv.Atoi(c.Query("last_id"))
+	lastKey := c.Query("last_key")
+	roomID, _ := strconv.ParseUint(c.Query("room_id"), 10, 32)
+	status := c.Query("status")
+	keyword := strings.TrimSpace(c.Query("keyword"))
+
+	contracts, total, err := h.RoomService.ListBuildingContracts(bid, page, lastID, size, uint(roomID), status, keyword, lastKey)
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询合同列表失败")
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	if contracts == nil {
+		contracts = []models.RentalContract{}
+	}
+	utils.Success(c, gin.H{"contracts": contracts, "total": total})
 }
 
 // GetRoomContracts 获取房间的历史合同列表（从新到旧）
