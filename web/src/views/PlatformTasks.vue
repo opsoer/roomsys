@@ -25,9 +25,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="title" label="内容" min-width="220" />
-        <el-table-column label="关联公寓" width="140">
+        <el-table-column label="关联公寓" min-width="200">
           <template #default="{ row }">
-            {{ row.building ? row.building.name : '—' }}
+            <template v-if="row.building">
+              <div style="font-weight: 500">{{ row.building.name }}</div>
+              <div v-if="buildingAddress(row.building)" style="font-size: 12px; color: #999">
+                📍 {{ buildingAddress(row.building) }}
+              </div>
+              <div v-if="landlordText(row.building)" style="font-size: 12px; color: #999">
+                👤 房东：{{ landlordText(row.building) }}
+              </div>
+            </template>
+            <span v-else>—</span>
           </template>
         </el-table-column>
         <el-table-column prop="due_date" label="到期日" width="110">
@@ -47,9 +56,12 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="110">
+        <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'pending'" size="small" type="primary" @click="handleProcess(row.id)">
+            <el-button v-if="row.status === 'pending' && isExpiryTask(row)" size="small" type="warning" @click="openRenew(row)">
+              续约
+            </el-button>
+            <el-button v-else-if="row.status === 'pending'" size="small" type="primary" @click="handleProcess(row.id)">
               处理
             </el-button>
             <span v-else style="color:#999;font-size:13px;">已完成</span>
@@ -83,13 +95,24 @@
             <span class="field-icon">🏢</span>
             <span class="field-value">{{ item.building.name }}</span>
           </div>
+          <div v-if="item.building && buildingAddress(item.building)" class="card-field">
+            <span class="field-icon">📍</span>
+            <span class="field-value">{{ buildingAddress(item.building) }}</span>
+          </div>
+          <div v-if="item.building && landlordText(item.building)" class="card-field">
+            <span class="field-icon">👤</span>
+            <span class="field-value">房东：{{ landlordText(item.building) }}</span>
+          </div>
           <div v-if="item.due_date" class="card-field">
             <span class="field-icon">📅</span>
             <span class="field-value">{{ item.due_date }}</span>
           </div>
           <div class="card-foot">
             <span class="card-time">🕐 {{ formatTime(item.created_at) }}</span>
-            <el-button v-if="item.status === 'pending'" size="small" type="primary" round @click="handleProcess(item.id)">
+            <el-button v-if="item.status === 'pending' && isExpiryTask(item)" size="small" type="warning" round @click="openRenew(item)">
+              续约
+            </el-button>
+            <el-button v-else-if="item.status === 'pending'" size="small" type="primary" round @click="handleProcess(item.id)">
               处理
             </el-button>
             <el-tag v-else type="success" size="small" effect="plain" round>已完成</el-tag>
@@ -98,6 +121,35 @@
       </div>
       <div v-if="!loading && tasks.length === 0" class="empty-text">暂无待办事项</div>
     </div>
+
+    <el-dialog v-model="renewVisible" title="公寓续约" width="420px" align-center>
+      <div v-if="renewTask" style="margin-bottom: 16px">
+        <div style="background: #f5f7fa; padding: 12px; border-radius: 8px; margin-bottom: 16px">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px">
+            <span style="color: #999">公寓</span>
+            <span style="font-weight: 600">{{ renewTask.building?.name || '-' }}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between">
+            <span style="color: #999">当前到期日</span>
+            <span style="font-weight: 600; color: #e6a23c">{{ renewTask.due_date || '-' }}</span>
+          </div>
+        </div>
+        <el-form ref="renewFormRef" :model="renewForm" label-width="100px">
+          <el-form-item label="新到期日" prop="expired_at"
+            :rules="[{ required: true, message: '请选择新的到期日期' }]">
+            <el-date-picker v-model="renewForm.expired_at" type="date" value-format="YYYY-MM-DD"
+              :disabled-date="disablePastDate" placeholder="选择新的到期日期" style="width: 100%" />
+          </el-form-item>
+        </el-form>
+        <div style="font-size: 12px; color: #999">
+          续约后公寓立即恢复展示；新到期日超过30天，相关待办将自动变为已完成
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="handleDismissRenew">仅标记已处理</el-button>
+        <el-button type="primary" :loading="renewSubmitting" @click="handleRenewSubmit">确认续约</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -105,7 +157,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
-import { adminGetPlatformTasks, adminProcessPlatformTask, adminGetPlatformTaskCount } from '../api'
+import { adminGetPlatformTasks, adminProcessPlatformTask, adminGetPlatformTaskCount, adminRenewBuilding } from '../api'
 
 const tasks = ref([])
 const loading = ref(false)
@@ -115,6 +167,12 @@ const page = ref(1)
 const pageSize = 20
 const total = ref(0)
 
+const renewVisible = ref(false)
+const renewTask = ref(null)
+const renewFormRef = ref(null)
+const renewForm = ref({ expired_at: '' })
+const renewSubmitting = ref(false)
+
 function typeText(type) {
   return { recruit: '招商申请', building_expiring: '公寓即将到期', building_expired: '公寓已到期' }[type] || type
 }
@@ -123,6 +181,29 @@ function typeTag(type) {
   if (type === 'recruit') return 'warning'
   if (type === 'building_expired') return 'danger'
   return 'primary'
+}
+
+function isExpiryTask(task) {
+  return task.type === 'building_expiring' || task.type === 'building_expired'
+}
+
+function buildingAddress(b) {
+  return [b.district, b.street, b.village, b.building_no].filter(Boolean).join(' ')
+}
+
+function landlordText(b) {
+  const list = b.landlords || []
+  return list.map(l => [l.name, l.phone].filter(Boolean).join(' ')).filter(Boolean).join('、')
+}
+
+function disablePastDate(d) {
+  return dayjs(d).isBefore(dayjs().startOf('day'))
+}
+
+function openRenew(task) {
+  renewTask.value = task
+  renewForm.value = { expired_at: task.due_date || '' }
+  renewVisible.value = true
 }
 
 async function fetchTasks() {
@@ -158,10 +239,34 @@ async function handleProcess(id) {
   try {
     await adminProcessPlatformTask(id)
     ElMessage.success('已处理')
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     await fetchTasks()
   } catch {
     ElMessage.error('操作失败')
   }
+}
+
+async function handleRenewSubmit() {
+  const valid = await renewFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  renewSubmitting.value = true
+  try {
+    await adminRenewBuilding(renewTask.value.building_id, { expired_at: renewForm.value.expired_at })
+    ElMessage.success('续约成功，公寓已恢复展示')
+    renewVisible.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
+    await fetchTasks()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '续约失败')
+  } finally {
+    renewSubmitting.value = false
+  }
+}
+
+async function handleDismissRenew() {
+  if (!renewTask.value) return
+  renewVisible.value = false
+  await handleProcess(renewTask.value.id)
 }
 
 function formatTime(t) {

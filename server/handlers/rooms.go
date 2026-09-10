@@ -869,6 +869,15 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
 			return
 		}
+		// 房间已退租，同步完成定时任务生成的到期退租待办，避免待办计数虚高
+		if err := tx.Model(&models.Task{}).
+			Where("room_id = ? AND type = ? AND status = ?", room.ID, "expired_room", "pending").
+			Update("status", "completed").Error; err != nil {
+			tx.Rollback()
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("完成到期退租待办失败")
+			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
+			return
+		}
 		tx.Commit()
 
 		if hasFutureReservation {
@@ -1172,6 +1181,15 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 		logger.Log.Error().Err(err).Msg("续租失败")
 		utils.Error(c, http.StatusInternalServerError, "续租失败")
 		return
+	}
+
+	// 续租后合同延长，到期退租待办已不成立：新结束日在今天及以后则自动完成
+	if req.EndDate >= utils.Now().Format("2006-01-02") {
+		if err := h.DB.Model(&models.Task{}).
+			Where("room_id = ? AND type = ? AND status = ?", rid, "expired_room", "pending").
+			Update("status", "completed").Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", uint(rid)).Msg("续租后完成到期退租待办失败")
+		}
 	}
 
 	utils.SuccessWithMsg(c, "续租成功", nil)

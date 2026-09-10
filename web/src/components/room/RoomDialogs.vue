@@ -402,6 +402,7 @@ async function handleRent() {
     ElMessage.success('出租成功')
     showRentDialog.value = false
     rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '', record_deposit_bill: false }
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
     rentSubmitting.value = false
@@ -417,6 +418,7 @@ async function handleUpdateEndDate() {
     ElMessage.success('续租成功')
     showEndDateDialog.value = false
     endDateForm.value = { end_date: '', rent_price: 0 }
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
     endDateSubmitting.value = false
@@ -431,6 +433,7 @@ async function confirmVacate() {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit })
     ElMessage.success('已设为未出租')
     showVacateDialog.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
     vacateSubmitting.value = false

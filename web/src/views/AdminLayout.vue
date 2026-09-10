@@ -78,10 +78,13 @@ onMounted(() => {
   timer = setInterval(() => {
     if (!document.hidden) fetchTaskCount()
   }, 30000)
+  // 各页面处理完待办后派发 tasks-changed，角标即时刷新（轮询只兜底）
+  window.addEventListener('tasks-changed', fetchTaskCount)
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  window.removeEventListener('tasks-changed', fetchTaskCount)
 })
 </script>
 

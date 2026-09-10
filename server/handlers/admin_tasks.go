@@ -36,7 +36,7 @@ func (h *PlatformTaskHandler) List(c *gin.Context) {
 		return
 	}
 	var tasks []models.Task
-	err := query.Preload("Building").Preload("Room").
+	err := query.Preload("Building").Preload("Building.Landlords").Preload("Room").
 		Order("created_at DESC, id DESC").
 		Offset((page - 1) * size).Limit(size).
 		Find(&tasks).Error

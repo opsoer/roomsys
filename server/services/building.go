@@ -65,9 +65,10 @@ func (s *BuildingService) IsVisible(id uint) (bool, error) {
 	return true, nil
 }
 
-// Renew 公寓续约：更新新的到期日期、恢复状态为 active（若已到期/不可见），
-// 自动完成该公寓相关的到期/即将到期待办（房东端 + 平台端），并写入一条续约记录。
+// Renew 公寓续约：更新新的到期日期、恢复状态为 active（若已到期/不可见），并写入一条续约记录。
 // 新的到期日期不得早于今天。operator 为操作人（用户名为空表示系统）。
+// 到期类待办（房东端 + 平台端）：新到期日超过30天视为已解决全部自动完成；
+// 30天内仍属"即将到期"，完成已到期待办并保留/刷新即将到期待办。
 func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) error {
 	if newExpiredAt == "" {
 		return fmt.Errorf("到期日期不能为空")
@@ -80,6 +81,7 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 	if date.Before(today) {
 		return fmt.Errorf("到期日期不能早于今天")
 	}
+	thirtyDaysLater := today.AddDate(0, 0, 30)
 
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		var building models.Building
@@ -105,11 +107,48 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 		if err := tx.Create(&renewal).Error; err != nil {
 			return err
 		}
-		// 自动完成该公寓的到期类待办
-		return tx.Model(&models.Task{}).
-			Where("building_id = ? AND type IN ? AND status = ?",
-				id, []string{"building_expired", "building_expiring"}, "pending").
-			Update("status", "completed").Error
+		// 到期类待办按新到期日处理：超过30天视为已解决，全部自动完成；
+		// 30天内公寓仍属"即将到期"，完成已到期待办，保留并刷新即将到期待办（不存在则补建）
+		if date.After(thirtyDaysLater) {
+			return tx.Model(&models.Task{}).
+				Where("building_id = ? AND type IN ? AND status = ?",
+					id, []string{"building_expired", "building_expiring"}, "pending").
+				Update("status", "completed").Error
+		}
+		if err := tx.Model(&models.Task{}).
+			Where("building_id = ? AND type = ? AND status = ?", id, "building_expired", "pending").
+			Update("status", "completed").Error; err != nil {
+			return err
+		}
+		res := tx.Model(&models.Task{}).
+			Where("building_id = ? AND type = ? AND status = ?", id, "building_expiring", "pending").
+			Updates(map[string]interface{}{
+				"due_date":    newExpiredAt,
+				"title":       "公寓「" + building.Name + "」即将到期，请及时续约",
+				"description": "公寓将于 " + newExpiredAt + " 到期，请尽快续约以免到期后自动隐藏",
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			bid := id
+			for _, scope := range []string{"building", "platform"} {
+				task := models.Task{
+					BuildingID:  &bid,
+					Title:       "公寓「" + building.Name + "」即将到期，请及时续约",
+					Type:        "building_expiring",
+					Priority:    "high",
+					Status:      "pending",
+					Scope:       scope,
+					DueDate:     newExpiredAt,
+					Description: "公寓将于 " + newExpiredAt + " 到期，请尽快续约以免到期后自动隐藏",
+				}
+				if err := tx.Create(&task).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 }
 

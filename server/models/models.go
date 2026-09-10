@@ -44,6 +44,8 @@ type Building struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	// Landlords 房东列表，仅显式 Preload 时加载（BuildingWithStats 另有自己的 landlords 字段，序列化时同名外层优先）
+	Landlords []BuildingLandlord `gorm:"foreignKey:BuildingID" json:"landlords,omitempty"`
 }
 
 // BuildingLandlord 表示楼栋的房东信息。
