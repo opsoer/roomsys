@@ -134,6 +134,26 @@ export function adminGetBuildingRenewals(id) {
   return api.get(`/admin/buildings/${id}/renewals`)
 }
 
+// ===== 位置字典（列表为公开接口，增删改为超管接口） =====
+// 自定义条目与静态改名映射列表
+export function getLocationManage() {
+  return api.get('/locations/manage', { silent: true })
+}
+
+// 新增自定义位置条目 { level: 1|2|3, district, street, name }
+export function adminAddLocationCustom(data) {
+  return api.post('/admin/locations/custom', data)
+}
+
+export function adminDeleteLocationCustom(id) {
+  return api.delete(`/admin/locations/custom/${id}`)
+}
+
+// 改名 { level, district, street, old_name, new_name, custom_id?, dry_run? }
+export function adminRenameLocation(data) {
+  return api.post('/admin/locations/rename', data)
+}
+
 export function buildingRenew(data) {
   return api.put('/building/renew', data)
 }

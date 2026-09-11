@@ -248,11 +248,14 @@ import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage, adminRenewBuilding, adminGetBuildingRenewals } from '../../api'
-import shenzhen from '../../utils/shenzhen'
+import { useLocationStore } from '../../stores/locations'
 
 const emit = defineEmits(['save-success'])
 
-const districts = shenzhen
+// 位置选项与主页筛选共用同一数据源（locations store：静态官方表 + 自定义/改名 + 公寓实际录入）
+const locationStore = useLocationStore()
+locationStore.load()
+const districts = computed(() => locationStore.fullTree)
 const submitting = ref(false)
 const showCreate = ref(false)
 const showEdit = ref(false)
@@ -288,8 +291,7 @@ const editForm = ref({ name: '', package: 'basic', contract_date: '', district: 
 const adminForm = ref({ username: '', password: '' })
 
 function findStreet(district) {
-  const d = districts.find(x => x.value === district)
-  return d ? d.streets : []
+  return districts.value.find(x => x.value === district)?.streets || []
 }
 
 const currentStreets = computed(() => findStreet(createForm.value.district))

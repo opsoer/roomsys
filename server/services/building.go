@@ -294,11 +294,12 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 	if f.District != "" {
 		query = query.Where("district = ?", f.District)
 	}
+	// 街道/村小区为房东自由填写，同一地方可能带或不带「街道/社区」后缀（如「石岩」与「石岩街道」），筛选时两种写法都要匹配
 	if f.Street != "" {
-		query = query.Where("street = ?", f.Street)
+		query = query.Where("street IN (?, ?)", f.Street, strings.TrimSuffix(f.Street, "街道"))
 	}
 	if f.Village != "" {
-		query = query.Where("village = ?", f.Village)
+		query = query.Where("village IN (?, ?)", f.Village, strings.TrimSuffix(f.Village, "社区"))
 	}
 
 	if f.HasRoomFilter() {

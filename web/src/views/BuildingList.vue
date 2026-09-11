@@ -34,7 +34,13 @@
           <van-icon name="arrow-down" size="12" />
         </div>
       </div>
-      <span class="filter-count">共 {{ total > 0 ? total : buildings.length }} 栋</span>
+      <div class="filter-bar-right">
+        <span class="qr-entry" @click="openLocationQr">
+          <van-icon name="qr" size="14" />
+          二维码
+        </span>
+        <span class="filter-count">共 {{ total > 0 ? total : buildings.length }} 栋</span>
+      </div>
     </div>
 
     <van-popup v-model:show="filterOpen" position="bottom" round :style="{ height: '72vh' }">
@@ -203,26 +209,27 @@
       </div>
     </van-pull-refresh>
 
-    <QrSharePopup v-model:show="qrVisible" title="分享主页" :link="qrLink" :data-url="qrDataUrl"
+    <QrSharePopup v-model:show="qrVisible" :title="qrTitle" :link="qrLink" :data-url="qrDataUrl"
       @copy="copyQrLink" @download="downloadQrCard" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
-import { getBuildings, getBuildingLocations } from '../api'
-import { siteHomeUrl, generateSiteQrDataUrl, downloadQrImage } from '../utils/qr'
+import { getBuildings } from '../api'
+import { siteHomeUrl, locationFilterUrl, generateSiteQrDataUrl, generateLocationQrDataUrl, downloadQrImage } from '../utils/qr'
 import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
+import { useLocationStore } from '../stores/locations'
 import { useUtils } from '../composables/useUtils'
-import shenzhen from '../utils/shenzhen'
 import { LAYOUT_OPTIONS } from '../utils/constants'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()
 const buildings = ref([])
@@ -254,9 +261,6 @@ const stepMinPrice = ref(null)
 const stepMaxPrice = ref(null)
 const stepLayout = ref('')
 
-// 数据库中可见公寓实际使用的位置数据（房东录入村/小区时可自由输入，可能超出静态列表）
-const dbLocations = ref([])
-
 const total = ref(0)
 const pageSize = 20
 const loadingMore = ref(false)
@@ -264,10 +268,12 @@ const sentinel = ref(null)
 let observer = null
 
 const qrVisible = ref(false)
+const qrTitle = ref('分享主页')
 const qrDataUrl = ref('')
 const qrLink = ref('')
 
 function openQrShare() {
+  qrTitle.value = '分享主页'
   qrVisible.value = true
   qrDataUrl.value = ''
   qrLink.value = siteHomeUrl()
@@ -278,10 +284,34 @@ function openQrShare() {
   })
 }
 
+// 位置二维码：把当前筛选条件（区域/街道/村小区 + 租金 + 户型）生成二维码，打印张贴后租客扫码直达筛选结果
+function openLocationQr() {
+  const district = filterDistrict.value
+  const street = filterStreet.value
+  const village = filterVillage.value
+  const minPrice = filterMinPrice.value
+  const maxPrice = filterMaxPrice.value
+  const layout = filterLayout.value
+  if (!hasAnyFilter.value) {
+    showToast('请先选择筛选条件')
+    openFilter()
+    return
+  }
+  qrTitle.value = village || street || district || '房源筛选'
+  qrVisible.value = true
+  qrDataUrl.value = ''
+  qrLink.value = locationFilterUrl({ district, street, village, minPrice, maxPrice, layout })
+  generateLocationQrDataUrl({ district, street, village, minPrice, maxPrice, layout, total: total.value }).then((url) => {
+    qrDataUrl.value = url
+  }).catch(() => {
+    showToast('二维码生成失败')
+  })
+}
+
 async function copyQrLink() {
   const ok = await copyText(qrLink.value)
   if (ok) {
-    showToast({ message: '已复制主页链接', duration: 1500 })
+    showToast({ message: '已复制链接', duration: 1500 })
   } else {
     showToast('复制失败，请点击上方链接手动复制')
   }
@@ -292,62 +322,20 @@ function downloadQrCard() {
     showToast('二维码尚未生成，请稍后重试')
     return
   }
-  downloadQrImage(qrDataUrl.value, '网站主页二维码.png')
+  downloadQrImage(qrDataUrl.value, `${qrTitle.value}二维码.png`)
   showToast({ message: '二维码已保存', duration: 1500 })
 }
 
-// dbLocations 转成 区域 → { 街道 → [村/小区] } 的映射，便于合并
-const dbLocationMap = computed(() => {
-  const map = {}
-  for (const d of dbLocations.value) {
-    const streets = {}
-    for (const s of d.streets || []) streets[s.name] = s.villages || []
-    map[d.name] = streets
-  }
-  return map
-})
+// 位置选项统一来自 locations store（静态官方表 + 超管自定义/改名 + 公寓实际录入，四处共用）
+const locationStore = useLocationStore()
 
-// 区域选项：静态行政区划 + 数据库中出现但静态列表没有的区域（兜底）
-const districtOptions = computed(() => {
-  const staticNames = new Set(shenzhen.map(d => d.label))
-  const extras = dbLocations.value
-    .filter(d => !staticNames.has(d.name))
-    .map(d => ({
-      value: d.name, label: d.name,
-      streets: (d.streets || []).map(s => ({ value: s.name, label: s.name, villages: s.villages || [] })),
-    }))
-  return [...shenzhen, ...extras]
-})
+const districtOptions = computed(() => locationStore.fullTree)
 
-// 村/小区合并：数据库中真实存在的（有房源）排前面，静态列表补充其后，去重
-function mergeVillages(districtLabel, streetLabel, staticVillages) {
-  const dbStreets = dbLocationMap.value[districtLabel] || {}
-  const dbVillages = dbStreets[streetLabel] || []
-  const set = new Set(staticVillages)
-  return [...dbVillages.filter(v => !set.has(v)), ...staticVillages]
-}
+const currentStreets = computed(() => (stepDistrict.value ? locationStore.streetsOf(stepDistrict.value.label) : []))
 
-const currentStreets = computed(() => {
-  if (!stepDistrict.value) return []
-  const staticD = shenzhen.find(x => x.value === stepDistrict.value.value)
-  const staticStreets = staticD ? staticD.streets : []
-  const dbStreets = dbLocationMap.value[stepDistrict.value.label] || {}
-  const staticNames = new Set(staticStreets.map(s => s.label))
-  // 数据库中有房源、但静态列表没有的街道（自由输入）排在前面
-  const dbFirst = Object.keys(dbStreets)
-    .filter(n => !staticNames.has(n))
-    .map(n => ({ value: n, label: n, villages: dbStreets[n] }))
-  const mergedStatic = staticStreets.map(s => ({
-    ...s,
-    villages: mergeVillages(stepDistrict.value.label, s.label, s.villages || []),
-  }))
-  return [...dbFirst, ...mergedStatic]
-})
-
-const currentVillages = computed(() => {
-  if (!stepStreet.value) return []
-  return stepStreet.value.villages || []
-})
+const currentVillages = computed(() =>
+  (stepDistrict.value && stepStreet.value) ? locationStore.villagesOf(stepDistrict.value.label, stepStreet.value.label) : []
+)
 
 const locationActive = computed(() => !!(filterDistrict.value || filterStreet.value || filterVillage.value))
 const priceActive = computed(() => filterMinPrice.value != null || filterMaxPrice.value != null)
@@ -526,24 +514,26 @@ function setupInfiniteScroll() {
 }
 
 async function onRefresh() {
-  fetchLocations()
+  locationStore.load(true)
   await fetchBuildings()
   refreshing.value = false
   showToast('刷新成功')
 }
 
-// 拉取可见公寓的真实位置数据（区域→街道→村/小区），失败时静默降级为仅静态列表
-async function fetchLocations() {
-  try {
-    const res = await getBuildingLocations()
-    dbLocations.value = res.data.locations || []
-  } catch (e) {
-    dbLocations.value = []
-  }
+// 扫码/带链接进入：?district=xx&street=xx&village=xx&min_price=1&max_price=2&layout=xx 直接作为已确认的筛选条件
+function applyQueryFilter() {
+  const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+  filterDistrict.value = pick(route.query.district)
+  filterStreet.value = pick(route.query.street)
+  filterVillage.value = pick(route.query.village)
+  filterMinPrice.value = toNum(route.query.min_price)
+  filterMaxPrice.value = toNum(route.query.max_price)
+  filterLayout.value = pick(route.query.layout)
 }
 
 onMounted(async () => {
-  fetchLocations()
+  locationStore.load()
+  applyQueryFilter()
   await fetchBuildings()
 })
 
@@ -654,6 +644,21 @@ onBeforeUnmount(() => {
 .filter-count {
   font-size: 12px;
   color: #999;
+  white-space: nowrap;
+}
+.filter-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.qr-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: #1989fa;
+  cursor: pointer;
   white-space: nowrap;
 }
 .hero-banner {

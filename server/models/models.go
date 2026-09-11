@@ -262,6 +262,30 @@ type BuildingRenewal struct {
 	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// LocationCustom 超级管理员在静态官方区划之外自定义的位置条目。
+// Level: 1=区域(District 生效) 2=街道(District+Street) 3=村/小区(District+Street+Name)。
+// Street 仅在 Level=2/3 时有意义；Level=1 时 District==Name。
+type LocationCustom struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Level     int       `gorm:"not null;index:idx_loc_custom" json:"level"`
+	District  string    `gorm:"size:50;not null;index:idx_loc_custom" json:"district"`
+	Street    string    `gorm:"size:100;not null;default:'';index:idx_loc_custom" json:"street"`
+	Name      string    `gorm:"size:100;not null" json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// LocationRename 对静态官方区划条目的改名映射（自定义条目改名直接改自身记录，无需映射）。
+// 级联已同步更新公寓表，此映射仅用于把静态基座里的旧名渲染成新名、避免新旧并存。
+type LocationRename struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Level     int       `gorm:"not null;index:idx_loc_rename" json:"level"`
+	District  string    `gorm:"size:50;not null;index:idx_loc_rename" json:"district"`
+	Street    string    `gorm:"size:100;not null;default:'';index:idx_loc_rename" json:"street"`
+	OldName   string    `gorm:"size:100;not null" json:"old_name"`
+	NewName   string    `gorm:"size:100;not null" json:"new_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // AutoMigrate 自动创建或更新所有模型对应的数据库表。
 func AutoMigrate(db *gorm.DB) error {
 	// Room 的唯一索引改为普通索引（允许软删除后重建同号房间）
@@ -285,6 +309,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&RecruitSubmission{},
 		&AuditLog{},
 		&PageView{},
+		&LocationCustom{},
+		&LocationRename{},
 	)
 }
 

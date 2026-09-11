@@ -41,6 +41,11 @@ const routes = [
         component: () => import('../views/AdminBuildings.vue'),
       },
       {
+        path: 'locations',
+        name: 'AdminLocations',
+        component: () => import('../views/AdminLocations.vue'),
+      },
+      {
         path: 'tasks',
         name: 'AdminTasks',
         component: () => import('../views/PlatformTasks.vue'),

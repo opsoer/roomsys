@@ -32,6 +32,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	authSvc := services.NewAuthService(db, cfg)
 	settingsSvc := services.NewSettingsService(db)
 	recruitSvc := services.NewRecruitService(db)
+	locationH := &handlers.LocationManageHandler{DB: db}
 
 	// ========== 公开接口 ==========
 	public := r.Group("/api")
@@ -43,6 +44,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
 		public.GET("/buildings/locations", buildingH.ListLocations)
+		public.GET("/locations/manage", locationH.List)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 
@@ -118,6 +120,10 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.GET("/stats/building/:id", statsH.BuildingDetail)
 		platform.GET("/stats/trend", statsH.Trend)
 		platform.GET("/stats/price-reference", statsH.PriceReference)
+
+		platform.POST("/locations/custom", locationH.AddCustom)
+		platform.DELETE("/locations/custom/:id", locationH.DeleteCustom)
+		platform.POST("/locations/rename", locationH.Rename)
 	}
 
 	// ========== 公寓管理后台（building_admin + admin）==========

@@ -20,6 +20,7 @@ server/config.json
 server/config.yaml
 server/config.yml
 server/config.local.json
+server/scripts/resetdb/config.json
 server/config.local.yaml
 server/config.local.yml
 server/config.prod.json

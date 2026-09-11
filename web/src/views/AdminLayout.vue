@@ -6,6 +6,7 @@
         <h2 class="header-title" @click="$router.push('/')">🏠 圳好租 · 平台管理</h2>
         <el-menu :default-active="$route.path" mode="horizontal" :ellipsis="false" class="header-menu" router>
           <el-menu-item index="/admin/buildings" class="menu-item-light">公寓管理</el-menu-item>
+          <el-menu-item index="/admin/locations" class="menu-item-light">位置管理</el-menu-item>
           <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
           <el-menu-item index="/admin/test" class="menu-item-light">测试</el-menu-item>
           <el-menu-item index="/admin/tasks" class="menu-item-light">
@@ -33,6 +34,7 @@
       <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-tabs">
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
+        <div :class="['mobile-tab', { active: $route.path === '/admin/locations' }]" @click="$router.push('/admin/locations')">位置管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/stats' }]" @click="$router.push('/admin/stats')">数据看板</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/test' }]" @click="$router.push('/admin/test')">测试</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/tasks' }]" @click="$router.push('/admin/tasks')">

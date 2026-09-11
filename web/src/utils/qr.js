@@ -155,6 +155,53 @@ export async function generateBrandedQrDataUrl({
   return canvas.toDataURL('image/png')
 }
 
+function toParamNum(v) {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function priceRangeText(min, max) {
+  const mn = toParamNum(min)
+  const mx = toParamNum(max)
+  if (mn === null && mx === null) return ''
+  if (mn !== null && mx !== null) return `${mn}-${mx}元`
+  if (mn !== null) return `${mn}元以上`
+  return `${mx}元以下`
+}
+
+// 筛选结果页链接：主页 + 位置/租金/户型查询参数，扫码后主页自动按这些条件筛选
+export function locationFilterUrl({ district = '', street = '', village = '', minPrice = null, maxPrice = null, layout = '' } = {}) {
+  const params = new URLSearchParams()
+  if (district) params.set('district', district)
+  if (street) params.set('street', street)
+  if (village) params.set('village', village)
+  const min = toParamNum(minPrice)
+  const max = toParamNum(maxPrice)
+  if (min !== null) params.set('min_price', String(min))
+  if (max !== null) params.set('max_price', String(max))
+  if (layout) params.set('layout', layout)
+  const qs = params.toString()
+  return `${window.location.origin}/${qs ? `?${qs}` : ''}`
+}
+
+// 生成村/小区（或街道/区域）位置二维码卡片，total 为当前筛选条件下的在租公寓数
+export async function generateLocationQrDataUrl({ district, street, village, minPrice, maxPrice, layout, total }) {
+  const address = [district, street, village].filter(Boolean).join(' ')
+  const lines = []
+  if (address) lines.push({ label: '位置', value: address })
+  const price = priceRangeText(minPrice, maxPrice)
+  if (price) lines.push({ label: '租金', value: price })
+  if (layout) lines.push({ label: '户型', value: layout })
+  if (Number.isFinite(total)) lines.push({ label: '房源', value: `${total} 栋公寓在租` })
+  return generateBrandedQrDataUrl({
+    text: locationFilterUrl({ district, street, village, minPrice, maxPrice, layout }),
+    title: village || street || district || '房源筛选',
+    lines,
+    footer: '扫码查看符合条件的在租公寓',
+  })
+}
+
 export function downloadQrImage(dataUrl, filename) {
   const a = document.createElement('a')
   a.href = dataUrl
