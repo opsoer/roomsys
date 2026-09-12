@@ -65,11 +65,6 @@ func (s *DividendService) List(buildingID uint, page, lastID, size int, lastKey 
 	return dividends, total, err
 }
 
-// Settle 结算分红
-func (s *DividendService) Settle(dividend *models.Dividend) error {
-	return s.DB.Create(dividend).Error
-}
-
 // Predict 基于当前生效租约预测未来数月的应收租金：
 // 预计租金收入 = 所有生效合同的月租金+管理费合计；
 // 可分配净利润 = 预计租金收入 - 近3个月月均支出。

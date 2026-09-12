@@ -61,19 +61,9 @@ func (s *TaskService) Create(task *models.Task) error {
 	return s.DB.Create(task).Error
 }
 
-// Update 更新任务信息
-func (s *TaskService) Update(id uint, updates map[string]interface{}) error {
-	return s.DB.Model(&models.Task{}).Where("id = ?", id).Updates(updates).Error
-}
-
 // Delete 删除任务
 func (s *TaskService) Delete(id uint) error {
 	return s.DB.Delete(&models.Task{}, id).Error
-}
-
-// Process 处理任务并更新状态
-func (s *TaskService) Process(id uint, status string) error {
-	return s.DB.Model(&models.Task{}).Where("id = ?", id).Update("status", status).Error
 }
 
 // Complete 将任务标记为已完成

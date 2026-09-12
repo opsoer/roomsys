@@ -89,14 +89,3 @@ func (h *RecruitHandler) Process(c *gin.Context) {
 	}
 	utils.SuccessWithMsg(c, "已处理", nil)
 }
-
-// UnprocessedCount 获取未处理的招募数量
-func (h *RecruitHandler) UnprocessedCount(c *gin.Context) {
-	count, err := h.RecruitService.UnprocessedCount()
-	if err != nil {
-		logger.Log.Error().Err(err).Msg("查询未处理招募数量失败")
-		utils.Error(c, http.StatusInternalServerError, "查询未处理招募数量失败")
-		return
-	}
-	utils.Success(c, gin.H{"count": count})
-}

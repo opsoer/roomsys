@@ -104,7 +104,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)
-		platform.GET("/recruit/unprocessed-count", recruitH.UnprocessedCount)
 
 		platformTaskH := &handlers.PlatformTaskHandler{DB: db, TaskService: taskSvc, RecruitService: recruitSvc}
 		platform.GET("/tasks", platformTaskH.List)
@@ -138,8 +137,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		building.GET("/info", buildingH.MyBuilding)
 		building.PUT("/info", buildingH.UpdateMyBuilding)
-		building.PUT("/renew", buildingH.RenewMy)
-		building.GET("/renewals", buildingH.RenewalsMy)
 		building.GET("/stats", buildingH.MyStats)
 
 		// 房间管理
@@ -153,9 +150,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.PUT("/rooms/:id/status", roomH.UpdateStatus)
 		building.GET("/contracts", roomH.ListBuildingContracts)
 		building.GET("/rooms/:id/contract", roomH.GetActiveContract)
-		building.GET("/rooms/:id/contracts", roomH.GetRoomContracts)
 		building.PUT("/rooms/:id/contract", roomH.RenewContract)
-		building.POST("/rooms/:id/prepay", roomH.PrepayContract)
 
 		// 媒体管理
 		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}

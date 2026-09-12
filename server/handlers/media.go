@@ -191,13 +191,6 @@ func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) err
 	return formUploader.Put(context.Background(), &ret, upToken, key, reader, size, &extra)
 }
 
-// qiniuDelete 从七牛云存储删除文件
-func (h *MediaHandler) qiniuDelete(key string) error {
-	cfg := h.qiniuConfig()
-	bucketMgr := storage.NewBucketManager(h.qiniuMac(), &cfg)
-	return bucketMgr.Delete(h.Cfg.QiniuBucket, key)
-}
-
 // getDomain 获取七牛云存储域名（从配置或自动发现）
 func (h *MediaHandler) getDomain() (string, error) {
 	qiniuDomainMu.RLock()

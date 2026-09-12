@@ -260,6 +260,8 @@ func resetDatabase(db *gorm.DB) {
 		&models.Building{},
 		&models.User{},
 		&models.PageView{},
+		&models.LocationCustom{},
+		&models.LocationRename{},
 	}
 	for _, table := range tables {
 		if err := db.Migrator().DropTable(table); err != nil {

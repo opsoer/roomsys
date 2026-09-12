@@ -52,11 +52,6 @@ func LastDayOfMonth(t time.Time) time.Time {
 	return FirstDayOfMonth(t).AddDate(0, 1, -1)
 }
 
-// MonthStr 返回 "2006-01" 格式的月份字符串
-func MonthStr(t time.Time) string {
-	return t.Format("2006-01")
-}
-
 // CalcProratedAmount 按天计算按比例分摊的租金金额
 func CalcProratedAmount(rentPrice float64, start, end time.Time, daysInMonth int) float64 {
 	if start.After(end) {

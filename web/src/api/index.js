@@ -154,14 +154,6 @@ export function adminRenameLocation(data) {
   return api.post('/admin/locations/rename', data)
 }
 
-export function buildingRenew(data) {
-  return api.put('/building/renew', data)
-}
-
-export function buildingGetRenewals() {
-  return api.get('/building/renewals')
-}
-
 export function adminCreateBuildingAdmin(data) {
   return api.post('/admin/auth/create-building-admin', data)
 }
@@ -215,10 +207,6 @@ export function buildingGetRoom(id) {
   return api.get(`/building/rooms/${id}`)
 }
 
-export function buildingGetRoomContracts(id) {
-  return api.get(`/building/rooms/${id}/contracts`)
-}
-
 export function buildingUpdateRoom(id, data) {
   return api.put(`/building/rooms/${id}`, data)
 }
@@ -233,10 +221,6 @@ export function buildingUpdateRoomStatus(id, data) {
 
 export function buildingRenewContract(id, data) {
   return api.put(`/building/rooms/${id}/contract`, data)
-}
-
-export function buildingPrepayContract(id, data) {
-  return api.post(`/building/rooms/${id}/prepay`, data)
 }
 
 export function buildingDeleteMedia(roomId, mediaId) {
@@ -344,10 +328,6 @@ export function submitRecruit(data) {
   return api.post('/recruit/submit', data)
 }
 
-export function getUnprocessedRecruitCount() {
-  return api.get('/admin/recruit/unprocessed-count')
-}
-
 // ===== 平台待办（超级管理员）=====
 export function adminGetPlatformTasks(status = '', pageOrParams = 1, pageSize = 20) {
   const merged = typeof pageOrParams === 'object' ? { ...pageOrParams } : { page: pageOrParams, page_size: pageSize }
@@ -380,9 +360,6 @@ export function confirmMediaUpload(roomId, data) {
   })
 }
 
-export function reDownloadFFmpeg() {
-  return uploadApi.post('/building/ffmpeg/re-download')
-}
 
 // ===== 统计 =====
 export function adminGetStatsOverview() {

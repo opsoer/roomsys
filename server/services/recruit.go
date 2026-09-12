@@ -33,10 +33,3 @@ func (s *RecruitService) List() ([]models.RecruitSubmission, error) {
 func (s *RecruitService) Process(id uint) error {
 	return s.DB.Model(&models.RecruitSubmission{}).Where("id = ?", id).Update("status", "processed").Error
 }
-
-// UnprocessedCount 获取未处理的招募申请数量
-func (s *RecruitService) UnprocessedCount() (int64, error) {
-	var count int64
-	err := s.DB.Model(&models.RecruitSubmission{}).Where("status = ?", "pending").Count(&count).Error
-	return count, err
-}

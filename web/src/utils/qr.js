@@ -4,8 +4,8 @@ export function siteHomeUrl() {
   return `${window.location.origin}/`
 }
 
-// 是否微信内置浏览器
-export function isWechat() {
+// 是否微信内置浏览器（canAutoDownloadImage 内部使用）
+function isWechat() {
   return /MicroMessenger/i.test(navigator.userAgent)
 }
 
@@ -227,19 +227,7 @@ export async function generateRoomQrDataUrl({ text, buildingName, address, floor
   })
 }
 
-// 生成并下载公寓二维码卡片，返回主页链接（供调用方提示）
-export async function downloadBuildingQr(buildingId, buildingName, b = {}) {
-  const url = buildingHomeUrl(buildingId)
-  const dataUrl = await generateBrandedQrDataUrl({
-    text: url,
-    title: buildingName || '公寓主页',
-    lines: buildingInfoLines(b),
-  })
-  downloadQrImage(dataUrl, `公寓二维码_${buildingName || '公寓'}.png`)
-  return url
-}
-
-// 生成并下载网站主页二维码卡片，返回主页链接
+// 生成网站主页二维码卡片
 export async function generateSiteQrDataUrl() {
   return generateBrandedQrDataUrl({
     text: siteHomeUrl(),
@@ -247,10 +235,4 @@ export async function generateSiteQrDataUrl() {
     lines: [{ label: '平台', value: '圳好租 · 深圳公寓租赁平台' }],
     footer: '想租房，就来圳好租',
   })
-}
-
-export async function downloadSiteQr() {
-  const dataUrl = await generateSiteQrDataUrl()
-  downloadQrImage(dataUrl, '网站主页二维码.png')
-  return siteHomeUrl()
 }

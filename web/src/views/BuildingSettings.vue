@@ -61,15 +61,8 @@
           <el-tag :type="statusTagType">{{ statusText }}</el-tag>
           <span style="margin-left: 10px; color: #999; font-size: 13px;">到期日：{{ form.expired_at || '未设置' }}</span>
         </el-form-item>
-        <el-form-item label="续约">
-          <div class="renew-row">
-            <el-date-picker v-model="renewExpiredAt" type="date" placeholder="选择新的到期日期"
-              :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width: 220px" />
-            <el-button type="primary" :loading="renewing" :disabled="!renewExpiredAt" @click="handleRenew">
-              提交续约
-            </el-button>
-          </div>
-          <div class="renew-tip" v-if="isExpiredOrHidden">公寓已到期，提交续约后将在网站主页恢复展示。</div>
+        <el-form-item v-if="isExpiredOrHidden" label="">
+          <div class="renew-tip">公寓已到期，如需续约请联系平台管理员。</div>
         </el-form-item>
         <el-divider>房东信息</el-divider>
         <el-form-item label="房东姓名">
@@ -91,8 +84,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import dayjs from 'dayjs'
-import { getBuildingInfo, updateBuildingInfo, buildingUploadCover, buildingRenew } from '../api'
+import { getBuildingInfo, updateBuildingInfo, buildingUploadCover } from '../api'
 import shenzhen from '../utils/shenzhen'
 
 const districts = shenzhen
@@ -111,8 +103,6 @@ const currentVillages = computed(() => {
 
 const loading = ref(true)
 const saving = ref(false)
-const renewing = ref(false)
-const renewExpiredAt = ref('')
 const form = ref({
   name: '', district: '', street: '', village: '', building_no: '',
   description: '', landlord_name: '', landlord_phones: [''],
@@ -128,28 +118,6 @@ const statusText = computed(() => {
 const statusTagType = computed(() => {
   return { active: 'success', expiring: 'warning', expired: 'danger', hidden: 'danger' }[form.value.status] || 'info'
 })
-
-function disablePastDate(date) {
-  return dayjs(date).isBefore(dayjs().startOf('day'))
-}
-
-async function handleRenew() {
-  if (!renewExpiredAt.value) {
-    ElMessage.warning('请选择新的到期日期')
-    return
-  }
-  renewing.value = true
-  try {
-    await buildingRenew({ expired_at: renewExpiredAt.value })
-    ElMessage.success('续约成功，公寓已恢复展示')
-    renewExpiredAt.value = ''
-    await fetchInfo()
-  } catch (err) {
-    ElMessage.error(err.response?.data?.message || '续约失败')
-  } finally {
-    renewing.value = false
-  }
-}
 
 const coverUrl = computed(() => {
   return form.value.cover_image ? `/api/media/${form.value.cover_image}` : ''
@@ -282,8 +250,7 @@ onMounted(fetchInfo)
 .phone-row { display: flex; gap: 8px; margin-bottom: 8px; margin-left: 100px; }
 .phone-input { flex: 1; }
 .add-phone-btn { margin-left: 100px; }
-.renew-row { display: flex; gap: 10px; align-items: center; }
-.renew-tip { margin-top: 6px; font-size: 13px; color: #e6a23c; }
+.renew-tip { font-size: 13px; color: #e6a23c; }
 .save-section { margin-top: 24px; }
 
 @media (max-width: 768px) {

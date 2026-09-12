@@ -157,16 +157,6 @@ func (s *RoomService) Delete(id uint) error {
 	})
 }
 
-// UpdateStatus 更新房间状态（vacant/rented）
-func (s *RoomService) UpdateStatus(id uint, status string) error {
-	return s.DB.Model(&models.Room{}).Where("id = ?", id).Update("status", status).Error
-}
-
-// CreateMedia 创建房间媒体资源
-func (s *RoomService) CreateMedia(media *models.RoomMedia) error {
-	return s.DB.Create(media).Error
-}
-
 // GetActiveContract 获取房间的活跃或已预订合同（含租客信息），活跃优先
 func (s *RoomService) GetActiveContract(roomID uint) (*models.RentalContract, error) {
 	var contract models.RentalContract
@@ -190,19 +180,6 @@ func (s *RoomService) GetReservedContract(roomID uint) (*models.RentalContract, 
 		return nil, err
 	}
 	return &contract, nil
-}
-
-// ListRoomContracts 获取房间的历史合同（含租客信息），从新到旧排列
-func (s *RoomService) ListRoomContracts(roomID uint) ([]models.RentalContract, error) {
-	var contracts []models.RentalContract
-	err := s.DB.Where("room_id = ? AND status IN ?", roomID, []string{"active", "ended"}).
-		Preload("Tenant").
-		Order("start_date DESC").
-		Find(&contracts).Error
-	if err != nil {
-		return nil, err
-	}
-	return contracts, nil
 }
 
 // ListBuildingContracts 获取公寓全部合同（含租客与房间信息），支持房间/状态/关键词筛选，
@@ -258,23 +235,9 @@ func (s *RoomService) GetActiveContractPublic(roomID uint) (*models.RentalContra
 	return &contract, nil
 }
 
-// CreateContract 创建租赁合同
-func (s *RoomService) CreateContract(contract *models.RentalContract) error {
-	return s.DB.Create(contract).Error
-}
-
 // UpdateContract 更新租赁合同信息
 func (s *RoomService) UpdateContract(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.RentalContract{}).Where("id = ?", id).Updates(updates).Error
-}
-
-// GetRoomsWithExpiringContract 获取即将到期合同的房间列表
-func (s *RoomService) GetRoomsWithExpiringContract(buildingID uint, days int) ([]models.Room, error) {
-	var rooms []models.Room
-	err := s.DB.Where("building_id = ? AND status = ?", buildingID, "rented").
-		Preload("Media").
-		Find(&rooms).Error
-	return rooms, err
 }
 
 // GetFutureReservation 获取房间的未来的预定合同（房间有其他 active 合同的情况下）

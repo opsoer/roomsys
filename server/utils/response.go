@@ -16,14 +16,6 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// PageResult 分页结果结构
-type PageResult struct {
-	Items interface{} `json:"items"`
-	Total int64       `json:"total"`
-	Page  int         `json:"page"`
-	Size  int         `json:"size"`
-}
-
 // ParsePage 从请求查询参数中解析分页参数（默认 page=1, size=20）
 func ParsePage(c *gin.Context) (page, size int) {
 	page = 1
@@ -106,9 +98,6 @@ var ErrUnauthorized = errors.New("未授权")
 
 // ErrBuildingNotFound 未关联公寓错误
 var ErrBuildingNotFound = errors.New("未关联公寓")
-
-// ErrInvalidBuildingID 无效的公寓 ID 错误
-var ErrInvalidBuildingID = errors.New("无效的公寓ID")
 
 // GetBuildingID 从上下文中获取楼宇 ID
 func GetBuildingID(c *gin.Context) (uint, error) {

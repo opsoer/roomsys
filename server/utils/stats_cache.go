@@ -33,16 +33,3 @@ func CacheGetOrSet(key string, ttl time.Duration, fetch func() (interface{}, err
 	})
 	return data, nil
 }
-
-// CacheInvalidate 删除指定缓存键
-func CacheInvalidate(key string) {
-	statsCache.Delete(key)
-}
-
-// CacheInvalidateAll 清空所有缓存
-func CacheInvalidateAll() {
-	statsCache.Range(func(key, _ interface{}) bool {
-		statsCache.Delete(key)
-		return true
-	})
-}

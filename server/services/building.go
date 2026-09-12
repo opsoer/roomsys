@@ -519,13 +519,6 @@ func (s *BuildingService) UpgradePackage(id uint, packageType string) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", id).Update("package", packageType).Error
 }
 
-// GetLandlords 获取楼栋的房东列表
-func (s *BuildingService) GetLandlords(buildingID uint) ([]models.BuildingLandlord, error) {
-	var landlords []models.BuildingLandlord
-	err := s.DB.Where("building_id = ?", buildingID).Find(&landlords).Error
-	return landlords, err
-}
-
 // CreateLandlord 创建房东信息
 func (s *BuildingService) CreateLandlord(landlord *models.BuildingLandlord) error {
 	return s.DB.Create(landlord).Error

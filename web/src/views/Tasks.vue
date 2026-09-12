@@ -101,7 +101,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildingGetTasks, buildingProcessTask } from '../api'
 import { ElMessage } from 'element-plus'
 
@@ -120,11 +120,6 @@ const processSubmitting = ref(false)
 const processFormRef = ref(null)
 const processForm = ref({ refunded_deposit: 0 })
 const originalDeposit = ref(0)
-
-const deduction = computed(() => {
-  const d = originalDeposit.value - (processForm.value.refunded_deposit || 0)
-  return d > 0 ? d : 0
-})
 
 async function fetchTasks(append = false) {
   if (!append) {

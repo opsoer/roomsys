@@ -36,7 +36,8 @@ func main() {
 		&models.BuildingRenewal{},
 		&models.Building{},
 		&models.User{},
-		&models.PageView{},
+		&models.LocationCustom{},
+		&models.LocationRename{},
 	)
 	fmt.Println("   完成")
 

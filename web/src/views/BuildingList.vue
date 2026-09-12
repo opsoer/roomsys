@@ -216,8 +216,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildings } from '../api'
 import { siteHomeUrl, locationFilterUrl, generateSiteQrDataUrl, generateLocationQrDataUrl, downloadQrImage } from '../utils/qr'
@@ -228,7 +227,6 @@ import { useUtils } from '../composables/useUtils'
 import { LAYOUT_OPTIONS } from '../utils/constants'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 
-const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()

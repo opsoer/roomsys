@@ -279,12 +279,6 @@ const vacateSubmitting = ref(false)
 const vacateForm = ref({ refunded_deposit: null })
 const vacateFormRef = ref(null)
 
-const vacateDeduction = computed(() => {
-  const deposit = props.currentContract?.deposit || 0
-  const refunded = vacateForm.value.refunded_deposit
-  return Math.max(0, deposit - refunded)
-})
-
 const showEditDialog = ref(false)
 const editSubmitting = ref(false)
 const editForm = ref({})
