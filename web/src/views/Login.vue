@@ -61,7 +61,8 @@ async function handleLogin() {
     const user = res.data.user
     authStore.login(user, res.data.token, res.data.refresh_token)
 
-    showToast({ message: '登录成功', icon: 'success', duration: 1500 })
+    // 顶部显示，避免 Toast 悬浮在页面正中央（受浏览器深色反转影响时会被渲染成白色方块）
+    showToast({ message: '登录成功', icon: 'success', position: 'top', duration: 1500 })
 
     if (user.role === 'super_admin') {
       router.push('/admin/buildings')
@@ -71,9 +72,9 @@ async function handleLogin() {
   } catch (e) {
     const msg = e?.response?.data?.message || e?.response?.data?.error
     if (msg) {
-      showToast(msg)
+      showToast({ message: msg, position: 'top' })
     } else {
-      showToast('登录失败，请重试')
+      showToast({ message: '登录失败，请重试', position: 'top' })
     }
   } finally {
     loading.value = false
