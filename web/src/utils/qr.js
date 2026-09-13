@@ -51,6 +51,38 @@ function truncateText(ctx, text, maxWidth) {
   return t + '…'
 }
 
+// 按宽度折行（中文逐字断行），最多 maxRows 行，仍未放下则末行加省略号
+function wrapText(ctx, text, maxWidth, maxRows = 2) {
+  if (!text) return ['']
+  if (ctx.measureText(text).width <= maxWidth) return [text]
+  const rows = []
+  let rest = text
+  while (rows.length < maxRows - 1) {
+    let cur = ''
+    let i = 0
+    while (i < rest.length && ctx.measureText(cur + rest[i]).width <= maxWidth) {
+      cur += rest[i]
+      i++
+    }
+    if (!cur) break
+    rows.push(cur)
+    rest = rest.slice(i)
+  }
+  if (rest) {
+    let fit = ''
+    for (const ch of rest) {
+      if (ctx.measureText(fit + ch).width > maxWidth) break
+      fit += ch
+    }
+    let trimmed = fit
+    while (trimmed.length > 1 && ctx.measureText(trimmed + '…').width > maxWidth) {
+      trimmed = trimmed.slice(0, -1)
+    }
+    rows.push(fit.length < rest.length ? trimmed + '…' : fit)
+  }
+  return rows
+}
+
 const FONT = '"PingFang SC","Microsoft YaHei",sans-serif'
 
 // 生成一张竖版二维码卡片（620 宽 PNG dataURL）
@@ -67,7 +99,13 @@ export async function generateBrandedQrDataUrl({
   const qrTop = 128
   const infoTop = qrTop + qrSize + 46
   const rowH = 58
-  const H = infoTop + lines.length * rowH + 80
+  // 预折行：value 过长的信息行占多行，卡片高度按总行数计算
+  const measureCtx = document.createElement('canvas').getContext('2d')
+  measureCtx.font = `26px ${FONT}`
+  const valueMaxW = W - 70 - 110 - 40
+  const lineRows = lines.map(line => wrapText(measureCtx, line.value, valueMaxW, 2))
+  const totalRows = lineRows.reduce((n, rows) => n + rows.length, 0)
+  const H = infoTop + totalRows * rowH + 80
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
@@ -130,20 +168,24 @@ export async function generateBrandedQrDataUrl({
   ctx.lineTo(W - 80, infoTop - 22)
   ctx.stroke()
 
-  // 信息行：label（灰） + value（深色），左对齐
+  // 信息行：label（灰，整块垂直居中） + value（深色，过长自动折两行），左对齐
   ctx.textAlign = 'left'
   const labelX = 70
   const labelW = 110
   const valueX = labelX + labelW
-  const valueMaxW = W - valueX - 40
+  let rowIndex = 0
   lines.forEach((line, i) => {
-    const y = infoTop + 12 + i * rowH + rowH / 2
-    ctx.font = `24px ${FONT}`
-    ctx.fillStyle = '#9a9a9a'
-    ctx.fillText(line.label, labelX, y)
+    const rows = lineRows[i]
+    const y0 = infoTop + 12 + rowIndex * rowH
     ctx.font = `26px ${FONT}`
     ctx.fillStyle = '#333333'
-    ctx.fillText(truncateText(ctx, line.value, valueMaxW), valueX, y)
+    rows.forEach((r, ri) => {
+      ctx.fillText(r, valueX, y0 + ri * rowH + rowH / 2)
+    })
+    ctx.font = `24px ${FONT}`
+    ctx.fillStyle = '#9a9a9a'
+    ctx.fillText(line.label, labelX, y0 + (rows.length * rowH) / 2)
+    rowIndex += rows.length
   })
 
   // 底部
@@ -161,42 +203,43 @@ function toParamNum(v) {
   return Number.isFinite(n) ? n : null
 }
 
-function priceRangeText(min, max) {
-  const mn = toParamNum(min)
-  const mx = toParamNum(max)
-  if (mn === null && mx === null) return ''
-  if (mn !== null && mx !== null) return `${mn}-${mx}元`
-  if (mn !== null) return `${mn}元以上`
-  return `${mx}元以下`
-}
-
-// 筛选结果页链接：主页 + 位置/租金/户型查询参数，扫码后主页自动按这些条件筛选
-export function locationFilterUrl({ district = '', street = '', village = '', minPrice = null, maxPrice = null, layout = '' } = {}) {
+// 筛选查询参数（村/小区 villages 为数组，链接中逗号分隔，主页解析后按多选筛选）
+function filterQueryParams({ district = '', street = '', villages = [], minPrice = null, maxPrice = null, layout = '' } = {}) {
   const params = new URLSearchParams()
   if (district) params.set('district', district)
   if (street) params.set('street', street)
-  if (village) params.set('village', village)
+  if (villages.length) params.set('village', villages.join(','))
   const min = toParamNum(minPrice)
   const max = toParamNum(maxPrice)
   if (min !== null) params.set('min_price', String(min))
   if (max !== null) params.set('max_price', String(max))
   if (layout) params.set('layout', layout)
-  const qs = params.toString()
+  return params
+}
+
+// 筛选结果页链接：主页 + 位置/租金/户型查询参数，扫码后主页自动按这些条件筛选
+export function locationFilterUrl(opts = {}) {
+  const qs = filterQueryParams(opts).toString()
   return `${window.location.origin}/${qs ? `?${qs}` : ''}`
 }
 
-// 生成村/小区（或街道/区域）位置二维码卡片，total 为当前筛选条件下的在租公寓数
-export async function generateLocationQrDataUrl({ district, street, village, minPrice, maxPrice, layout, total }) {
-  const address = [district, street, village].filter(Boolean).join(' ')
+// 二维码卡片上展示的链接文本：URLSearchParams 会把中文编码成 %XX，重新拼接为可读形式
+function filterLinkText(opts) {
+  const qs = [...filterQueryParams(opts).entries()].map(([k, v]) => `${k}=${v}`).join('&')
+  return `${window.location.host}/${qs ? `?${qs}` : ''}`
+}
+
+// 生成村/小区（或街道/区域）位置二维码卡片，只展示所选位置与链接
+export async function generateLocationQrDataUrl({ district, street, villages = [], minPrice, maxPrice, layout, title }) {
+  const vs = (villages || []).filter(Boolean)
+  const locText = [district, street].filter(Boolean).join(' ')
+  const address = vs.length ? `${locText}${locText ? ' ' : ''}${vs.join('、')}` : locText
   const lines = []
   if (address) lines.push({ label: '位置', value: address })
-  const price = priceRangeText(minPrice, maxPrice)
-  if (price) lines.push({ label: '租金', value: price })
-  if (layout) lines.push({ label: '户型', value: layout })
-  if (Number.isFinite(total)) lines.push({ label: '房源', value: `${total} 栋公寓在租` })
+  lines.push({ label: '链接', value: filterLinkText({ district, street, villages: vs, minPrice, maxPrice, layout }) })
   return generateBrandedQrDataUrl({
-    text: locationFilterUrl({ district, street, village, minPrice, maxPrice, layout }),
-    title: village || street || district || '房源筛选',
+    text: locationFilterUrl({ district, street, villages: vs, minPrice, maxPrice, layout }),
+    title: title || street || district || '房源筛选',
     lines,
     footer: '扫码查看符合条件的在租公寓',
   })

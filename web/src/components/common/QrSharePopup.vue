@@ -5,7 +5,6 @@
       <div style="font-size: 12px; color: #999; margin: 4px 0 12px;">扫一扫，即刻查看</div>
       <img v-if="dataUrl" :src="dataUrl" alt="二维码" style="width: 100%; border-radius: 10px;" @click="handleDownload" />
       <el-icon v-else class="is-loading" style="font-size: 36px; color: #999"><Loading /></el-icon>
-      <div style="font-size: 12px; color: #999; margin-top: 10px; word-break: break-all;">{{ link }}</div>
       <input
         class="share-link-input"
         type="text"

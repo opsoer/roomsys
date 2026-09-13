@@ -332,6 +332,28 @@ func (f BuildingListFilter) HasRoomFilter() bool {
 	return f.MinPrice > 0 || f.MaxPrice > 0 || f.Layout != ""
 }
 
+// villageFilterNames 村/小区支持逗号分隔多选；同一地方可能带或不带「社区」后缀，
+// 每个名字展开带/不带后缀两种写法后统一匹配（「应人石」与「应人石社区」互相命中）
+func villageFilterNames(raw string) []string {
+	parts := strings.Split(raw, ",")
+	seen := map[string]bool{}
+	names := make([]string, 0, len(parts)*2)
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		base := strings.TrimSuffix(p, "社区")
+		for _, v := range []string{p, base, base + "社区"} {
+			if v != "" && !seen[v] {
+				seen[v] = true
+				names = append(names, v)
+			}
+		}
+	}
+	return names
+}
+
 // List 分页查询楼栋列表（支持状态、关键词、区域筛选）
 // includeHidden 为 false 时排除被超级管理员设为不可见（status=hidden）的公寓，用于公开端
 // 双模式分页：lastID > 0 时走游标分页（只返回 id 大于 lastID 的下一批，避免 OFFSET 深翻页变慢，且不再重查总数，total 返回 -1）；
@@ -379,7 +401,7 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 		query = query.Where("street IN (?, ?)", f.Street, strings.TrimSuffix(f.Street, "街道"))
 	}
 	if f.Village != "" {
-		query = query.Where("village IN (?, ?)", f.Village, strings.TrimSuffix(f.Village, "社区"))
+		query = query.Where("village IN ?", villageFilterNames(f.Village))
 	}
 
 	if f.HasRoomFilter() {

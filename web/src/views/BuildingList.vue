@@ -55,10 +55,10 @@
             <div class="filter-col">
               <div class="filter-col-title">区域</div>
               <div class="filter-col-list">
-                <div class="filter-col-item all-item" :class="{ active: !stepDistrict }" @click="stepDistrict = null; stepStreet = null; stepVillage = ''">
+                <div class="filter-col-item all-item" :class="{ active: !stepDistrict }" @click="stepDistrict = null; stepStreet = null; stepVillages = []">
                   全部深圳市区
                 </div>
-                <div v-for="d in districtOptions" :key="d.value" class="filter-col-item" :class="{ active: stepDistrict?.value === d.value }" @click="stepDistrict = d; stepStreet = null; stepVillage = ''">
+                <div v-for="d in districtOptions" :key="d.value" class="filter-col-item" :class="{ active: stepDistrict?.value === d.value }" @click="stepDistrict = d; stepStreet = null; stepVillages = []">
                   {{ d.label }}
                 </div>
               </div>
@@ -66,21 +66,21 @@
             <div class="filter-col">
               <div class="filter-col-title">街道</div>
               <div class="filter-col-list">
-                <div class="filter-col-item all-item" :class="{ active: stepDistrict && !stepStreet }" @click="stepStreet = null; stepVillage = ''">
+                <div class="filter-col-item all-item" :class="{ active: stepDistrict && !stepStreet }" @click="stepStreet = null; stepVillages = []">
                   全部街道
                 </div>
-                <div v-for="s in currentStreets" :key="s.value" class="filter-col-item" :class="{ active: stepStreet?.value === s.value }" @click="stepStreet = s; stepVillage = ''">
+                <div v-for="s in currentStreets" :key="s.value" class="filter-col-item" :class="{ active: stepStreet?.value === s.value }" @click="stepStreet = s; stepVillages = []">
                   {{ s.label }}
                 </div>
               </div>
             </div>
             <div class="filter-col">
-              <div class="filter-col-title">村/小区</div>
+              <div class="filter-col-title">村/小区（可多选）</div>
               <div class="filter-col-list">
-                <div class="filter-col-item all-item" :class="{ active: stepStreet && !stepVillage }" @click="stepVillage = ''">
+                <div class="filter-col-item all-item" :class="{ active: stepStreet && stepVillages.length === 0 }" @click="stepVillages = []">
                   全部村/小区
                 </div>
-                <div v-for="v in currentVillages" :key="v" class="filter-col-item" :class="{ active: stepVillage === v }" @click="stepVillage = v">
+                <div v-for="v in currentVillages" :key="v" class="filter-col-item" :class="{ active: stepVillages.includes(v) }" @click="toggleStepVillage(v)">
                   {{ v }}
                 </div>
               </div>
@@ -244,17 +244,17 @@ const PRICE_PRESETS = [
   { label: '5000以上', min: 5000, max: null },
 ]
 
-// 已生效的筛选条件（点「确认」后写入）
+// 已生效的筛选条件（点「确认」后写入）；村/小区支持多选，区域/街道单选
 const filterDistrict = ref('')
 const filterStreet = ref('')
-const filterVillage = ref('')
+const filterVillages = ref([])
 const filterMinPrice = ref(null)
 const filterMaxPrice = ref(null)
 const filterLayout = ref('')
 // 弹窗内待确认的筛选条件
 const stepDistrict = ref(null)
 const stepStreet = ref(null)
-const stepVillage = ref('')
+const stepVillages = ref([])
 const stepMinPrice = ref(null)
 const stepMaxPrice = ref(null)
 const stepLayout = ref('')
@@ -286,7 +286,7 @@ function openQrShare() {
 function openLocationQr() {
   const district = filterDistrict.value
   const street = filterStreet.value
-  const village = filterVillage.value
+  const villages = [...filterVillages.value]
   const minPrice = filterMinPrice.value
   const maxPrice = filterMaxPrice.value
   const layout = filterLayout.value
@@ -295,11 +295,11 @@ function openLocationQr() {
     openFilter()
     return
   }
-  qrTitle.value = village || street || district || '房源筛选'
+  qrTitle.value = villages.length === 1 ? villages[0] : (street || district || '房源筛选')
   qrVisible.value = true
   qrDataUrl.value = ''
-  qrLink.value = locationFilterUrl({ district, street, village, minPrice, maxPrice, layout })
-  generateLocationQrDataUrl({ district, street, village, minPrice, maxPrice, layout, total: total.value }).then((url) => {
+  qrLink.value = locationFilterUrl({ district, street, villages, minPrice, maxPrice, layout })
+  generateLocationQrDataUrl({ district, street, villages, minPrice, maxPrice, layout, title: qrTitle.value }).then((url) => {
     qrDataUrl.value = url
   }).catch(() => {
     showToast('二维码生成失败')
@@ -335,16 +335,19 @@ const currentVillages = computed(() =>
   (stepDistrict.value && stepStreet.value) ? locationStore.villagesOf(stepDistrict.value.label, stepStreet.value.label) : []
 )
 
-const locationActive = computed(() => !!(filterDistrict.value || filterStreet.value || filterVillage.value))
+const locationActive = computed(() => !!(filterDistrict.value || filterStreet.value || filterVillages.value.length))
 const priceActive = computed(() => filterMinPrice.value != null || filterMaxPrice.value != null)
 const layoutActive = computed(() => !!filterLayout.value)
 const hasAnyFilter = computed(() => locationActive.value || priceActive.value || layoutActive.value)
 
 const locationText = computed(() => {
-  if (filterVillage.value) return `${filterDistrict.value} ${filterStreet.value} ${filterVillage.value}`
-  if (filterStreet.value) return `${filterDistrict.value} ${filterStreet.value}`
-  if (filterDistrict.value) return filterDistrict.value
-  return '位置'
+  const parts = []
+  if (filterDistrict.value) parts.push(filterDistrict.value)
+  if (filterStreet.value) parts.push(filterStreet.value)
+  const vs = filterVillages.value
+  if (vs.length === 1) parts.push(vs[0])
+  else if (vs.length > 1) parts.push(`${vs[0]}等${vs.length}个村/小区`)
+  return parts.length ? parts.join(' ') : '位置'
 })
 
 const priceText = computed(() => formatPriceRange(filterMinPrice.value, filterMaxPrice.value) || '租金')
@@ -379,6 +382,13 @@ function togglePreset(p) {
   stepMaxPrice.value = p.max
 }
 
+// 村/小区多选：再点一次取消选择
+function toggleStepVillage(v) {
+  const idx = stepVillages.value.indexOf(v)
+  if (idx >= 0) stepVillages.value.splice(idx, 1)
+  else stepVillages.value.push(v)
+}
+
 function clearStepPrice() {
   stepMinPrice.value = null
   stepMaxPrice.value = null
@@ -402,7 +412,7 @@ function openFilter() {
   stepStreet.value = filterStreet.value
     ? (currentStreets.value.find(s => s.label === filterStreet.value) || { value: filterStreet.value, label: filterStreet.value, villages: [] })
     : null
-  stepVillage.value = filterVillage.value || ''
+  stepVillages.value = [...filterVillages.value]
   stepMinPrice.value = filterMinPrice.value
   stepMaxPrice.value = filterMaxPrice.value
   stepLayout.value = filterLayout.value || ''
@@ -412,13 +422,13 @@ function openFilter() {
 function resetFilter() {
   stepDistrict.value = null
   stepStreet.value = null
-  stepVillage.value = ''
+  stepVillages.value = []
   stepMinPrice.value = null
   stepMaxPrice.value = null
   stepLayout.value = ''
   filterDistrict.value = ''
   filterStreet.value = ''
-  filterVillage.value = ''
+  filterVillages.value = []
   filterMinPrice.value = null
   filterMaxPrice.value = null
   filterLayout.value = ''
@@ -435,7 +445,7 @@ function confirmFilter() {
   }
   filterDistrict.value = stepDistrict.value ? stepDistrict.value.label : ''
   filterStreet.value = stepStreet.value ? stepStreet.value.label : ''
-  filterVillage.value = stepVillage.value || ''
+  filterVillages.value = [...stepVillages.value]
   filterMinPrice.value = min
   filterMaxPrice.value = max
   filterLayout.value = stepLayout.value || ''
@@ -461,7 +471,7 @@ async function fetchBuildings(append = false) {
     }
     if (filterDistrict.value) params.district = filterDistrict.value
     if (filterStreet.value) params.street = filterStreet.value
-    if (filterVillage.value) params.village = filterVillage.value
+    if (filterVillages.value.length) params.village = filterVillages.value.join(',')
     if (filterMinPrice.value != null) params.min_price = filterMinPrice.value
     if (filterMaxPrice.value != null) params.max_price = filterMaxPrice.value
     if (filterLayout.value) params.layout = filterLayout.value
@@ -518,12 +528,14 @@ async function onRefresh() {
   showToast('刷新成功')
 }
 
-// 扫码/带链接进入：?district=xx&street=xx&village=xx&min_price=1&max_price=2&layout=xx 直接作为已确认的筛选条件
+// 扫码/带链接进入：?district=xx&street=xx&village=a,b&min_price=1&max_price=2&layout=xx 直接作为已确认的筛选条件
 function applyQueryFilter() {
   const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
   filterDistrict.value = pick(route.query.district)
   filterStreet.value = pick(route.query.street)
-  filterVillage.value = pick(route.query.village)
+  // 村/小区为逗号分隔多选（位置二维码链接即此格式），解析成数组
+  const villageQuery = Array.isArray(route.query.village) ? route.query.village.join(',') : pick(route.query.village)
+  filterVillages.value = villageQuery.split(',').map(s => s.trim()).filter(Boolean)
   filterMinPrice.value = toNum(route.query.min_price)
   filterMaxPrice.value = toNum(route.query.max_price)
   filterLayout.value = pick(route.query.layout)
