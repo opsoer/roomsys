@@ -89,6 +89,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.PUT("/buildings/:id/package", buildingH.UpgradePackage)
 		platform.POST("/buildings/:id/renew", buildingH.Renew)
 		platform.GET("/buildings/:id/renewals", buildingH.Renewals)
+		platform.PUT("/buildings/:id/deposit", buildingH.AdjustDeposit)
+		platform.GET("/buildings/:id/deposit-logs", buildingH.DepositLogs)
 
 		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		platform.POST("/auth/create-admin", authH.CreateAdmin)

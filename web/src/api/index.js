@@ -134,6 +134,16 @@ export function adminGetBuildingRenewals(id) {
   return api.get(`/admin/buildings/${id}/renewals`)
 }
 
+// 修改公寓押金 { amount: 变动额（正增负减）, reason: 变动原因（必填） }
+export function adminAdjustDeposit(id, data) {
+  return api.put(`/admin/buildings/${id}/deposit`, data)
+}
+
+// 公寓押金变动流水（每次变动的原因/时间/金额，可溯源）
+export function adminGetDepositLogs(id) {
+  return api.get(`/admin/buildings/${id}/deposit-logs`)
+}
+
 // ===== 位置字典（列表为公开接口，增删改为超管接口） =====
 // 自定义条目与静态改名映射列表
 export function getLocationManage() {

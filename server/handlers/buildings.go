@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -47,13 +48,14 @@ func validateExpiredAt(expiredAt, contractDate string) error {
 type CreateBuildingReq struct {
 	Name         string `json:"name" binding:"required"`
 	Package      string `json:"package"`
-	ContractDate string `json:"contract_date"`
-	ExpiredAt    string `json:"expired_at"`
-	District     string `json:"district"`
-	Street       string `json:"street"`
-	Village      string `json:"village"`
-	BuildingNo   string `json:"building_no"`
-	Description  string `json:"description"`
+	Deposit      float64 `json:"deposit"`
+	ContractDate string  `json:"contract_date"`
+	ExpiredAt    string  `json:"expired_at"`
+	District     string  `json:"district"`
+	Street       string  `json:"street"`
+	Village      string  `json:"village"`
+	BuildingNo   string  `json:"building_no"`
+	Description  string  `json:"description"`
 	Landlords    []struct {
 		Name  string `json:"name"`
 		Phone string `json:"phone"`
@@ -102,9 +104,15 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	if pkg != "basic" && pkg != "full" {
 		pkg = "basic"
 	}
+	if req.Deposit < 0 {
+		utils.Error(c, http.StatusBadRequest, "押金不能为负数")
+		return
+	}
+	initialDeposit := services.RoundAmount(req.Deposit)
 	building := models.Building{
 		Name:         req.Name,
 		Package:      pkg,
+		Deposit:      initialDeposit,
 		ContractDate: req.ContractDate,
 		District:     req.District,
 		Street:       req.Street,
@@ -154,6 +162,11 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	}
 	// 写入入驻记录（入驻日期 → 首次到期日期）
 	h.BuildingService.RecordJoin(building.ID, building.ContractDate, building.ExpiredAt)
+	// 初始押金流水（押金为 0 时不记录）
+	operator := c.GetString("username")
+	if err := h.BuildingService.RecordInitialDeposit(building.ID, initialDeposit, operator, "入驻缴纳押金"); err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("写入初始押金流水失败")
+	}
 	for _, l := range req.Landlords {
 		ll := models.BuildingLandlord{
 			BuildingID: building.ID,
@@ -390,6 +403,7 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 		return
 	}
 	maskLandlordPhones(buildings)
+	hideDeposit(buildings)
 	go utils.RecordPageView(h.DB, "building_list", 0, 0, utils.GetRealIP(c))
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
@@ -401,6 +415,13 @@ func maskLandlordPhones(buildings []services.BuildingWithStats) {
 		for j := range buildings[i].Landlords {
 			buildings[i].Landlords[j].Phone = utils.MaskPhone(buildings[i].Landlords[j].Phone)
 		}
+	}
+}
+
+// hideDeposit 公开端不返回押金：押金是平台与房东之间的履约保障，与租客无关
+func hideDeposit(buildings []services.BuildingWithStats) {
+	for i := range buildings {
+		buildings[i].Deposit = 0
 	}
 }
 
@@ -491,6 +512,7 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 		return
 	}
 	maskLandlordPhones([]services.BuildingWithStats{*building})
+	building.Deposit = 0
 	go utils.RecordPageView(h.DB, "building_detail", uint(buildingID), uint(buildingID), utils.GetRealIP(c))
 	utils.Success(c, gin.H{"building": building})
 }
@@ -788,6 +810,73 @@ func (h *BuildingHandler) Renewals(c *gin.Context) {
 		return
 	}
 	utils.Success(c, gin.H{"records": records})
+}
+
+// AdjustDepositReq 修改公寓押金请求：amount 为变动额（正数增加、负数减少/扣罚），reason 必填
+type AdjustDepositReq struct {
+	Amount float64 `json:"amount"`
+	Reason string  `json:"reason"`
+}
+
+// AdjustDeposit 修改公寓押金（超级管理员）：变动额可正可负，必须填写原因，
+// 服务端事务内更新余额并写入流水，保证每次变动可溯源。
+func (h *BuildingHandler) AdjustDeposit(c *gin.Context) {
+	buildingID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	var req AdjustDepositReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if req.Amount == 0 {
+		utils.Error(c, http.StatusBadRequest, "变动金额不能为0")
+		return
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		utils.Error(c, http.StatusBadRequest, "请填写变动原因")
+		return
+	}
+	operator := c.GetString("username")
+	if operator == "" {
+		if uid, err := utils.GetUserID(c); err == nil {
+			operator = fmt.Sprintf("uid:%d", uid)
+		}
+	}
+	building, err := h.BuildingService.AdjustDeposit(uint(buildingID), req.Amount, req.Reason, operator)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.Error(c, http.StatusNotFound, "公寓不存在")
+			return
+		}
+		logger.Log.Warn().Err(err).Uint("building_id", uint(buildingID)).Msg("修改押金失败")
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logger.Log.Info().Uint("building_id", uint(buildingID)).Float64("amount", req.Amount).Str("operator", operator).Msg("公寓押金已调整")
+	utils.SuccessWithMsg(c, "押金已更新", gin.H{"deposit": building.Deposit})
+}
+
+// DepositLogs 获取公寓押金变动流水（超级管理员）
+func (h *BuildingHandler) DepositLogs(c *gin.Context) {
+	buildingID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	if _, err := h.BuildingService.GetByID(uint(buildingID)); err != nil {
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+	logs, err := h.BuildingService.ListDepositLogs(uint(buildingID))
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", uint(buildingID)).Msg("查询押金流水失败")
+		utils.Error(c, http.StatusInternalServerError, "查询记录失败")
+		return
+	}
+	utils.Success(c, gin.H{"records": logs})
 }
 
 // MyStats 获取当前管理员所属公寓的统计数据

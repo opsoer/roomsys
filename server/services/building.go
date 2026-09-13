@@ -3,6 +3,7 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"rental-server/utils"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BuildingStatusHidden 公寓不可见状态（超级管理员专用管理标记，公开接口不展示）
@@ -187,6 +189,84 @@ func (s *BuildingService) RecordJoin(id uint, contractDate, expiredAt string) er
 		ToDate:     expiredAt,
 		Note:       "入驻签约" + contractDate,
 	}).Error
+}
+
+// RoundAmount 金额按分取整，避免浮点运算产生多位小数
+func RoundAmount(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// RecordInitialDeposit 写入初始押金流水（创建公寓时调用；押金为 0 时不记录）。
+// 建筑记录的 deposit 字段由调用方在创建时一并写入，这里只补流水。
+func (s *BuildingService) RecordInitialDeposit(buildingID uint, deposit float64, operator, note string) error {
+	if deposit <= 0 {
+		return nil
+	}
+	return s.DB.Create(&models.BuildingDepositLog{
+		BuildingID: buildingID,
+		Action:     "create",
+		Amount:     deposit,
+		Before:     0,
+		After:      deposit,
+		Reason:     note,
+		Operator:   operator,
+	}).Error
+}
+
+// AdjustDeposit 调整公寓押金（事务 + 行锁，防止并发调整互相覆盖）。
+// amount 为变动额：正数增加、负数减少（如违规扣罚）；调整后余额不允许为负。
+// 成功时返回更新后的建筑记录。
+func (s *BuildingService) AdjustDeposit(id uint, amount float64, reason, operator string) (*models.Building, error) {
+	amount = RoundAmount(amount)
+	if amount == 0 {
+		return nil, fmt.Errorf("变动金额不能为0")
+	}
+	if strings.TrimSpace(reason) == "" {
+		return nil, fmt.Errorf("请填写变动原因")
+	}
+	var building *models.Building
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var b models.Building
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, id).Error; err != nil {
+			return err
+		}
+		after := RoundAmount(b.Deposit + amount)
+		if after < 0 {
+			return fmt.Errorf("调整后押金余额不能为负数（当前余额 %.2f）", b.Deposit)
+		}
+		if err := tx.Model(&models.Building{}).Where("id = ?", id).Update("deposit", after).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&models.BuildingDepositLog{
+			BuildingID: id,
+			Action:     "adjust",
+			Amount:     amount,
+			Before:     b.Deposit,
+			After:      after,
+			Reason:     strings.TrimSpace(reason),
+			Operator:   operator,
+		}).Error; err != nil {
+			return err
+		}
+		b.Deposit = after
+		building = &b
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return building, nil
+}
+
+// ListDepositLogs 查询公寓押金变动流水（倒序）
+func (s *BuildingService) ListDepositLogs(id uint) ([]models.BuildingDepositLog, error) {
+	var logs []models.BuildingDepositLog
+	if err := s.DB.Where("building_id = ?", id).
+		Order("created_at DESC, id DESC").
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	return logs, nil
 }
 
 // GetWithStats 获取楼栋详情及统计数据（房间数、空置数等）
@@ -482,6 +562,9 @@ func (s *BuildingService) Delete(id uint) error {
 			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.BuildingRenewal{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.BuildingDepositLog{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Bill{}).Error; err != nil {

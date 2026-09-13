@@ -16,7 +16,7 @@
     <AdminBuildingList ref="listRef" :buildings="buildings" :loading="loading"
       @search="fetchBuildings" @edit="handleEdit" @upgrade="handleUpgrade"
       @copy-home-link="copyHomeLink" @download-qr="downloadQr" @create-admin="handleCreateAdmin" @delete="handleDelete"
-      @toggle-visibility="handleToggleVisibility" @renew="handleRenew" @history="handleHistory" />
+      @toggle-visibility="handleToggleVisibility" @renew="handleRenew" @history="handleHistory" @deposit="handleDeposit" />
 
     <div v-if="loadingMore" style="text-align: center; padding: 16px; color: #999">
       <el-icon class="is-loading"><Loading /></el-icon> 加载中...
@@ -169,6 +169,10 @@ function handleRenew(row) {
 
 function handleHistory(row) {
   dialogsRef.value?.openHistory(row)
+}
+
+function handleDeposit(row) {
+  dialogsRef.value?.openDeposit(row)
 }
 
 function handleCreateAdmin(row) {

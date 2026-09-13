@@ -54,6 +54,10 @@
             <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="押金（元）" prop="deposit" :rules="[{ validator: validateDeposit }]">
+          <el-input-number v-model="createForm.deposit" :min="0" :precision="2" :step="1000" :controls="false" placeholder="公寓入驻平台缴纳的押金" style="width:100%" />
+          <div style="font-size:12px;color:#999;line-height:1.6;">公寓入驻时缴纳的押金；后续可在卡片「修改押金」中增减（每次需填写原因并留痕）</div>
+        </el-form-item>
         <el-form-item label="简介" prop="description">
           <el-input v-model="createForm.description" type="textarea" :rows="3" />
         </el-form-item>
@@ -242,6 +246,57 @@
       </div>
     </el-dialog>
 
+    <!-- 修改押金弹窗（含押金变动记录时间线）；destroy-on-close 保证每次打开表单与校验状态全新 -->
+    <el-dialog v-model="showDeposit" title="修改公寓押金" width="560px" destroy-on-close>
+      <p style="margin-bottom: 12px; color: #666;">
+        「{{ depositBuildingName }}」当前押金：
+        <b style="color:#e6a23c; font-size:16px;">¥{{ formatMoney(depositCurrent) }}</b>
+      </p>
+      <el-form ref="depositFormRef" :model="depositForm" label-width="80px">
+        <el-form-item label="变动金额" prop="amount" :rules="[{ validator: validateDepositAmount }]">
+          <el-input-number v-model="depositForm.amount" :precision="2" :step="500" :controls="false" placeholder="正数为增加，负数为减少" style="width:100%" />
+          <div style="font-size:12px;color:#999;line-height:1.6;">
+            正数增加（如补缴），负数减少（如不及时更新房源、虚假信息、违规扣罚）；调整后余额不能为负
+          </div>
+          <div v-if="depositForm.amount" style="font-size:13px;margin-top:4px;">
+            调整后余额：<b :style="depositAfter < 0 ? 'color:#f56c6c;' : 'color:#67c23a;'">¥{{ formatMoney(depositAfter) }}</b>
+            <span v-if="depositAfter < 0" style="color:#f56c6c;">（余额不足，不能为负）</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="变动原因" prop="reason" :rules="[{required:true,message:'请填写变动原因'}]">
+          <el-input v-model="depositForm.reason" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="必填，如：长期未更新房源信息，扣除违约金 500 元" />
+        </el-form-item>
+      </el-form>
+      <el-divider content-position="left">押金变动记录</el-divider>
+      <div v-loading="depositLogsLoading" class="deposit-logs">
+        <el-timeline v-if="depositLogs.length > 0" style="padding-left: 4px;">
+          <el-timeline-item
+            v-for="log in depositLogs"
+            :key="log.id"
+            :timestamp="formatTime(log.created_at)"
+            :type="log.action === 'create' ? 'primary' : (log.amount >= 0 ? 'success' : 'danger')"
+            placement="top"
+          >
+            <div class="deposit-log-line">
+              <el-tag :type="log.action === 'create' ? 'primary' : (log.amount >= 0 ? 'success' : 'danger')" size="small" effect="dark">
+                {{ log.action === 'create' ? '初始押金' : (log.amount >= 0 ? '+' : '') + formatMoney(log.amount) }}
+              </el-tag>
+              <span class="deposit-log-balance">{{ formatMoney(log.before) }} → <b>{{ formatMoney(log.after) }}</b></span>
+            </div>
+            <div class="deposit-log-reason">原因：{{ log.reason }}</div>
+            <div class="deposit-log-operator">操作人：{{ log.operator || '系统' }}</div>
+          </el-timeline-item>
+        </el-timeline>
+        <div v-else-if="!depositLogsLoading" class="empty-text">暂无押金变动记录</div>
+      </div>
+      <template #footer>
+        <el-button @click="showDeposit = false">关闭</el-button>
+        <el-button type="primary" :loading="depositSubmitting" :disabled="!depositForm.amount || !depositForm.reason.trim() || depositAfter < 0" @click="handleDepositAdjust">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 创建管理员弹窗 -->
     <el-dialog v-model="showCreateAdmin" title="创建公寓管理员" width="400px">
       <p style="margin-bottom: 16px; color: #666;">为「{{ selectedBuildingName }}」创建管理员账号</p>
@@ -265,7 +320,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
-import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage, adminRenewBuilding, adminGetBuildingRenewals } from '../../api'
+import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage, adminRenewBuilding, adminGetBuildingRenewals, adminAdjustDeposit, adminGetDepositLogs } from '../../api'
 import { useLocationStore } from '../../stores/locations'
 
 const emit = defineEmits(['save-success'])
@@ -295,13 +350,22 @@ const historyBuildingName = ref('')
 const historyBuildingExpiredAt = ref('')
 const records = ref([])
 const historyLoading = ref(false)
+const showDeposit = ref(false)
+const depositBuildingId = ref(0)
+const depositBuildingName = ref('')
+const depositCurrent = ref(0)
+const depositFormRef = ref(null)
+const depositForm = ref({ amount: null, reason: '' })
+const depositSubmitting = ref(false)
+const depositLogs = ref([])
+const depositLogsLoading = ref(false)
 const selectedBuildingName = ref('')
 const selectedBuildingId = ref(0)
 const adminSubmitting = ref(false)
 const createFormRef = ref(null)
 
 const createForm = ref({
-  name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
+  name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
   landlord_name: '', landlord_phones: [''],
   admin_username: '', admin_password: '',
 })
@@ -340,7 +404,7 @@ function buildLandlords(name, phones) {
 }
 
 function openCreate() {
-  createForm.value = { name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
+  createForm.value = { name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
   showCreate.value = true
 }
 
@@ -389,6 +453,75 @@ const validateEditExpiredAt = expiredAtValidator(() => editForm.value.contract_d
 function onCreateContractDateChange(val) {
   if (val && !createForm.value.expired_at) {
     createForm.value.expired_at = dayjs(val).add(1, 'year').format('YYYY-MM-DD')
+  }
+}
+
+// 押金校验：未填写按 0 处理，不允许为负
+function validateDeposit(rule, value, callback) {
+  if (value == null || value === '') return callback()
+  if (value < 0) return callback(new Error('押金不能为负数'))
+  callback()
+}
+
+function formatMoney(v) {
+  return (Number(v) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// 调整后余额预览（变动额 + 当前押金）
+const depositAfter = computed(() => {
+  if (depositForm.value.amount == null || depositForm.value.amount === '') return depositCurrent.value
+  return Math.round((depositCurrent.value + depositForm.value.amount) * 100) / 100
+})
+
+// 变动金额校验：必填且不为 0
+function validateDepositAmount(rule, value, callback) {
+  if (value == null || value === '') return callback(new Error('请输入变动金额'))
+  if (value === 0) return callback(new Error('变动金额不能为0'))
+  callback()
+}
+
+function openDeposit(row) {
+  depositBuildingId.value = row.id
+  depositBuildingName.value = row.name
+  depositCurrent.value = Number(row.deposit) || 0
+  depositForm.value = { amount: null, reason: '' }
+  depositLogs.value = []
+  showDeposit.value = true
+  loadDepositLogs(row.id)
+}
+
+async function loadDepositLogs(buildingId) {
+  depositLogsLoading.value = true
+  try {
+    const r = await adminGetDepositLogs(buildingId)
+    depositLogs.value = r.data.records || []
+  } catch {
+    ElMessage.error('获取押金变动记录失败')
+  } finally {
+    depositLogsLoading.value = false
+  }
+}
+
+async function handleDepositAdjust() {
+  const valid = await depositFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  if (depositAfter.value < 0) {
+    ElMessage.warning('调整后余额不能为负数')
+    return
+  }
+  depositSubmitting.value = true
+  try {
+    await adminAdjustDeposit(depositBuildingId.value, {
+      amount: depositForm.value.amount,
+      reason: depositForm.value.reason.trim(),
+    })
+    ElMessage.success('押金已更新')
+    showDeposit.value = false
+    emit('save-success')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '修改押金失败')
+  } finally {
+    depositSubmitting.value = false
   }
 }
 
@@ -554,7 +687,7 @@ async function handleCreateAdmin() {
   }
 }
 
-defineExpose({ openCreate, openEdit, openUpgrade, openRenew, openHistory, openCreateAdmin })
+defineExpose({ openCreate, openEdit, openUpgrade, openRenew, openHistory, openCreateAdmin, openDeposit })
 </script>
 
 <style scoped>
@@ -587,6 +720,30 @@ defineExpose({ openCreate, openEdit, openUpgrade, openRenew, openHistory, openCr
   padding: 24px 0;
   color: #999;
   font-size: 13px;
+}
+.deposit-logs {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.deposit-log-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.deposit-log-balance {
+  font-size: 13px;
+  color: #555;
+}
+.deposit-log-reason {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+.deposit-log-operator {
+  font-size: 12px;
+  color: #999;
 }
 @media (max-width: 768px) {
   .desktop-table { display: none; }

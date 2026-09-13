@@ -29,6 +29,7 @@ type Building struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Name         string         `gorm:"size:100;not null" json:"name"`
 	Package      string         `gorm:"size:20;not null;default:'basic'" json:"package"`
+	Deposit      float64        `gorm:"type:decimal(12,2);default:0" json:"deposit"`
 	ContractDate string         `gorm:"size:10" json:"contract_date"`
 	ExpiredAt    string         `gorm:"size:10" json:"expired_at"`
 	District     string         `gorm:"size:50" json:"district"`
@@ -262,6 +263,23 @@ type BuildingRenewal struct {
 	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// BuildingDepositLog 公寓押金变动流水，每条记录自成链上一环：
+// create=创建公寓时的初始押金，adjust=平台调整（amount 正为增加、负为减少/扣罚）。
+// before/after 记录变动前后余额，配合 reason（必填）与 operator 可完整溯源每一次变动。
+type BuildingDepositLog struct {
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	BuildingID uint           `gorm:"index;not null" json:"building_id"`
+	Action     string         `gorm:"size:20;not null" json:"action"`
+	Amount     float64        `gorm:"type:decimal(12,2);not null" json:"amount"`
+	Before     float64        `gorm:"type:decimal(12,2)" json:"before"`
+	After      float64        `gorm:"type:decimal(12,2)" json:"after"`
+	Reason     string         `gorm:"size:200;not null" json:"reason"`
+	Operator   string         `gorm:"size:50" json:"operator"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
 // LocationCustom 超级管理员在静态官方区划之外自定义的位置条目。
 // Level: 1=区域(District 生效) 2=街道(District+Street) 3=村/小区(District+Street+Name)。
 // Street 仅在 Level=2/3 时有意义；Level=1 时 District==Name。
@@ -297,6 +315,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&Building{},
 		&BuildingLandlord{},
 		&BuildingRenewal{},
+		&BuildingDepositLog{},
 		&Room{},
 		&RoomMedia{},
 		&Tenant{},
@@ -320,8 +339,8 @@ func CleanupSoftDeleted(db *gorm.DB, days int) error {
 	tables := []interface{}{
 		&User{}, &Building{}, &Room{}, &RoomMedia{},
 		&Tenant{}, &RentalContract{}, &Bill{},
-		&Shareholder{}, &Dividend{}, &Task{},
-		&BuildingRenewal{},
+			&Shareholder{}, &Dividend{}, &Task{},
+			&BuildingRenewal{}, &BuildingDepositLog{},
 	}
 	for _, table := range tables {
 		db.Unscoped().Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).Delete(table)

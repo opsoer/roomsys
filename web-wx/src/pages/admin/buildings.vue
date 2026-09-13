@@ -32,6 +32,7 @@
             <text v-if="b.landlords?.length">👤 {{ b.landlords.map(l => l.name + ' ' + l.phone).join(' / ') }}</text>
             <text>🚪 {{ b.room_count }} 间<text v-if="b.vacant_count > 0" class="vacant-hint"> 可租 {{ b.vacant_count }}</text></text>
             <text v-if="b.contract_date">📅 {{ b.contract_date }} → {{ b.expired_at || '未设置' }}</text>
+            <text :class="b.deposit > 0 ? 'deposit-val' : 'deposit-none'">💰 押金 {{ b.deposit > 0 ? '¥' + Number(b.deposit).toFixed(2) : '未缴纳' }}</text>
           </view>
           <view class="card-actions">
             <button class="act-btn" @click="handleEdit(b)">编辑</button>
@@ -282,6 +283,8 @@ onMounted(() => {
 .pkg-full { background: #409eff; }
 .pkg-basic { background: #909399; }
 .card-info { font-size: 13px; color: #555; line-height: 1.8; }
+.deposit-val { color: #e6a23c; font-weight: 500; }
+.deposit-none { color: #bbb; }
 .vacant-hint { color: #67c23a; font-weight: 500; }
 .card-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .act-btn { font-size: 12px; padding: 4px 12px; border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #333; }

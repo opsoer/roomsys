@@ -70,6 +70,10 @@
                 <span style="color:#999;">📅</span>
                 签约 {{ b.contract_date }} → {{ b.expired_at || '未设置' }}
               </div>
+              <div>
+                <span style="color:#999;">💰</span>
+                押金 <span :style="b.deposit > 0 ? 'color:#e6a23c;font-weight:600;' : 'color:#999;'">{{ formatDeposit(b.deposit) }}</span>
+              </div>
             </div>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;">
@@ -77,6 +81,7 @@
             <el-button size="small" @click="$emit('upgrade', b)">修改套餐</el-button>
             <el-button size="small" :type="b.status === 'hidden' || b.status === 'expired' ? 'primary' : 'default'" @click="$emit('renew', b)">续约</el-button>
             <el-button size="small" @click="$emit('history', b)">租约记录</el-button>
+            <el-button size="small" type="warning" plain @click="$emit('deposit', b)">修改押金</el-button>
             <el-button size="small" @click="$emit('copy-home-link', b)">复制主页链接</el-button>
             <el-button size="small" @click="$emit('download-qr', b)">下载二维码</el-button>
             <el-button size="small" @click="$emit('create-admin', b)">创建管理员</el-button>
@@ -108,10 +113,16 @@ defineProps({
   loading: { type: Boolean, default: false },
 })
 
-defineEmits(['search', 'edit', 'upgrade', 'copy-home-link', 'download-qr', 'create-admin', 'delete', 'toggle-visibility', 'renew', 'history'])
+defineEmits(['search', 'edit', 'upgrade', 'copy-home-link', 'download-qr', 'create-admin', 'delete', 'toggle-visibility', 'renew', 'history', 'deposit'])
 
 const filterStatus = ref('')
 const keyword = ref('')
+
+// 押金展示：有押金显示金额，未缴纳时明示
+function formatDeposit(v) {
+  const n = Number(v) || 0
+  return n > 0 ? `¥${n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '未缴纳'
+}
 
 function getFilter() {
   return { status: filterStatus.value, keyword: keyword.value }
