@@ -29,11 +29,26 @@ type BuildingHandler struct {
 // defaultContractDurationYears 合同默认期限为 1 年
 const defaultContractDurationYears = 1
 
+// validateExpiredAt 校验自定义到期日期：格式 YYYY-MM-DD，且晚于签约日期
+func validateExpiredAt(expiredAt, contractDate string) error {
+	expired, err := time.Parse("2006-01-02", expiredAt)
+	if err != nil {
+		return fmt.Errorf("到期日期格式错误，请使用 YYYY-MM-DD")
+	}
+	if contractDate != "" {
+		if cd, err := time.Parse("2006-01-02", contractDate); err == nil && !cd.Before(expired) {
+			return fmt.Errorf("到期日期必须晚于签约日期")
+		}
+	}
+	return nil
+}
+
 // CreateBuildingReq 创建公寓请求参数
 type CreateBuildingReq struct {
 	Name         string `json:"name" binding:"required"`
 	Package      string `json:"package"`
 	ContractDate string `json:"contract_date"`
+	ExpiredAt    string `json:"expired_at"`
 	District     string `json:"district"`
 	Street       string `json:"street"`
 	Village      string `json:"village"`
@@ -50,6 +65,7 @@ type UpdateBuildingReq struct {
 	Name         string `json:"name"`
 	Package      string `json:"package"`
 	ContractDate string `json:"contract_date"`
+	ExpiredAt    string `json:"expired_at"`
 	District     string `json:"district"`
 	Street       string `json:"street"`
 	Village      string `json:"village"`
@@ -98,7 +114,14 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		Status:       "active",
 		CreatedBy:    uid,
 	}
-	if req.ContractDate != "" {
+	// 到期日期：优先使用填写值，未填写时按签约日期 + 默认期限（1 年）计算
+	if req.ExpiredAt != "" {
+		if err := validateExpiredAt(req.ExpiredAt, req.ContractDate); err != nil {
+			utils.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		building.ExpiredAt = req.ExpiredAt
+	} else if req.ContractDate != "" {
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
 			building.ExpiredAt = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}
@@ -178,6 +201,20 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 	if req.ContractDate != "" {
 		updates["contract_date"] = req.ContractDate
+	}
+	if req.ExpiredAt != "" {
+		// 到期日期以填写值为准；签约日期取请求值，请求未带时与库中原值比较
+		contractDate := req.ContractDate
+		if contractDate == "" {
+			contractDate = building.ContractDate
+		}
+		if err := validateExpiredAt(req.ExpiredAt, contractDate); err != nil {
+			utils.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		updates["expired_at"] = req.ExpiredAt
+	} else if req.ContractDate != "" {
+		// 未填写到期日期时保持旧行为：按签约日期 + 默认期限重算
 		if cd, err := time.Parse("2006-01-02", req.ContractDate); err == nil {
 			updates["expired_at"] = cd.AddDate(defaultContractDurationYears, 0, 0).Format("2006-01-02")
 		}

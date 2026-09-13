@@ -6,9 +6,18 @@
         <el-form-item label="公寓名称" prop="name" :rules="[{required:true,message:'请输入'}]">
           <el-input v-model="createForm.name" />
         </el-form-item>
-        <el-form-item label="签约日期" prop="contract_date" :rules="[{required:true,message:'请选择签约日期'}]">
-          <el-date-picker v-model="createForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="签约日期" prop="contract_date" :rules="[{required:true,message:'请选择签约日期'}]">
+              <el-date-picker v-model="createForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" @change="onCreateContractDateChange" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="到期日期" prop="expired_at" :rules="[{ validator: validateCreateExpiredAt }]">
+              <el-date-picker v-model="createForm.expired_at" type="date" placeholder="选择到期日期" :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="区域" prop="district" :rules="[{required:true,message:'请选择区域'}]">
@@ -77,9 +86,18 @@
         <el-form-item label="公寓名称" prop="name">
           <el-input v-model="editForm.name" />
         </el-form-item>
-        <el-form-item label="签约日期" prop="contract_date">
-          <el-date-picker v-model="editForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="签约日期" prop="contract_date">
+              <el-date-picker v-model="editForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="到期日期" prop="expired_at" :rules="[{ validator: validateEditExpiredAt }]">
+              <el-date-picker v-model="editForm.expired_at" type="date" placeholder="选择到期日期" :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="区域" prop="district">
@@ -283,11 +301,11 @@ const adminSubmitting = ref(false)
 const createFormRef = ref(null)
 
 const createForm = ref({
-  name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '',
+  name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
   landlord_name: '', landlord_phones: [''],
   admin_username: '', admin_password: '',
 })
-const editForm = ref({ name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
+const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
 const adminForm = ref({ username: '', password: '' })
 
 function findStreet(district) {
@@ -322,7 +340,7 @@ function buildLandlords(name, phones) {
 }
 
 function openCreate() {
-  createForm.value = { name: '', package: 'basic', contract_date: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
+  createForm.value = { name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
   showCreate.value = true
 }
 
@@ -332,6 +350,7 @@ function openEdit(row) {
   const phones = landlords.map(l => l.phone)
   editForm.value = {
     id: row.id, name: row.name, package: row.package || 'basic', contract_date: row.contract_date || '',
+    expired_at: row.expired_at || '',
     district: row.district, street: row.street,
     village: row.village, building_no: row.building_no, description: row.description,
     status: row.status,
@@ -350,6 +369,27 @@ function openUpgrade(row) {
 
 function disablePastDate(date) {
   return dayjs(date).isBefore(dayjs().startOf('day'))
+}
+
+// 到期日期校验：必填，且晚于签约日期（与房间出租的结束日期规则一致）
+function expiredAtValidator(getContractDate) {
+  return (rule, value, callback) => {
+    if (!value) return callback(new Error('请选择到期日期'))
+    const contractDate = getContractDate()
+    if (contractDate && value <= contractDate) {
+      return callback(new Error('到期日期必须晚于签约日期'))
+    }
+    callback()
+  }
+}
+const validateCreateExpiredAt = expiredAtValidator(() => createForm.value.contract_date)
+const validateEditExpiredAt = expiredAtValidator(() => editForm.value.contract_date)
+
+// 签约日期变更时，若尚未填写到期日期则按 1 年预填（可手动修改）
+function onCreateContractDateChange(val) {
+  if (val && !createForm.value.expired_at) {
+    createForm.value.expired_at = dayjs(val).add(1, 'year').format('YYYY-MM-DD')
+  }
 }
 
 function openRenew(row) {
