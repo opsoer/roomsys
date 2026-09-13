@@ -64,6 +64,18 @@ type UpdateRoomReq struct {
 	WaterUnitPrice       *float64 `json:"water_unit_price"`
 }
 
+// BatchUpdatePricingReq 批量调整房间价格请求参数（价格字段均为填写才生效）：
+//   - RentDelta 租金增减额（正加负减），在现有租金基础上调整，结果不小于0；
+//   - DepositMonths/ManagementFee/ElectricityUnitPrice/WaterUnitPrice 为统一设置（覆盖原值）。
+type BatchUpdatePricingReq struct {
+	RoomIDs              []uint   `json:"room_ids" binding:"required"`
+	RentDelta            *float64 `json:"rent_delta"`
+	DepositMonths        *uint    `json:"deposit_months"`
+	ManagementFee        *float64 `json:"management_fee"`
+	ElectricityUnitPrice *float64 `json:"electricity_unit_price"`
+	WaterUnitPrice       *float64 `json:"water_unit_price"`
+}
+
 // UpdateRoomStatusReq 更新房间状态请求参数（出租/退租/预订/取消预订）
 type UpdateRoomStatusReq struct {
 	Status          string   `json:"status" binding:"required"`
@@ -544,6 +556,87 @@ func (h *RoomHandler) Update(c *gin.Context) {
 }
 
 // Delete 删除房间
+// BatchUpdatePricing 批量调整房间价格：租金统一增减、押金按月数、管理费/电费/水费单价统一设置。
+// 仅限本公寓的房间（防止越权），只调整房源挂牌价，不影响已出租房间的现有合同。
+func (h *RoomHandler) BatchUpdatePricing(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+
+	var req BatchUpdatePricingReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	// 房间ID去重去零，避免重复ID误判越权
+	ids := make([]uint, 0, len(req.RoomIDs))
+	seen := map[uint]bool{}
+	for _, id := range req.RoomIDs {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		utils.Error(c, http.StatusBadRequest, "请先选择要调整的房间")
+		return
+	}
+	if req.RentDelta == nil && req.DepositMonths == nil && req.ManagementFee == nil &&
+		req.ElectricityUnitPrice == nil && req.WaterUnitPrice == nil {
+		utils.Error(c, http.StatusBadRequest, "请至少填写一项调整内容")
+		return
+	}
+	if req.DepositMonths != nil && *req.DepositMonths > 3 {
+		utils.Error(c, http.StatusBadRequest, "押金月数范围为0~3")
+		return
+	}
+	for _, fee := range []*float64{req.ManagementFee, req.ElectricityUnitPrice, req.WaterUnitPrice} {
+		if fee != nil && *fee < 0 {
+			utils.Error(c, http.StatusBadRequest, "费用单价不能为负数")
+			return
+		}
+	}
+
+	// 先校验全部房间都属于本公寓，有任何越权ID则整体拒绝
+	var owned int64
+	h.DB.Model(&models.Room{}).
+		Where("id IN ? AND building_id = ? AND deleted_at IS NULL", ids, bid).
+		Count(&owned)
+	if owned != int64(len(ids)) {
+		utils.Error(c, http.StatusForbidden, "包含不属于本公寓的房间，请刷新后重试")
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.RentDelta != nil {
+		updates["rent_price"] = gorm.Expr("GREATEST(ROUND(COALESCE(rent_price, 0) + ?, 2), 0)", *req.RentDelta)
+	}
+	if req.DepositMonths != nil {
+		updates["deposit_months"] = *req.DepositMonths
+	}
+	if req.ManagementFee != nil {
+		updates["management_fee"] = *req.ManagementFee
+	}
+	if req.ElectricityUnitPrice != nil {
+		updates["electricity_unit_price"] = *req.ElectricityUnitPrice
+	}
+	if req.WaterUnitPrice != nil {
+		updates["water_unit_price"] = *req.WaterUnitPrice
+	}
+
+	result := h.DB.Model(&models.Room{}).
+		Where("id IN ? AND building_id = ? AND deleted_at IS NULL", ids, bid).
+		Updates(updates)
+	if result.Error != nil {
+		logger.Log.Error().Err(result.Error).Uint("building_id", bid).Msg("批量调整房间价格失败")
+		utils.Error(c, http.StatusInternalServerError, "批量调整失败")
+		return
+	}
+	utils.Success(c, gin.H{"updated": result.RowsAffected})
+}
+
 func (h *RoomHandler) Delete(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)

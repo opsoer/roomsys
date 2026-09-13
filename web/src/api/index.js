@@ -213,6 +213,10 @@ export function buildingImportRentedRooms(data, config) {
   return api.post('/building/rooms/import-rented', data, config)
 }
 
+export function buildingBatchUpdatePricing(data) {
+  return api.post('/building/rooms/batch-pricing', data)
+}
+
 export function buildingGetRoom(id) {
   return api.get(`/building/rooms/${id}`)
 }

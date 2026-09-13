@@ -27,6 +27,9 @@
         <el-button type="warning" @click="openImportDialog">
           <el-icon><DocumentAdd /></el-icon> 导入在租房间
         </el-button>
+        <el-button type="danger" :plain="!selectMode" @click="selectMode ? exitSelectMode() : enterSelectMode()">
+          <el-icon><SetUp /></el-icon> {{ selectMode ? '退出选择' : '批量调价' }}
+        </el-button>
       </div>
     </div>
 
@@ -50,7 +53,10 @@
     </div>
 
     <div v-else class="room-grid">
-      <div v-for="room in rooms" :key="room.id" class="room-card" @click="$router.push(`/landlord/rooms/${room.id}`)">
+      <div v-for="room in rooms" :key="room.id" class="room-card" :class="{ selectable: selectMode, selected: selectMode && selectedIds.includes(room.id) }" @click="onCardClick(room)">
+        <div v-if="selectMode" class="room-card-check" @click.stop="toggleSelect(room.id)">
+          <span class="check-box" :class="{ checked: selectedIds.includes(room.id) }"></span>
+        </div>
         <div class="room-card-image">
             <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
           <div v-else class="room-card-placeholder">
@@ -220,6 +226,91 @@
       </template>
     </el-dialog>
 
+    <!-- 批量选择底部操作栏 -->
+    <div v-if="selectMode" class="select-bar">
+      <el-checkbox :model-value="isAllSelected" :indeterminate="selectedIds.length > 0 && !isAllSelected" @change="toggleSelectAll">
+        全选
+      </el-checkbox>
+      <span class="select-count">已选 {{ selectedIds.length }} 间</span>
+      <div class="select-bar-actions">
+        <el-button @click="exitSelectMode">取消</el-button>
+        <el-button type="primary" :disabled="selectedIds.length === 0" @click="openBatchPricing">
+          调整所选价格{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
+        </el-button>
+      </div>
+    </div>
+
+    <el-dialog v-model="showBatchPricing" title="批量调价" width="480px" :close-on-click-modal="false">
+      <div class="batch-pricing-tip">
+        将对已选的 <strong>{{ selectedIds.length }}</strong> 间房统一调整；只改房源挂牌价，
+        已出租房间的现有合同租金不受影响。只填写需要调整的项目，其余保持「不调整」。
+      </div>
+      <el-form label-width="90px">
+        <el-form-item label="租金">
+          <el-radio-group v-model="batchPricing.rentMode">
+            <el-radio value="none">不调整</el-radio>
+            <el-radio value="adjust">统一加减</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="batchPricing.rentMode === 'adjust'" label="调整金额">
+          <div class="rent-adjust-row">
+            <el-select v-model="batchPricing.rentOp" style="width: 90px">
+              <el-option value="add" label="加价" />
+              <el-option value="sub" label="减价" />
+            </el-select>
+            <el-input v-model="batchPricing.rentAmount" type="number" step="0.01" min="0" placeholder="金额" style="flex: 1" />
+            <span class="unit">元/月</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="押金比例">
+          <el-radio-group v-model="batchPricing.depositMode">
+            <el-radio value="none">不调整</el-radio>
+            <el-radio value="set">统一设置</el-radio>
+          </el-radio-group>
+          <el-select v-if="batchPricing.depositMode === 'set'" v-model="batchPricing.depositMonths" style="width: 100%; margin-top: 8px">
+            <el-option :value="0" label="无押金" />
+            <el-option :value="1" label="押一（1个月租金）" />
+            <el-option :value="2" label="押二（2个月租金）" />
+            <el-option :value="3" label="押三（3个月租金）" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="管理费">
+          <el-radio-group v-model="batchPricing.mgmtMode">
+            <el-radio value="none">不调整</el-radio>
+            <el-radio value="set">统一设置</el-radio>
+          </el-radio-group>
+          <div v-if="batchPricing.mgmtMode === 'set'" class="fee-set-row">
+            <el-input v-model="batchPricing.mgmtFee" type="number" step="0.01" min="0" placeholder="金额" style="flex: 1" />
+            <span class="unit">元/月</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="电费单价">
+          <el-radio-group v-model="batchPricing.elecMode">
+            <el-radio value="none">不调整</el-radio>
+            <el-radio value="set">统一设置</el-radio>
+          </el-radio-group>
+          <div v-if="batchPricing.elecMode === 'set'" class="fee-set-row">
+            <el-input v-model="batchPricing.elecFee" type="number" step="0.01" min="0" placeholder="单价" style="flex: 1" />
+            <span class="unit">元/度</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="水费单价">
+          <el-radio-group v-model="batchPricing.waterMode">
+            <el-radio value="none">不调整</el-radio>
+            <el-radio value="set">统一设置</el-radio>
+          </el-radio-group>
+          <div v-if="batchPricing.waterMode === 'set'" class="fee-set-row">
+            <el-input v-model="batchPricing.waterFee" type="number" step="0.01" min="0" placeholder="单价" style="flex: 1" />
+            <span class="unit">元/吨</span>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBatchPricing = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleBatchPricing">确定调整</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="showImportDialog" title="导入在租房间" width="1080px" top="5vh">
       <div class="copy-create-tip">
         适用于接管已有租客的公寓：一次创建多个房间并直接录入租客与租约。系统会自动建立生效合同、
@@ -359,11 +450,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { buildingGetRooms, buildingCreateRoom, buildingGetRoom, buildingImportRentedRooms } from '../api'
+import { useRouter } from 'vue-router'
+import { buildingGetRooms, buildingCreateRoom, buildingGetRoom, buildingImportRentedRooms, buildingBatchUpdatePricing } from '../api'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, DocumentAdd } from '@element-plus/icons-vue'
+import { CopyDocument, DocumentAdd, SetUp } from '@element-plus/icons-vue'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 import { mediaUrl, statusLabel } from '../utils/format'
+
+const router = useRouter()
 
 const floorOptions = FLOOR_OPTIONS
 const layoutOptions = LAYOUT_OPTIONS
@@ -435,6 +529,114 @@ const importBaseForm = ref(blankImportBaseForm())
 const importNumbersText = ref('')
 const importRows = ref([])
 const importRecordDepositBill = ref(false)
+
+// 批量调价：勾选房间后统一调整租金/押金比例/管理费/水电单价
+const selectMode = ref(false)
+const selectedIds = ref([])
+const showBatchPricing = ref(false)
+const batchPricing = ref(blankBatchPricing())
+
+function blankBatchPricing() {
+  return {
+    rentMode: 'none', rentOp: 'add', rentAmount: '',
+    depositMode: 'none', depositMonths: 1,
+    mgmtMode: 'none', mgmtFee: '',
+    elecMode: 'none', elecFee: '',
+    waterMode: 'none', waterFee: '',
+  }
+}
+
+function enterSelectMode() {
+  selectMode.value = true
+  selectedIds.value = []
+}
+
+function exitSelectMode() {
+  selectMode.value = false
+  selectedIds.value = []
+  showBatchPricing.value = false
+}
+
+// 选择模式下点卡片切换勾选，不进入房间详情
+function onCardClick(room) {
+  if (selectMode.value) toggleSelect(room.id)
+  else router.push(`/landlord/rooms/${room.id}`)
+}
+
+function toggleSelect(id) {
+  const idx = selectedIds.value.indexOf(id)
+  if (idx >= 0) selectedIds.value.splice(idx, 1)
+  else selectedIds.value.push(id)
+}
+
+const isAllSelected = computed(() => rooms.value.length > 0 && rooms.value.every(r => selectedIds.value.includes(r.id)))
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = rooms.value.map(r => r.id)
+  }
+}
+
+function openBatchPricing() {
+  if (selectedIds.value.length === 0) return
+  batchPricing.value = blankBatchPricing()
+  showBatchPricing.value = true
+}
+
+// 组装并提交批量调价：只带上用户明确要调整的字段
+async function handleBatchPricing() {
+  const bp = batchPricing.value
+  const payload = { room_ids: selectedIds.value }
+  if (bp.rentMode === 'adjust') {
+    const amt = Number(bp.rentAmount)
+    if (!(amt > 0)) {
+      ElMessage.warning('请填写租金调整金额')
+      return
+    }
+    payload.rent_delta = bp.rentOp === 'add' ? amt : -amt
+  }
+  if (bp.depositMode === 'set') payload.deposit_months = bp.depositMonths
+  if (bp.mgmtMode === 'set') {
+    if (bp.mgmtFee === '' || Number(bp.mgmtFee) < 0) {
+      ElMessage.warning('请填写管理费金额')
+      return
+    }
+    payload.management_fee = Number(bp.mgmtFee)
+  }
+  if (bp.elecMode === 'set') {
+    if (bp.elecFee === '' || Number(bp.elecFee) < 0) {
+      ElMessage.warning('请填写电费单价')
+      return
+    }
+    payload.electricity_unit_price = Number(bp.elecFee)
+  }
+  if (bp.waterMode === 'set') {
+    if (bp.waterFee === '' || Number(bp.waterFee) < 0) {
+      ElMessage.warning('请填写水费单价')
+      return
+    }
+    payload.water_unit_price = Number(bp.waterFee)
+  }
+  if (Object.keys(payload).length === 1) {
+    ElMessage.warning('请至少选择一项调整内容')
+    return
+  }
+  submitting.value = true
+  try {
+    const res = await buildingBatchUpdatePricing(payload)
+    const updated = res?.data?.updated ?? payload.room_ids.length
+    ElMessage.success(`已调整 ${updated} 间房的价格`)
+    showBatchPricing.value = false
+    exitSelectMode()
+    await fetchRooms()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.response?.data?.error || '批量调价失败')
+  } finally {
+    submitting.value = false
+  }
+}
 
 function blankImportBaseForm() {
   return { floor: '', layout: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null, description: '' }
@@ -903,8 +1105,21 @@ onBeforeUnmount(() => {
 .empty-wrap { padding: 60px 0; }
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(270px,1fr)); gap: 24px; }
 .load-more-sentinel { grid-column: 1 / -1; height: 10px; }
-.room-card { background: #fff; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.35s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.room-card { background: #fff; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.35s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 2px 12px rgba(0,0,0,0.06); position: relative; }
 .room-card:hover { transform: translateY(-6px); box-shadow: 0 12px 32px rgba(0,0,0,0.12); }
+.room-card.selectable { outline: 2px solid transparent; }
+.room-card.selectable.selected { outline: 2px solid #409eff; box-shadow: 0 2px 16px rgba(64,158,255,0.25); }
+.room-card-check { position: absolute; top: 10px; right: 10px; z-index: 2; cursor: pointer; }
+.check-box { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,0.35); box-sizing: border-box; transition: all 0.15s; }
+.check-box.checked { background: #409eff; border-color: #fff; }
+.check-box.checked::after { content: '✓'; color: #fff; font-size: 15px; font-weight: 700; line-height: 1; }
+.select-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 100; display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
+.select-count { font-size: 14px; color: #606266; white-space: nowrap; }
+.select-bar-actions { display: flex; gap: 8px; }
+.batch-pricing-tip { background: #fdf6ec; border: 1px solid #faecd8; color: #b88230; font-size: 13px; line-height: 1.6; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; }
+.rent-adjust-row, .fee-set-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.fee-set-row { margin-top: 8px; }
+.unit { font-size: 13px; color: #909399; white-space: nowrap; }
 .room-card-image { position: relative; height: 200px; background: #e9ecef; overflow: hidden; }
 .room-card-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
 .room-card:hover .room-card-image img { transform: scale(1.08); }

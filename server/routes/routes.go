@@ -148,6 +148,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.GET("/rooms/:id", roomH.Get)
 		building.POST("/rooms", roomH.Create)
 		building.POST("/rooms/import-rented", roomH.ImportRented)
+		building.POST("/rooms/batch-pricing", roomH.BatchUpdatePricing)
 		building.PUT("/rooms/:id", roomH.Update)
 		building.DELETE("/rooms/:id", roomH.Delete)
 		building.PUT("/rooms/:id/status", roomH.UpdateStatus)
