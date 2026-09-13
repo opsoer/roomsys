@@ -224,17 +224,6 @@ func (s *RoomService) ListBuildingContracts(buildingID uint, page, lastID, size 
 	return contracts, total, err
 }
 
-// GetActiveContractPublic 获取房间的活跃合同（公开，不含租客信息）
-func (s *RoomService) GetActiveContractPublic(roomID uint) (*models.RentalContract, error) {
-	var contract models.RentalContract
-	err := s.DB.Where("room_id = ? AND status = ?", roomID, "active").
-		First(&contract).Error
-	if err != nil {
-		return nil, err
-	}
-	return &contract, nil
-}
-
 // UpdateContract 更新租赁合同信息
 func (s *RoomService) UpdateContract(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.RentalContract{}).Where("id = ?", id).Updates(updates).Error

@@ -255,39 +255,6 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	utils.Success(c, gin.H{"room": detail})
 }
 
-// GetActiveContractPublic 获取公开活跃合同信息
-func (h *RoomHandler) GetActiveContractPublic(c *gin.Context) {
-	roomID := c.Param("rid")
-	bid, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
-		return
-	}
-	rid, err := strconv.ParseUint(roomID, 10, 32)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
-		return
-	}
-
-	room, err := h.RoomService.GetByID(uint(rid))
-	if err != nil || room.BuildingID != uint(bid) {
-		utils.Error(c, http.StatusNotFound, "房间不存在")
-		return
-	}
-	var buildingStatus string
-	if err := h.DB.Model(&models.Building{}).Where("id = ?", bid).Pluck("status", &buildingStatus).Error; err != nil || buildingStatus == services.BuildingStatusHidden {
-		utils.Error(c, http.StatusNotFound, "房间不存在")
-		return
-	}
-
-	contract, err := h.RoomService.GetActiveContractPublic(uint(rid))
-	if err != nil {
-		utils.Error(c, http.StatusNotFound, "无有效合同")
-		return
-	}
-	utils.Success(c, gin.H{"contract": contract})
-}
-
 // List 分页获取房间列表，支持楼层、户型、状态筛选
 func (h *RoomHandler) List(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)

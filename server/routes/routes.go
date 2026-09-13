@@ -50,7 +50,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
-		public.GET("/buildings/:id/rooms/:rid/contract", roomH.GetActiveContractPublic)
 
 		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		public.POST("/recruit/submit", recruitH.Submit)
