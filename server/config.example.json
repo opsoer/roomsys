@@ -16,5 +16,6 @@
   "qiniu_bucket": "",
   "qiniu_domain": "",
   "qiniu_use_https": false,
-  "qiniu_zone": "z2"
+  "qiniu_zone": "z2",
+  "reveal_free_per_day": 5
 }

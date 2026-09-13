@@ -57,6 +57,10 @@ type Config struct {
 	QiniuPfopCallbackSecret string `json:"qiniu_pfop_callback_secret"`
 	// QiniuPfopCallbackURL 七牛转码回调地址(服务器公网可访问)；留空则自动用请求 Host 推导。
 	QiniuPfopCallbackURL string `json:"qiniu_pfop_callback_url"`
+
+	// RevealFreePerDay 每个IP每日可直接查看房东完整电话的次数（自然日重置）。
+	// 超过该次数后，每次查看都要求通过图片验证码；0 表示每次查看都要验证码。
+	RevealFreePerDay int `json:"reveal_free_per_day"`
 }
 
 // defaults 返回默认配置值。
@@ -76,6 +80,7 @@ func defaults() *Config {
 		LogDir:         "./logs",
 		WebDistDir:     "../web/dist",
 		QiniuProxyMode: true,
+		RevealFreePerDay: 5,
 	}
 }
 
@@ -114,6 +119,9 @@ func normalize(cfg *Config) {
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./storage/rental.db"
+	}
+	if cfg.RevealFreePerDay < 0 {
+		cfg.RevealFreePerDay = 5
 	}
 }
 

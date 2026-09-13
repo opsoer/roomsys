@@ -60,7 +60,11 @@
       <van-icon name="phone-o" size="14" color="#e6a23c" />
       <span v-for="(l, i) in building.landlords" :key="l.id">
         <template v-if="i > 0">、</template>
-        {{ l.name }} {{ maskPhone(l.phone) }}
+        {{ l.name }} {{ displayPhone(l) }}
+      </span>
+      <span v-if="!revealed" class="landlord-reveal-btn" @click="reveal">
+        <van-icon name="eye-o" size="12" />
+        查看号码
       </span>
     </div>
 
@@ -155,6 +159,7 @@
 
     <QrSharePopup v-model:show="qrVisible" title="分享公寓" :link="qrLink" :data-url="qrDataUrl"
       @copy="copyQrLink" @download="downloadQrCard" />
+    <CaptchaDialog v-model:show="captchaVisible" :handler="handleCaptcha" />
     </template>
   </div>
 </template>
@@ -168,6 +173,8 @@ import { mediaUrl, statusLabel, statusTagType, maskPhone, copyText } from '../ut
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
+import CaptchaDialog from '../components/common/CaptchaDialog.vue'
+import { revealedLandlords, revealLandlords } from '../utils/reveal'
 
 const route = useRoute()
 const router = useRouter()
@@ -185,6 +192,39 @@ const pageSize = 20
 const loadingMore = ref(false)
 const sentinel = ref(null)
 let observer = null
+
+// ========== 房东号码查看（reveal） ==========
+// 公开接口只返回打码号码；完整号码走 reveal 接口（每日前几次免费，之后需图片验证码）
+const revealed = computed(() => !!revealedLandlords(id.value))
+const captchaVisible = ref(false)
+
+function displayPhone(l) {
+  const list = revealedLandlords(id.value)
+  if (!list) return maskPhone(l.phone)
+  const full = list.find(x => x.id === l.id)
+  return full ? full.phone : maskPhone(l.phone)
+}
+
+async function reveal() {
+  try {
+    await revealLandlords(id.value, {})
+    showToast({ message: '已获取联系号码', duration: 1200 })
+  } catch (err) {
+    if (err?.response?.data?.code === 1007) {
+      captchaVisible.value = true
+    }
+  }
+}
+
+async function handleCaptcha(payload) {
+  try {
+    await revealLandlords(id.value, payload)
+    showToast({ message: '已获取联系号码', duration: 1200 })
+    return true
+  } catch (err) {
+    return false
+  }
+}
 
 const statusOptions = [
   { text: '全部', value: '' },
@@ -479,6 +519,19 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   flex-wrap: wrap;
+}
+.landlord-reveal-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid #e6a23c;
+  color: #e6a23c;
+  background: #fff;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
 }
 .desc-section {
   margin: 14px 12px 0;

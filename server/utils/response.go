@@ -49,6 +49,7 @@ const (
 	CodeInvalidStatus      = 1004 // 状态无效
 	CodeMissingDescription = 1005 // 缺少描述信息
 	CodeNameConflict       = 1006 // 名称冲突
+	CodeCaptchaRequired    = 1007 // 需要图片验证码（查看电话次数已达当日免费额度）
 )
 
 // Success 返回 200 成功响应

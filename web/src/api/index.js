@@ -382,6 +382,19 @@ export function buildingGetMyStats() {
   return api.get('/building/stats/pv')
 }
 
+// ========== 公开端：查看房东完整电话 ==========
+
+// 获取图片验证码（查看电话次数超过每日免费额度时使用）
+export function getCaptcha() {
+  return api.get('/captcha')
+}
+
+// 查看公寓房东的完整电话；超过每日免费次数后须携带 {captcha_id, captcha_code}
+export function revealBuildingPhones(id, data) {
+  return api.post(`/buildings/${id}/reveal-phone`, data || {})
+}
+
+
 export function buildingGetMyTrend(days = 30) {
   return api.get('/building/stats/trend', { params: { days } })
 }

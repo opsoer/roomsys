@@ -186,7 +186,7 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://*.qiniup.com https://*.qiniudn.com")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://*.qiniup.com https://*.qiniudn.com")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		if os.Getenv("GIN_MODE") == "release" {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -403,8 +403,9 @@ func cacheControlMiddleware() gin.HandlerFunc {
 		if strings.HasPrefix(path, "/assets/") && strings.Contains(path, "-") {
 			c.Header("Cache-Control", "public, max-age=31536000, immutable")
 		}
-		// 首页 HTML：不缓存，保证发布后用户拿到最新
-		if path == "/" || path == "" {
+		// HTML 文档（SPA 全部前端路由）：不缓存，保证发布后用户拿到最新
+		// 仅 /assets/ 与 /api/ 例外（前者已设长缓存，后者是接口与媒体文件）
+		if !strings.HasPrefix(path, "/assets/") && !strings.HasPrefix(path, "/api/") {
 			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		}
 		c.Next()

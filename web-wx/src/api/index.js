@@ -103,6 +103,16 @@ export function getPublicRoom(buildingId, roomId) {
   return request('GET', `/buildings/${buildingId}/rooms/${roomId}`)
 }
 
+// 获取图片验证码（查看电话次数超过每日免费额度时使用）
+export function getCaptcha() {
+  return request('GET', '/captcha')
+}
+
+// 查看公寓房东的完整电话；超过每日免费次数后须携带 {captcha_id, captcha_code}
+export function revealBuildingPhones(buildingId, data) {
+  return request('POST', `/buildings/${buildingId}/reveal-phone`, data || {})
+}
+
 // ===== 平台管理员 =====
 export function adminCreateBuilding(data) {
   return request('POST', '/admin/buildings', data)

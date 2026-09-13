@@ -96,13 +96,27 @@
       </view>
     </view>
 
+    <!-- 图片验证码弹窗（每日查看次数超过免费额度后触发） -->
+    <view v-if="captchaVisible" class="overlay" @click="captchaVisible = false">
+      <view class="contact-dialog captcha-dialog" @click.stop>
+        <text class="captcha-title">安全验证</text>
+        <text class="captcha-desc">今日查看次数已达上限，请输入图中数字继续查看</text>
+        <image v-if="captchaImg" :src="captchaImg" class="captcha-img" mode="aspectFit" @click="loadCaptcha" />
+        <view v-else class="captcha-img captcha-loading"><text>加载中…</text></view>
+        <text class="captcha-refresh" @click="loadCaptcha">↻ 看不清？换一张</text>
+        <input v-model="captchaCode" class="captcha-input" type="number" maxlength="4" placeholder="请输入图中 4 位数字" />
+        <button class="copy-btn" :disabled="captchaSubmitting" @click="submitCaptcha">{{ captchaSubmitting ? '验证中…' : '确认' }}</button>
+        <button class="close-btn" @click="captchaVisible = false">取消</button>
+      </view>
+    </view>
+
     <view class="page-footer"><text>© 2026 圳好租</text></view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getPublicRoom, getBuildingDetail } from '../../api'
+import { getPublicRoom, getBuildingDetail, getCaptcha, revealBuildingPhones } from '../../api'
 import { mediaUrl, statusLabel } from '../../utils/format'
 
 const buildingId = ref('')
@@ -114,6 +128,15 @@ const allImages = ref([])
 const videos = ref([])
 const contactVisible = ref(false)
 const contactLandlord = ref({ name: '', phone: '' })
+// 房东号码查看（reveal）：公开接口只给打码号，完整号码走 reveal 接口，
+// 超过每日免费次数后需图片验证码
+const captchaVisible = ref(false)
+const captchaImg = ref('')
+const captchaId = ref('')
+const captchaCode = ref('')
+const captchaSubmitting = ref(false)
+const revealedList = ref(null)
+const pendingLandlord = ref(null)
 
 function maskName2(name) {
   if (!name) return ''
@@ -128,10 +151,59 @@ function maskPhone2(phone) {
 }
 
 function showContact(l) {
-  contactLandlord.value = { name: l.name, phone: l.phone }
+  pendingLandlord.value = l
+  if (revealedList.value) {
+    openContact(l)
+    return
+  }
+  revealBuildingPhones(buildingId.value, {}).then((res) => {
+    if (res.data && res.data.landlords) {
+      revealedList.value = res.data.landlords
+      openContact(l)
+    } else if (res.data && res.data.code === 1007) {
+      captchaCode.value = ''
+      loadCaptcha()
+      captchaVisible.value = true
+    } else {
+      uni.showToast({ title: (res.data && res.data.message) || '获取失败', icon: 'none' })
+    }
+  }).catch(() => uni.showToast({ title: '网络异常', icon: 'none' }))
+}
+
+function openContact(l) {
+  const list = revealedList.value || []
+  const full = list.find(x => x.id === l.id) || l
+  contactLandlord.value = { name: full.name, phone: full.phone }
   contactVisible.value = true
-  // Send landlord view stats
-  // uni.request({ url: '/api/stats/landlord-view', method: 'POST', data: { building_id: Number(buildingId.value) } })
+}
+
+function loadCaptcha() {
+  getCaptcha().then((res) => {
+    if (res.data && res.data.captcha_id) {
+      captchaId.value = res.data.captcha_id
+      captchaImg.value = res.data.image
+    }
+  })
+}
+
+function submitCaptcha() {
+  if (!captchaCode.value || captchaCode.value.length < 4 || captchaSubmitting.value) return
+  captchaSubmitting.value = true
+  revealBuildingPhones(buildingId.value, { captcha_id: captchaId.value, captcha_code: captchaCode.value }).then((res) => {
+    captchaSubmitting.value = false
+    if (res.data && res.data.landlords) {
+      revealedList.value = res.data.landlords
+      captchaVisible.value = false
+      if (pendingLandlord.value) openContact(pendingLandlord.value)
+    } else {
+      uni.showToast({ title: (res.data && res.data.message) || '验证码错误', icon: 'none' })
+      loadCaptcha()
+      captchaCode.value = ''
+    }
+  }).catch(() => {
+    captchaSubmitting.value = false
+    uni.showToast({ title: '网络异常', icon: 'none' })
+  })
 }
 
 function copyPhone() {
@@ -223,4 +295,10 @@ onMounted(async () => {
 .contact-phone { font-size: 24px; font-weight: 700; color: #333; letter-spacing: 2px; display: block; margin: 8px 0 24px; }
 .copy-btn { background: #1989fa; color: #fff; border: none; border-radius: 24px; padding: 12px 0; width: 100%; font-size: 15px; margin-bottom: 8px; }
 .close-btn { background: none; color: #999; border: none; font-size: 14px; padding: 8px; }
+.captcha-title { font-size: 17px; font-weight: 700; color: #1a1a2e; display: block; }
+.captcha-desc { font-size: 12px; color: #999; display: block; margin: 8px 0 14px; }
+.captcha-img { width: 100%; height: 80px; border: 1px solid #ebedf0; border-radius: 8px; }
+.captcha-loading { display: flex; align-items: center; justify-content: center; color: #c8c9cc; font-size: 13px; margin-bottom: 6px; }
+.captcha-refresh { font-size: 12px; color: #1989fa; display: block; margin: 8px 0; }
+.captcha-input { border: 1px solid #ebedf0; border-radius: 8px; height: 40px; margin: 8px 0 16px; padding: 0 12px; font-size: 15px; }
 </style>

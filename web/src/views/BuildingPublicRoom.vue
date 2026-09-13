@@ -169,6 +169,7 @@
 
     <QrSharePopup v-model:show="qrVisible" title="分享房间" :link="qrLink" :data-url="qrDataUrl"
       @copy="copyQrLink" @download="downloadQrCard" />
+    <CaptchaDialog v-model:show="captchaVisible" :handler="handleCaptcha" />
   </div>
 </template>
 
@@ -181,6 +182,8 @@ import { mediaUrl, statusLabel, statusTagType, copyText } from '../utils/format'
 import { roomHomeUrl, generateRoomQrDataUrl, downloadQrImage } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
+import CaptchaDialog from '../components/common/CaptchaDialog.vue'
+import { revealedLandlords, revealLandlords } from '../utils/reveal'
 
 const route = useRoute()
 const router = useRouter()
@@ -195,6 +198,10 @@ const videos = ref([])
 
 const contactVisible = ref(false)
 const contactLandlord = ref({ name: '', phone: '' })
+// 房东号码查看（reveal）：公开接口只给打码号，完整号码走 reveal 接口，
+// 超过每日免费次数后弹图片验证码
+const captchaVisible = ref(false)
+const pendingLandlord = ref(null)
 
 function maskName(name) {
   if (!name) return ''
@@ -209,10 +216,38 @@ function maskPhone(phone) {
 }
 
 function showContact(landlord) {
-  contactLandlord.value = { name: landlord.name, phone: landlord.phone }
+  pendingLandlord.value = landlord
+  const cached = revealedLandlords(buildingId.value)
+  if (cached) {
+    openContact(landlord, cached)
+    return
+  }
+  revealLandlords(buildingId.value, {}).then(
+    (list) => openContact(landlord, list),
+    (err) => {
+      if (err?.response?.data?.code === 1007) {
+        captchaVisible.value = true
+      }
+    },
+  )
+}
+
+function openContact(landlord, list) {
+  const full = list.find(x => x.id === landlord.id) || landlord
+  contactLandlord.value = { name: full.name, phone: full.phone }
   contactVisible.value = true
   const data = JSON.stringify({ building_id: Number(buildingId.value) })
   navigator.sendBeacon('/api/stats/landlord-view', new Blob([data], { type: 'application/json' }))
+}
+
+async function handleCaptcha(payload) {
+  try {
+    const list = await revealLandlords(buildingId.value, payload)
+    if (pendingLandlord.value) openContact(pendingLandlord.value, list)
+    return true
+  } catch (err) {
+    return false
+  }
 }
 
 function copyPhone() {

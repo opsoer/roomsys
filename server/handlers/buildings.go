@@ -389,8 +389,19 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
+	maskLandlordPhones(buildings)
 	go utils.RecordPageView(h.DB, "building_list", 0, 0, utils.GetRealIP(c))
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
+}
+
+// maskLandlordPhones 对公寓数据中的房东号码统一打码。
+// 公开端永远不返回完整号码，完整号码的唯一出口是 RevealPhone 接口。
+func maskLandlordPhones(buildings []services.BuildingWithStats) {
+	for i := range buildings {
+		for j := range buildings[i].Landlords {
+			buildings[i].Landlords[j].Phone = utils.MaskPhone(buildings[i].Landlords[j].Phone)
+		}
+	}
 }
 
 // ListLocations 公开端位置聚合：返回所有可见公寓实际使用的 区域→街道→村/小区 数据，
@@ -479,8 +490,52 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
+	maskLandlordPhones([]services.BuildingWithStats{*building})
 	go utils.RecordPageView(h.DB, "building_detail", uint(buildingID), uint(buildingID), utils.GetRealIP(c))
 	utils.Success(c, gin.H{"building": building})
+}
+
+// RevealPhoneRequest 查看完整电话的请求体；超过每日免费次数后须携带图片验证码。
+type RevealPhoneRequest struct {
+	CaptchaID   string `json:"captcha_id"`
+	CaptchaCode string `json:"captcha_code"`
+}
+
+// RevealPhone 查看公寓房东的完整电话号码。
+// 每个IP每日前 RevealFreePerDay 次直接放行（配置 reveal_free_per_day），
+// 之后每次要求先通过图片验证码；不设硬性上限。
+func (h *BuildingHandler) RevealPhone(c *gin.Context) {
+	buildingID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	visible, err := h.BuildingService.IsVisible(uint(buildingID))
+	if err != nil || !visible {
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+
+	ip := utils.GetRealIP(c)
+	if utils.RevealCount(ip) >= h.Cfg.RevealFreePerDay {
+		var req RevealPhoneRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			req = RevealPhoneRequest{}
+		}
+		if !VerifyCaptcha(req.CaptchaID, req.CaptchaCode) {
+			utils.ErrorWithCode(c, http.StatusTooManyRequests, utils.CodeCaptchaRequired, "今日查看次数已达上限，请完成图片验证后再查看")
+			return
+		}
+	}
+
+	var landlords []models.BuildingLandlord
+	if err := h.DB.Where("building_id = ?", buildingID).Find(&landlords).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	utils.IncrReveal(ip)
+	go utils.RecordPageView(h.DB, "phone_reveal", uint(buildingID), uint(buildingID), ip)
+	utils.Success(c, gin.H{"landlords": landlords})
 }
 
 // GetRooms 获取公寓的房间列表，支持楼层、户型、状态筛选
