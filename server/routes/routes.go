@@ -40,6 +40,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		auth := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		public.POST("/auth/login", auth.Login)
 		public.POST("/auth/refresh", auth.RefreshToken)
+		public.POST("/auth/logout", auth.Logout)
 
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
@@ -78,7 +79,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	// ========== 平台超级管理员 ==========
 	platform := r.Group("/api/admin")
-	platform.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	platform.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
 		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
@@ -130,7 +131,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	// ========== 公寓管理后台（building_admin + admin）==========
 	building := r.Group("/api/building")
-	building.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	building.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	building.Use(middleware.AdminOrBuildingAdminMiddleware())
 	building.Use(middleware.BuildingScopeMiddleware(db))
 	{

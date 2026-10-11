@@ -46,7 +46,7 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 	var req SetTimeReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Log.Warn().Msg("设置时间请求参数错误")
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.Error(c, http.StatusBadRequest, "参数格式错误")
 		return
 	}
 

@@ -138,7 +138,11 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败")
 		return
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("退租任务事务提交失败")
+		utils.Error(c, http.StatusInternalServerError, "退租处理失败")
+		return
+	}
 	logger.Log.Info().
 		Uint("task_id", task.ID).
 		Uint("room_id", *task.RoomID).

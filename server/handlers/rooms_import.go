@@ -83,7 +83,7 @@ func (h *RoomHandler) ImportRented(c *gin.Context) {
 		}
 		if err := h.importOneRentedRoom(bid, uid, item, tenantCache); err != nil {
 			logger.Log.Error().Err(err).Str("room_number", item.RoomNumber).Msg("导入在租房间失败")
-			failures = append(failures, importFailure{item.RoomNumber, err.Error()})
+			failures = append(failures, importFailure{item.RoomNumber, "导入失败"})
 			continue
 		}
 		successCount++

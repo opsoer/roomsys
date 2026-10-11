@@ -388,12 +388,12 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 			typeLabel = "收入"
 		}
 		writer.Write([]string{
-			b.BillNo,
-			b.BillDate,
-			typeLabel,
-			b.Subtype,
+			sanitizeCSVCell(b.BillNo),
+			sanitizeCSVCell(b.BillDate),
+			sanitizeCSVCell(typeLabel),
+			sanitizeCSVCell(b.Subtype),
 			fmt.Sprintf("%.2f", b.Amount),
-			room,
+			sanitizeCSVCell(room),
 			sanitizeCSVCell(b.Description),
 		})
 	}

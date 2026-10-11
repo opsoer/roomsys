@@ -852,7 +852,7 @@ func (h *BuildingHandler) AdjustDeposit(c *gin.Context) {
 			return
 		}
 		logger.Log.Warn().Err(err).Uint("building_id", uint(buildingID)).Msg("修改押金失败")
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.Error(c, http.StatusBadRequest, "操作失败")
 		return
 	}
 	logger.Log.Info().Uint("building_id", uint(buildingID)).Float64("amount", req.Amount).Str("operator", operator).Msg("公寓押金已调整")

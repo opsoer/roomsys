@@ -249,7 +249,8 @@ func (h *MediaHandler) uploadAndProcess(fileData []byte, vf *validatedFile, key 
 	return int64(len(processed)), thumbKey, nil
 }
 
-// deleteStoredFile 从存储中删除文件（七牛云或本地），失败仅记录日志
+// deleteStoredFile 从存储中删除文件（七牛云或本地），失败仅记录日志。
+// 本地存储模式下对 key 做路径净化 + 前缀校验，防止路径穿越删除任意文件。
 func deleteStoredFile(cfg *config.Config, key string) {
 	if key == "" {
 		return
@@ -263,7 +264,17 @@ func deleteStoredFile(cfg *config.Config, key string) {
 		}
 		return
 	}
-	absPath := filepath.Join(cfg.UploadDir, key)
+	cleanKey := filepath.Clean(key)
+	if cleanKey == "." || strings.HasPrefix(cleanKey, "..") {
+		logger.Log.Warn().Str("key", key).Msg("删除文件失败: 非法路径")
+		return
+	}
+	absPath := filepath.Join(cfg.UploadDir, cleanKey)
+	cleanUploadDir := filepath.Clean(cfg.UploadDir)
+	if !strings.HasPrefix(absPath, cleanUploadDir+string(os.PathSeparator)) {
+		logger.Log.Warn().Str("key", key).Str("path", absPath).Msg("删除文件失败: 路径越界")
+		return
+	}
 	if err := os.Remove(absPath); err != nil {
 		logger.Log.Warn().Err(err).Str("path", absPath).Msg("删除本地文件失败")
 	}
@@ -347,7 +358,7 @@ func (h *MediaHandler) pfopNotifyURL(c *gin.Context) string {
 	if base == "" {
 		return ""
 	}
-	return base + "?secret=" + url.QueryEscape(h.Cfg.QiniuPfopCallbackSecret)
+	return base
 }
 
 // tryTriggerTranscode 视频上传后触发七牛持久化转码（720p H.264），失败不阻塞上传
@@ -389,7 +400,7 @@ type PfopCallbackReq struct {
 
 // PfopCallback 接收七牛转码完成回调：更新媒体记录指向压缩版并删除原片
 func (h *MediaHandler) PfopCallback(c *gin.Context) {
-	secret := c.Query("secret")
+	secret := c.GetHeader("X-Pfop-Secret")
 	if h.Cfg.QiniuPfopCallbackSecret == "" || secret != h.Cfg.QiniuPfopCallbackSecret {
 		utils.Error(c, http.StatusForbidden, "无效的回调密钥")
 		return
@@ -928,6 +939,17 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
+	cleanKey := filepath.Clean(req.Key)
+	if cleanKey == "." || strings.HasPrefix(cleanKey, "..") || strings.Contains(cleanKey, ".."+string(os.PathSeparator)) {
+		utils.Error(c, http.StatusBadRequest, "非法的文件路径")
+		return
+	}
+	expectedPrefix := fmt.Sprintf("rooms/%d/", room.ID)
+	if !strings.HasPrefix(cleanKey, expectedPrefix) {
+		utils.Error(c, http.StatusBadRequest, "文件路径必须属于当前房间")
+		return
+	}
+	req.Key = cleanKey
 	if req.Category == "" {
 		req.Category = "gallery"
 	}

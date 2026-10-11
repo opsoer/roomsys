@@ -3,10 +3,15 @@ import { createPinia } from 'pinia'
 import 'element-plus/dist/index.css'
 import 'vant/lib/index.css'
 import { ElMessage } from 'element-plus'
+import { setToastDefaultOptions } from 'vant'
 import { ArrowLeft, ArrowDown, Close, Coin, Delete, Document, HomeFilled, List, Loading, Money, Picture, Plus, Search, Setting, User, VideoCamera } from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+
+// Toast 全局默认从顶部显示：Vant 默认居中悬浮，登录/操作提示会在页面正中央
+// 闪现方块（部分浏览器深色模式下还会被反转成白色方块），统一改到顶部。
+setToastDefaultOptions({ position: 'top' })
 
 const app = createApp(App)
 app.use(createPinia())

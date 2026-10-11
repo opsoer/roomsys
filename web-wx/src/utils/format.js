@@ -1,4 +1,4 @@
-const API_BASE = 'https://your-api-domain.com'
+const API_BASE = process.env.VITE_API_BASE || 'https://your-api-domain.com'
 
 export function mediaUrl(path) {
   if (!path) return ''

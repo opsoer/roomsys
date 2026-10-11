@@ -393,6 +393,8 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 			return
 		}
 		updates["password_hash"] = hash
+		now := time.Now()
+		updates["token_not_before"] = &now
 	}
 	if err := h.AuthService.UpdateUser(user.ID, updates); err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("更新用户失败")
@@ -426,6 +428,12 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 		utils.Error(c, http.StatusForbidden, "不能删除超级管理员")
 		return
 	}
+	now := time.Now()
+	if err := h.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("token_not_before", &now).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("删除用户失败: 设置令牌失效时间出错")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
 	if err := h.AuthService.DeleteUser(user.ID); err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("删除用户失败")
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
@@ -437,4 +445,17 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	}
 	logger.Log.Info().Uint("deleted_id", user.ID).Str("username", user.Username).Uint("operator_id", operatorID).Msg("用户已删除")
 	utils.SuccessWithMsg(c, "删除成功", nil)
+}
+
+// Logout 处理用户登出，将当前令牌加入吊销列表
+func (h *AuthHandler) Logout(c *gin.Context) {
+	auth := c.GetHeader("Authorization")
+	if auth == "" || len(auth) < 8 || auth[:7] != "Bearer " {
+		utils.Error(c, http.StatusBadRequest, "无效的令牌")
+		return
+	}
+	tokenStr := auth[7:]
+	utils.RevokeToken(tokenStr)
+	logger.Log.Info().Uint("user_id", c.GetUint("user_id")).Msg("用户登出")
+	utils.SuccessWithMsg(c, "登出成功", nil)
 }

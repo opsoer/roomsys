@@ -54,7 +54,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 		Msg("AutoCreateMonthlyRentBills: 开始执行")
 
 	var contracts []models.RentalContract
-	db.Joins("LEFT JOIN bills ON bills.room_id = rental_contracts.room_id AND bills.subtype = '租金' AND bills.bill_date >= ? AND bills.bill_date < ?",
+	db.Joins("LEFT JOIN bills ON bills.room_id = rental_contracts.room_id AND bills.subtype = '租金' AND bills.bill_date >= ? AND bills.bill_date < ? AND bills.deleted_at IS NULL",
 		startDate, endDate).
 		Where("rental_contracts.status = ? AND bills.id IS NULL", "active").
 		Find(&contracts)

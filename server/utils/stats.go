@@ -2,7 +2,6 @@
 package utils
 
 import (
-	"strings"
 	"time"
 
 	"rental-server/logger"
@@ -67,16 +66,9 @@ func RecordPageView(db *gorm.DB, pageType string, resourceID uint, buildingID ui
 	}
 }
 
-// GetRealIP 从请求头中获取真实客户端 IP（优先 X-Forwarded-For / X-Real-IP）
+// GetRealIP 获取客户端真实 IP。
+// 直接返回 c.ClientIP()，由 Gin 的 TrustedProxies 配置决定是否采信 X-Forwarded-For。
+// 部署时需在 main.go 中调用 r.SetTrustedProxies() 指定可信反代 IP，防止伪造 XFF。
 func GetRealIP(c *gin.Context) string {
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if ip := strings.TrimSpace(parts[0]); ip != "" {
-			return ip
-		}
-	}
-	if xri := c.GetHeader("X-Real-IP"); xri != "" {
-		return xri
-	}
 	return c.ClientIP()
 }

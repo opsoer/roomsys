@@ -17,8 +17,9 @@ type User struct {
 	Email        string         `gorm:"size:100" json:"email"`
 	Role         string         `gorm:"size:20;not null;default:'admin'" json:"role"`
 	BuildingID   *uint          `gorm:"index" json:"building_id"`
-	IsActive     bool           `gorm:"default:true" json:"is_active"`
-	LastLoginAt  *time.Time     `json:"last_login_at"`
+	IsActive       bool           `gorm:"default:true" json:"is_active"`
+	TokenNotBefore *time.Time     `json:"-"`
+	LastLoginAt    *time.Time     `json:"last_login_at"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`

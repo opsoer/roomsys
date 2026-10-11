@@ -220,7 +220,7 @@ func (h *StatsHandler) Trend(c *gin.Context) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	cutoff := todayStart.AddDate(0, 0, -(days - 1))
-	cacheKey := "stats_trend_" + daysStr
+	cacheKey := fmt.Sprintf("stats_trend_%d", days)
 
 	data, err := utils.CacheGetOrSet(cacheKey, 5*time.Minute, func() (interface{}, error) {
 		dayExpr := database.DayExpr(h.DB, "created_at")

@@ -1,4 +1,4 @@
-const BASE_URL = 'https://your-api-domain.com/api'
+const BASE_URL = process.env.VITE_API_BASE || 'https://your-api-domain.com/api'
 
 function getToken() {
   try {
@@ -6,6 +6,16 @@ function getToken() {
   } catch {
     return ''
   }
+}
+
+function clearAuthAndRedirect() {
+  try {
+    uni.removeStorageSync('token')
+    uni.removeStorageSync('username')
+    uni.removeStorageSync('role')
+    uni.removeStorageSync('building_id')
+  } catch (e) {}
+  uni.reLaunch({ url: '/pages/login/login' })
 }
 
 function request(method, url, data, opts = {}) {
@@ -17,7 +27,6 @@ function request(method, url, data, opts = {}) {
     if (token) header['Authorization'] = `Bearer ${token}`
     if (opts.contentType) header['Content-Type'] = opts.contentType
 
-    // Handle FormData for upload
     const isUpload = opts.isUpload
     const reqOpts = {
       url: BASE_URL + url,
@@ -25,6 +34,18 @@ function request(method, url, data, opts = {}) {
       header,
       timeout: opts.timeout || 30000,
       success: (res) => {
+        const statusCode = res.statusCode
+        if (statusCode === 401) {
+          clearAuthAndRedirect()
+          reject(new Error('登录已过期，请重新登录'))
+          return
+        }
+        if (statusCode < 200 || statusCode >= 300) {
+          const data = res.data
+          const msg = (data && (data.message || data.error)) || `请求失败 (${statusCode})`
+          reject(new Error(msg))
+          return
+        }
         const data = res.data
         if (data && data.code === 0 && data.data !== undefined && data.data !== null) {
           res.data = data.data
@@ -51,16 +72,34 @@ function request(method, url, data, opts = {}) {
 function uploadFile(url, filePath, formData = {}, onProgress) {
   return new Promise((resolve, reject) => {
     const token = getToken()
+    const header = {
+      'X-Requested-With': 'XMLHttpRequest',
+    }
+    if (token) header['Authorization'] = `Bearer ${token}`
     const uploadTask = uni.uploadFile({
       url: BASE_URL + url,
       filePath,
       name: 'file',
       formData,
-      header: {
-        Authorization: `Bearer ${token}`,
-        'X-Requested-With': 'XMLHttpRequest',
-      },
+      header,
       success: (res) => {
+        const statusCode = res.statusCode
+        if (statusCode === 401) {
+          clearAuthAndRedirect()
+          reject(new Error('登录已过期，请重新登录'))
+          return
+        }
+        if (statusCode < 200 || statusCode >= 300) {
+          let msg = `上传失败 (${statusCode})`
+          try {
+            const data = JSON.parse(res.data)
+            if (data && (data.message || data.error)) {
+              msg = data.message || data.error
+            }
+          } catch (e) {}
+          reject(new Error(msg))
+          return
+        }
         try {
           const data = JSON.parse(res.data)
           if (data && data.code === 0 && data.data !== undefined && data.data !== null) {

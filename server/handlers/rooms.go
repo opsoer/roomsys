@@ -4,6 +4,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -609,10 +610,38 @@ func (h *RoomHandler) BatchUpdatePricing(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]interface{}{}
+	updatedCount := int64(0)
+
 	if req.RentDelta != nil {
-		updates["rent_price"] = gorm.Expr("GREATEST(ROUND(COALESCE(rent_price, 0) + ?, 2), 0)", *req.RentDelta)
+		var rooms []models.Room
+		if err := h.DB.Model(&models.Room{}).
+			Select("id, rent_price").
+			Where("id IN ? AND building_id = ? AND deleted_at IS NULL", ids, bid).
+			Find(&rooms).Error; err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询房间价格失败")
+			utils.Error(c, http.StatusInternalServerError, "批量调整失败")
+			return
+		}
+		for _, r := range rooms {
+			price := 0.0
+			if r.RentPrice != nil {
+				price = *r.RentPrice
+			}
+			newPrice := math.Round((price+*req.RentDelta)*100) / 100
+			if newPrice < 0 {
+				newPrice = 0
+			}
+			result := h.DB.Model(&models.Room{}).Where("id = ?", r.ID).Update("rent_price", newPrice)
+			if result.Error != nil {
+				logger.Log.Error().Err(result.Error).Uint("room_id", r.ID).Msg("更新房间价格失败")
+				utils.Error(c, http.StatusInternalServerError, "批量调整失败")
+				return
+			}
+			updatedCount += result.RowsAffected
+		}
 	}
+
+	updates := map[string]interface{}{}
 	if req.DepositMonths != nil {
 		updates["deposit_months"] = *req.DepositMonths
 	}
@@ -626,15 +655,19 @@ func (h *RoomHandler) BatchUpdatePricing(c *gin.Context) {
 		updates["water_unit_price"] = *req.WaterUnitPrice
 	}
 
-	result := h.DB.Model(&models.Room{}).
-		Where("id IN ? AND building_id = ? AND deleted_at IS NULL", ids, bid).
-		Updates(updates)
-	if result.Error != nil {
-		logger.Log.Error().Err(result.Error).Uint("building_id", bid).Msg("批量调整房间价格失败")
-		utils.Error(c, http.StatusInternalServerError, "批量调整失败")
-		return
+	if len(updates) > 0 {
+		result := h.DB.Model(&models.Room{}).
+			Where("id IN ? AND building_id = ? AND deleted_at IS NULL", ids, bid).
+			Updates(updates)
+		if result.Error != nil {
+			logger.Log.Error().Err(result.Error).Uint("building_id", bid).Msg("批量调整房间价格失败")
+			utils.Error(c, http.StatusInternalServerError, "批量调整失败")
+			return
+		}
+		updatedCount += result.RowsAffected
 	}
-	utils.Success(c, gin.H{"updated": result.RowsAffected})
+
+	utils.Success(c, gin.H{"updated": updatedCount})
 }
 
 func (h *RoomHandler) Delete(c *gin.Context) {
@@ -843,7 +876,11 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
 			return
 		}
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			logger.Log.Error().Err(err).Msg("状态更新事务提交失败")
+			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
+			return
+		}
 		utils.SuccessWithMsg(c, "状态更新成功", nil)
 		return
 	} else if req.Status == "vacant" {
@@ -938,7 +975,11 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
 			return
 		}
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			logger.Log.Error().Err(err).Uint("room_id", room.ID).Msg("退租事务提交失败")
+			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
+			return
+		}
 
 		if hasFutureReservation {
 			utils.SuccessWithMsg(c, "退租成功，下一租客已预定，请完成签约入住", nil)
@@ -1034,7 +1075,11 @@ func (h *RoomHandler) reserveRoom(c *gin.Context, room *models.Room, req *Update
 			return
 		}
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		logger.Log.Error().Err(err).Msg("预订事务提交失败")
+		utils.Error(c, http.StatusInternalServerError, "预订失败")
+		return
+	}
 
 	if isFutureReservation {
 		utils.SuccessWithMsg(c, "未来预订成功，当前租客退租后生效", nil)
@@ -1124,7 +1169,11 @@ func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *
 		utils.Error(c, http.StatusInternalServerError, "取消预订失败")
 		return
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		logger.Log.Error().Err(err).Msg("取消预订事务提交失败")
+		utils.Error(c, http.StatusInternalServerError, "取消预订失败")
+		return
+	}
 	utils.SuccessWithMsg(c, "已取消预订", nil)
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"rental-server/logger"
 	"rental-server/models"
@@ -112,6 +113,10 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请选择结算月份")
 		return
 	}
+	if _, err := time.Parse("2006-01", req.Month); err != nil {
+		utils.Error(c, http.StatusBadRequest, "月份格式错误，请使用 YYYY-MM")
+		return
+	}
 	shareholders, err := h.DividendService.GetShareholders(bid)
 	if err != nil || len(shareholders) == 0 {
 		logger.Log.Warn().Uint("building_id", bid).Msg("分红结算失败: 未配置股东")
@@ -130,7 +135,7 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Where("building_id = ? AND settle_month = ?", bid, req.Month).Delete(&models.Dividend{}).Error; err != nil {
+	if err := tx.Unscoped().Where("building_id = ? AND settle_month = ?", bid, req.Month).Delete(&models.Dividend{}).Error; err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("删除旧分红记录失败")
 		utils.Error(c, http.StatusInternalServerError, "结算失败")
@@ -166,7 +171,11 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		})
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("分红结算事务提交失败")
+		utils.Error(c, http.StatusInternalServerError, "结算失败")
+		return
+	}
 
 	logger.Log.Info().
 		Uint("building_id", bid).

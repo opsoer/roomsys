@@ -138,7 +138,7 @@ func main() {
 
 	ensureFFmpegCore(cfg.UploadDir)
 
-	if os.Getenv("GIN_MODE") != "debug" {
+	if gin.Mode() != gin.ReleaseMode {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
@@ -188,7 +188,7 @@ func main() {
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://*.qiniup.com https://*.qiniudn.com")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		if os.Getenv("GIN_MODE") == "release" {
+		if gin.Mode() == gin.ReleaseMode {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		c.Next()
@@ -204,8 +204,15 @@ func main() {
 
 	routes.Setup(r, db, cfg)
 	logger.Log.Info().Str("port", cfg.ServerPort).Msg("服务启动")
-	if err := r.Run(":" + cfg.ServerPort); err != nil {
-		logger.Log.Fatal().Err(err).Msg("HTTP 服务启动失败（端口可能被占用）")
+	srv := &http.Server{
+		Addr:         ":" + cfg.ServerPort,
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Log.Fatal().Err(err).Msg("HTTP 服务启动失败")
 	}
 }
 

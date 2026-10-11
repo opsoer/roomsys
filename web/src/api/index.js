@@ -22,6 +22,9 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// 安全说明：当前 access token 存储在 localStorage 中，存在 XSS 窃取风险。
+// 后续应将 token 迁移到 HttpOnly Cookie，由浏览器自动携带，避免 JS 读取。
+
 uploadApi.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
   if (token) {

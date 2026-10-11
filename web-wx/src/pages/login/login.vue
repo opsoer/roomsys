@@ -53,8 +53,8 @@ async function handleLogin() {
       uni.redirectTo({ url: '/pages/landlord/rooms' })
     }
   } catch (e) {
-    const msg = e?.response?.data?.message || e?.response?.data?.error
-    uni.showToast({ title: msg || '登录失败', icon: 'none' })
+    const msg = e?.message || e?.errMsg || '登录失败'
+    uni.showToast({ title: msg, icon: 'none' })
   } finally {
     loading.value = false
   }

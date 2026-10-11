@@ -3,7 +3,6 @@ import { ref, computed, onUnmounted } from 'vue'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
-  const refreshToken = ref(localStorage.getItem('refreshToken') || '')
   const username = ref(localStorage.getItem('username') || '')
   const role = ref(localStorage.getItem('role') || '')
   const buildingId = ref(localStorage.getItem('building_id') || '')
@@ -14,22 +13,19 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setAuth(data) {
     token.value = data.token || ''
-    refreshToken.value = data.refreshToken || ''
     username.value = data.username || ''
     role.value = data.role || ''
     buildingId.value = data.building_id || ''
 
     localStorage.setItem('token', token.value)
-    localStorage.setItem('refreshToken', refreshToken.value)
     localStorage.setItem('username', username.value)
     localStorage.setItem('role', role.value)
     localStorage.setItem('building_id', buildingId.value)
   }
 
-  function login(userData, tokenStr, refreshTokenStr) {
+  function login(userData, tokenStr) {
     setAuth({
       token: tokenStr,
-      refreshToken: refreshTokenStr,
       username: userData.username,
       role: userData.role,
       building_id: userData.building_id,
@@ -38,13 +34,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     token.value = ''
-    refreshToken.value = ''
     username.value = ''
     role.value = ''
     buildingId.value = ''
 
     localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
     localStorage.removeItem('username')
     localStorage.removeItem('role')
     localStorage.removeItem('building_id')
@@ -58,8 +52,6 @@ export const useAuthStore = defineStore('auth', () => {
   function handleStorageChange(e) {
     if (e.key === 'token') {
       token.value = e.newValue || ''
-    } else if (e.key === 'refreshToken') {
-      refreshToken.value = e.newValue || ''
     } else if (e.key === 'username') {
       username.value = e.newValue || ''
     } else if (e.key === 'role') {
@@ -81,7 +73,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     token,
-    refreshToken,
     username,
     role,
     buildingId,

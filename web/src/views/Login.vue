@@ -61,9 +61,7 @@ async function handleLogin() {
     const user = res.data.user
     authStore.login(user, res.data.token, res.data.refresh_token)
 
-    // 顶部显示，避免 Toast 悬浮在页面正中央（受浏览器深色反转影响时会被渲染成白色方块）
-    showToast({ message: '登录成功', icon: 'success', position: 'top', duration: 1500 })
-
+    // 不再弹「登录成功」提示：跳转即反馈，避免页面中央/顶部闪现提示块
     if (user.role === 'super_admin') {
       router.push('/admin/buildings')
     } else {

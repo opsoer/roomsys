@@ -13,8 +13,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// AuthMiddleware JWT 认证中间件，验证请求头中的 Bearer Token
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+// AuthMiddleware JWT 认证中间件，验证请求头中的 Bearer Token，并校验用户状态与令牌时效
+func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
@@ -28,6 +28,25 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		if err != nil {
 			logger.Log.Warn().Err(err).Str("ip", c.ClientIP()).Msg("JWT 解析失败")
 			utils.Error(c, http.StatusUnauthorized, "登录已过期")
+			c.Abort()
+			return
+		}
+		var user models.User
+		if err := db.First(&user, claims.UserID).Error; err != nil {
+			logger.Log.Warn().Uint("user_id", claims.UserID).Str("ip", c.ClientIP()).Msg("认证失败: 用户不存在或已删除")
+			utils.Error(c, http.StatusUnauthorized, "登录已过期")
+			c.Abort()
+			return
+		}
+		if !user.IsActive {
+			logger.Log.Warn().Uint("user_id", claims.UserID).Str("ip", c.ClientIP()).Msg("认证失败: 用户已停用")
+			utils.Error(c, http.StatusUnauthorized, "账号已停用")
+			c.Abort()
+			return
+		}
+		if user.TokenNotBefore != nil && claims.IssuedAt != nil && claims.IssuedAt.Before(*user.TokenNotBefore) {
+			logger.Log.Warn().Uint("user_id", claims.UserID).Str("ip", c.ClientIP()).Msg("认证失败: 令牌已失效")
+			utils.Error(c, http.StatusUnauthorized, "登录已过期，请重新登录")
 			c.Abort()
 			return
 		}
