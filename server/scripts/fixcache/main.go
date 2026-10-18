@@ -1,5 +1,5 @@
 // fixcache 给七牛 bucket 中所有已存在的对象补写 Cache-Control 响应缓存头
-// （public, max-age=31536000, immutable），跑一次即可。
+// （默认 public, max-age=604800, immutable，时长取配置 media_max_age），跑一次即可。
 //
 // 使用场景：
 //   - 存量文件是一次性修复：早期版本上传到七牛的图片/视频没有缓存元数据，
@@ -53,7 +53,7 @@ func main() {
 
 		for _, entry := range entries {
 			metas := map[string]string{
-				"cache-control": "public, max-age=31536000, immutable",
+				"cache-control": cfg.MediaCacheControl(),
 			}
 			err := bucketMgr.ChangeMeta(cfg.QiniuBucket, entry.Key, metas)
 			if err != nil {

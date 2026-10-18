@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -61,6 +62,13 @@ type Config struct {
 	// RevealFreePerDay 每个IP每日可直接查看房东完整电话的次数（自然日重置）。
 	// 超过该次数后，每次查看都要求通过图片验证码；0 表示每次查看都要验证码。
 	RevealFreePerDay int `json:"reveal_free_per_day"`
+
+	// MediaMaxAge 媒体文件浏览器缓存时长（秒），默认一周。文件 key 均为 uuid 不会
+	// 覆盖同名内容，故始终带 immutable；调大可省流量，调小可让客户端更快失效。
+	// 注意：七牛对象元数据里也会写入该值（上传时 x-qn-meta-cache-control），
+	// 修改配置后存量文件需重跑 scripts/fixcache 才会对直连/CDN 模式生效；
+	// 代理模式下服务端响应头始终以本配置为准，无需 fixcache。
+	MediaMaxAge int `json:"media_max_age"`
 }
 
 // defaults 返回默认配置值。
@@ -81,7 +89,17 @@ func defaults() *Config {
 		WebDistDir:     "../web/dist",
 		QiniuProxyMode: true,
 		RevealFreePerDay: 5,
+		MediaMaxAge:    604800, // 一周
 	}
+}
+
+// MediaCacheControl 返回媒体文件的 Cache-Control 响应头。
+func (c *Config) MediaCacheControl() string {
+	age := c.MediaMaxAge
+	if age <= 0 {
+		age = 604800
+	}
+	return fmt.Sprintf("public, max-age=%d, immutable", age)
 }
 
 // Load 加载配置：先加载 JSON 文件，再用环境变量覆盖，最后校验必填项。
@@ -206,5 +224,10 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("WEB_DIST_DIR"); v != "" {
 		cfg.WebDistDir = v
+	}
+	if v := os.Getenv("MEDIA_MAX_AGE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.MediaMaxAge = n
+		}
 	}
 }

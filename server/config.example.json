@@ -17,5 +17,6 @@
   "qiniu_domain": "",
   "qiniu_use_https": false,
   "qiniu_zone": "z2",
+  "media_max_age": 604800,
   "reveal_free_per_day": 5
 }

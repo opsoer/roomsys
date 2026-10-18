@@ -185,7 +185,7 @@ func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) err
 	ret := storage.PutRet{}
 	extra := storage.PutExtra{
 		Params: map[string]string{
-			"x-qn-meta-cache-control": "public, max-age=31536000, immutable",
+			"x-qn-meta-cache-control": h.Cfg.MediaCacheControl(),
 		},
 	}
 	return formUploader.Put(context.Background(), &ret, upToken, key, reader, size, &extra)
@@ -1138,7 +1138,7 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 			// 直连模式：适用于已配置备案 HTTPS CDN 域名、无需代理的场景，
 			// 流量直接走 CDN，不占用服务器带宽。
 			logger.Log.Debug().Str("path", safePath).Str("redirect", upstream).Msg("文件服务: 重定向到七牛")
-			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+			c.Header("Cache-Control", h.Cfg.MediaCacheControl())
 			c.Redirect(http.StatusFound, upstream)
 		}
 		return
@@ -1195,7 +1195,7 @@ func (h *MediaHandler) proxyUpstream(c *gin.Context, upstream, safePath string) 
 		}
 	}
 	c.Header("Content-Type", ctype)
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("Cache-Control", h.Cfg.MediaCacheControl())
 	if resp.StatusCode == http.StatusPartialContent {
 		if cr := resp.Header.Get("Content-Range"); cr != "" {
 			c.Header("Content-Range", cr)
