@@ -59,7 +59,7 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
 	}
-	summary := utils.QueryMonthlyFinance(h.DB, bid, month)
+	summary := services.QueryMonthlyFinance(h.DB, bid, month)
 	netProfit := summary.NetProfit
 	if netProfit <= 0 {
 		logger.Log.Info().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Msg("分红计算: 无净利润")
@@ -123,7 +123,7 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "请先配置股东信息")
 		return
 	}
-	summary := utils.QueryMonthlyFinance(h.DB, bid, req.Month)
+	summary := services.QueryMonthlyFinance(h.DB, bid, req.Month)
 	netProfit := summary.NetProfit
 
 	tx := h.DB.Begin()

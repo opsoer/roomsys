@@ -215,7 +215,7 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 	}
 
 	now := utils.Now()
-	billNo := utils.NextBillNo(tx, now.Format("20060102"))
+	billNo := services.NextBillNo(tx, now.Format("20060102"))
 
 	deducted := originalDeposit - refundedDeposit
 	desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, refundedDeposit)

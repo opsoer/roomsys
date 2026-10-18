@@ -131,7 +131,7 @@ func createRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p rentedBillsP
 		if totalAmount > 0 {
 			rentDesc := billStart.Format("2006-01-02") + " ~ " + billEnd.Format("2006-01-02")
 			rentBill := models.Bill{
-				BillNo:      utils.NextBillNo(tx, datePart),
+				BillNo:      services.NextBillNo(tx, datePart),
 				Type:        "income",
 				Subtype:     "租金",
 				Amount:      totalAmount,
@@ -154,7 +154,7 @@ func createRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p rentedBillsP
 	}
 	if p.Deposit > 0 && recordDeposit {
 		depositBill := models.Bill{
-			BillNo:      utils.NextBillNo(tx, datePart),
+			BillNo:      services.NextBillNo(tx, datePart),
 			Type:        "income",
 			Subtype:     "押金",
 			Amount:      p.Deposit,
@@ -936,7 +936,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			}
 
 			bill := models.Bill{
-				BillNo:      utils.NextBillNo(tx, datePart),
+				BillNo:      services.NextBillNo(tx, datePart),
 				Type:        "expense",
 				Subtype:     "押金退还",
 				Amount:      *req.RefundedDeposit,
@@ -1124,7 +1124,7 @@ func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *
 		datePart := now.Format("20060102")
 
 		bill := models.Bill{
-			BillNo:      utils.NextBillNo(tx, datePart),
+			BillNo:      services.NextBillNo(tx, datePart),
 			BuildingID:  room.BuildingID,
 			RoomID:      &room.ID,
 			Subtype:     "定金违约",

@@ -40,9 +40,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { buildingGetBills, buildingGetRooms, buildingExportBills } from '../api'
 import { ElMessage } from 'element-plus'
+import { useInfiniteList } from '../composables/useInfiniteList'
 import BillList from '../components/bill/BillList.vue'
 import BillStats from '../components/bill/BillStats.vue'
 import BillTrend from '../components/bill/BillTrend.vue'
@@ -50,67 +51,23 @@ import BillPredict from '../components/bill/BillPredict.vue'
 import BillDialog from '../components/bill/BillDialog.vue'
 
 const activeTab = ref('list')
-const bills = ref([])
-const billLoading = ref(false)
-const billLoadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
 const allRooms = ref([])
 const billListRef = ref(null)
 const billDialogRef = ref(null)
-const billTotal = ref(0)
 const billPageSize = 20
 
-async function fetchBills(append = false) {
-  if (!append) {
-    billLoading.value = true
-  } else {
-    billLoadingMore.value = true
-  }
-  try {
-    const params = billListRef.value?.getFilterParams() || {}
-    params.page_size = billPageSize
-    if (append && bills.value.length > 0) {
-      params.last_id = bills.value[bills.value.length - 1].id
-      params.last_key = bills.value[bills.value.length - 1].bill_date
-    }
+// 无限滚动 + 游标分页（last_id + last_key 账单日期）；原实现 append 不去重，保持行为一致
+const { items: bills, total: billTotal, loading: billLoading, loadingMore: billLoadingMore, sentinel, fetch: fetchBills } = useInfiniteList({
+  fetcher: async (params) => {
     const res = await buildingGetBills(params)
-    const data = res.data.bills || []
-    if (!append) billTotal.value = res.data.total || 0
-    if (append) {
-      bills.value = [...bills.value, ...data]
-    } else {
-      bills.value = data
-    }
-  } catch {
-    ElMessage.error('获取账单列表失败')
-  } finally {
-    billLoading.value = false
-    billLoadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchBills(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !billLoading.value &&
-      !billLoadingMore.value &&
-      bills.value.length < billTotal.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
+    return { list: res.data.bills || [], total: res.data.total || 0 }
+  },
+  pageSize: billPageSize,
+  cursorKey: (last) => ({ last_id: last.id, last_key: last.bill_date }),
+  getExtraParams: () => billListRef.value?.getFilterParams() || {},
+  onError: () => ElMessage.error('获取账单列表失败'),
+  dedupe: false,
+})
 
 function openAddDialog() {
   billDialogRef.value?.open()
@@ -153,10 +110,5 @@ onMounted(async () => {
   } catch {
     ElMessage.error('获取房间列表失败')
   }
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
 })
 </script>

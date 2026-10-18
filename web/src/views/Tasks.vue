@@ -101,18 +101,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { buildingGetTasks, buildingProcessTask } from '../api'
 import { ElMessage } from 'element-plus'
+import { useInfiniteList } from '../composables/useInfiniteList'
 
-const tasks = ref([])
-const loading = ref(false)
-const loadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
 const filterStatus = ref('pending')
-const total = ref(0)
 const pageSize = 20
+
+// 无限滚动 + 游标分页（last_id + last_key 创建时间）；status 作为 API 第一参数单独传递，不进 params
+const { items: tasks, total, loading, loadingMore, sentinel, fetch: fetchTasks } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await buildingGetTasks(filterStatus.value || undefined, params)
+    return { list: res.data.tasks || [], total: res.data.total || 0 }
+  },
+  pageSize,
+  cursorKey: (last) => ({ last_id: last.id, last_key: last.created_at }),
+  onError: () => ElMessage.error('获取任务列表失败'),
+  dedupe: false,
+})
 
 const showProcessDialog = ref(false)
 const processingTask = ref(null)
@@ -120,57 +127,6 @@ const processSubmitting = ref(false)
 const processFormRef = ref(null)
 const processForm = ref({ refunded_deposit: 0 })
 const originalDeposit = ref(0)
-
-async function fetchTasks(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
-    const status = filterStatus.value || undefined
-    const params = { page_size: pageSize }
-    if (append && tasks.value.length > 0) {
-      params.last_id = tasks.value[tasks.value.length - 1].id
-      params.last_key = tasks.value[tasks.value.length - 1].created_at
-    }
-    const res = await buildingGetTasks(status, params)
-    const data = res.data.tasks || []
-    if (!append) total.value = res.data.total || 0
-    if (append) {
-      tasks.value = [...tasks.value, ...data]
-    } else {
-      tasks.value = data
-    }
-  } catch {
-    ElMessage.error('获取任务列表失败')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchTasks(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      tasks.value.length < total.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
 
 function openProcessDialog(task) {
   processingTask.value = task
@@ -197,11 +153,6 @@ async function handleProcessSubmit() {
 }
 
 onMounted(fetchTasks)
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
-})
 </script>
 
 <style scoped>

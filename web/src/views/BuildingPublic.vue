@@ -165,13 +165,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildingDetail, getBuildingRooms } from '../api'
 import { mediaUrl, statusLabel, statusTagType, maskPhone, copyText } from '../utils/format'
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { useAuthStore } from '../stores/auth'
+import { useInfiniteList } from '../composables/useInfiniteList'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 import CaptchaDialog from '../components/common/CaptchaDialog.vue'
 import { revealedLandlords, revealLandlords } from '../utils/reveal'
@@ -181,17 +182,29 @@ const router = useRouter()
 const authStore = useAuthStore()
 const id = computed(() => route.params.id)
 const building = ref(null)
-const rooms = ref([])
-const loading = ref(true)
 const loadError = ref(false)
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
-const totalRooms = ref(0)
 const pageSize = 20
-const loadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
+
+// 无限滚动 + 游标分页（last_id）
+const { items: rooms, total: totalRooms, loading, loadingMore, sentinel, fetch: fetchRooms } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await getBuildingRooms(id.value, params)
+    return { list: res.data.rooms || [], total: res.data.total || 0 }
+  },
+  pageSize,
+  getExtraParams: () => {
+    const params = {}
+    if (statusFilter.value) params.status = statusFilter.value
+    if (floorFilter.value) params.floor = floorFilter.value
+    if (layoutFilter.value) params.layout = layoutFilter.value
+    return params
+  },
+  onError: () => showToast('加载失败'),
+  initialLoading: true,
+})
 
 // ========== 房东号码查看（reveal） ==========
 // 公开接口只返回打码号码；完整号码走 reveal 接口（每日前几次免费，之后需图片验证码）
@@ -335,67 +348,6 @@ function downloadQrCard() {
   showToast({ message: '二维码已保存', duration: 1500 })
 }
 
-async function fetchRooms(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
-    const params = { page_size: pageSize }
-    // 游标分页：加载更多时携带上一批最后一条的 id
-    if (append && rooms.value.length > 0) {
-      params.last_id = rooms.value[rooms.value.length - 1].id
-    }
-    if (statusFilter.value) params.status = statusFilter.value
-    if (floorFilter.value) params.floor = floorFilter.value
-    if (layoutFilter.value) params.layout = layoutFilter.value
-    const res = await getBuildingRooms(id.value, params)
-    const data = res.data.rooms || []
-    if (!append) totalRooms.value = res.data.total || 0
-    if (append) {
-      // 去重兜底：游标分页偶发重复时避免同一房间显示多次
-      const existingIds = new Set(rooms.value.map(r => r.id))
-      const fresh = data.filter(r => !existingIds.has(r.id))
-      if (fresh.length === 0) {
-        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免无匹配房间时反复请求刷屏
-        totalRooms.value = Math.max(totalRooms.value, rooms.value.length)
-      } else {
-        rooms.value = [...rooms.value, ...fresh]
-      }
-    } else {
-      rooms.value = data
-    }
-  } catch {
-    showToast('加载失败')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchRooms(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      rooms.value.length < totalRooms.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
-
 async function retryLoad() {
   loadError.value = false
   loading.value = true
@@ -421,11 +373,6 @@ onMounted(async () => {
     showToast('加载失败')
   }
   await fetchRooms()
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
 })
 </script>
 

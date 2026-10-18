@@ -215,7 +215,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildings } from '../api'
@@ -224,14 +224,13 @@ import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useLocationStore } from '../stores/locations'
 import { useUtils } from '../composables/useUtils'
+import { useInfiniteList } from '../composables/useInfiniteList'
 import { LAYOUT_OPTIONS } from '../utils/constants'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
 const { mediaUrl, goToDashboard, maskName, maskPhone } = useUtils()
-const buildings = ref([])
-const loading = ref(true)
 const refreshing = ref(false)
 const filterOpen = ref(false)
 
@@ -259,11 +258,28 @@ const stepMinPrice = ref(null)
 const stepMaxPrice = ref(null)
 const stepLayout = ref('')
 
-const total = ref(0)
 const pageSize = 20
-const loadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
+
+// 无限滚动 + 游标分页（last_id）
+const { items: buildings, total, loading, loadingMore, sentinel, fetch: fetchBuildings } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await getBuildings(params)
+    return { list: res.data.buildings || [], total: res.data.total || 0 }
+  },
+  pageSize,
+  getExtraParams: () => {
+    const params = {}
+    if (filterDistrict.value) params.district = filterDistrict.value
+    if (filterStreet.value) params.street = filterStreet.value
+    if (filterVillages.value.length) params.village = filterVillages.value.join(',')
+    if (filterMinPrice.value != null) params.min_price = filterMinPrice.value
+    if (filterMaxPrice.value != null) params.max_price = filterMaxPrice.value
+    if (filterLayout.value) params.layout = filterLayout.value
+    return params
+  },
+  onError: () => showToast('加载失败'),
+  initialLoading: true,
+})
 
 const qrVisible = ref(false)
 const qrTitle = ref('分享主页')
@@ -457,70 +473,6 @@ function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-async function fetchBuildings(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
-    const params = { page_size: pageSize }
-    // 游标分页：加载更多时携带上一批最后一条的 id
-    if (append && buildings.value.length > 0) {
-      params.last_id = buildings.value[buildings.value.length - 1].id
-    }
-    if (filterDistrict.value) params.district = filterDistrict.value
-    if (filterStreet.value) params.street = filterStreet.value
-    if (filterVillages.value.length) params.village = filterVillages.value.join(',')
-    if (filterMinPrice.value != null) params.min_price = filterMinPrice.value
-    if (filterMaxPrice.value != null) params.max_price = filterMaxPrice.value
-    if (filterLayout.value) params.layout = filterLayout.value
-    const res = await getBuildings(params)
-    const data = res.data.buildings || []
-    if (!append) total.value = res.data.total || 0
-    if (append) {
-      // 去重兜底：游标分页偶发重复时避免同一公寓显示多次
-      const existingIds = new Set(buildings.value.map(b => b.id))
-      const fresh = data.filter(b => !existingIds.has(b.id))
-      if (fresh.length === 0) {
-        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免反复请求
-        total.value = Math.max(total.value, buildings.value.length)
-      } else {
-        buildings.value = [...buildings.value, ...fresh]
-      }
-    } else {
-      buildings.value = data
-    }
-  } catch (e) {
-    showToast('加载失败')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchBuildings(true)
-}
-
-// 触底自动加载：sentinel 元素进入视口附近时加载下一页（类似小红书等 App 的滑动更新）
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      buildings.value.length < total.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
-
 async function onRefresh() {
   locationStore.load(true)
   await fetchBuildings()
@@ -545,11 +497,6 @@ onMounted(async () => {
   locationStore.load()
   applyQueryFilter()
   await fetchBuildings()
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
 })
 </script>
 

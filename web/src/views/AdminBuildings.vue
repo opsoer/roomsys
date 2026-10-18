@@ -64,20 +64,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminGetBuildings, adminDeleteBuilding, adminUpdateBuilding } from '../api'
 import { buildingHomeUrl, siteHomeUrl, generateBrandedQrDataUrl, generateSiteQrDataUrl, downloadQrImage, buildingInfoLines, canAutoDownloadImage } from '../utils/qr'
 import { copyText } from '../utils/format'
+import { useInfiniteList } from '../composables/useInfiniteList'
 import AdminBuildingList from '../components/admin/AdminBuildingList.vue'
 import AdminBuildingDialogs from '../components/admin/AdminBuildingDialogs.vue'
 
-const buildings = ref([])
-const loading = ref(true)
-const loadingMore = ref(false)
-const total = ref(0)
-const sentinel = ref(null)
-let observer = null
 const listRef = ref(null)
 const dialogsRef = ref(null)
 
@@ -92,64 +87,22 @@ const buildingQrBuilding = ref(null)
 
 const PAGE_SIZE = 20
 
-async function fetchBuildings(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
+// 无限滚动 + 游标分页（last_id）；原实现无 catch，错误向外抛出（不传 onError）
+const { items: buildings, total, loading, loadingMore, sentinel, fetch: fetchBuildings } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await adminGetBuildings(params)
+    return { list: res.data.buildings || [], total: res.data.total || 0 }
+  },
+  pageSize: PAGE_SIZE,
+  getExtraParams: () => {
     const filter = listRef.value?.getFilter() || {}
-    const params = { page_size: PAGE_SIZE }
-    // 游标分页：加载更多时携带上一批最后一条的 id
-    if (append && buildings.value.length > 0) {
-      params.last_id = buildings.value[buildings.value.length - 1].id
-    }
+    const params = {}
     if (filter.status) params.status = filter.status
     if (filter.keyword) params.keyword = filter.keyword
-    const res = await adminGetBuildings(params)
-    const data = res.data.buildings || []
-    if (!append) total.value = res.data.total || 0
-    if (append) {
-      // 去重兜底：游标分页偶发重复时避免同一公寓显示多次
-      const existingIds = new Set(buildings.value.map(b => b.id))
-      const fresh = data.filter(b => !existingIds.has(b.id))
-      if (fresh.length === 0) {
-        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免反复请求
-        total.value = Math.max(total.value, buildings.value.length)
-      } else {
-        buildings.value = [...buildings.value, ...fresh]
-      }
-    } else {
-      buildings.value = data
-    }
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchBuildings(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      buildings.value.length < total.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
+    return params
+  },
+  initialLoading: true,
+})
 
 function openCreate() {
   dialogsRef.value?.openCreate()
@@ -290,11 +243,6 @@ function copySiteLink() {
 
 onMounted(() => {
   fetchBuildings()
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
 })
 </script>
 

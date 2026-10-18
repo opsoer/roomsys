@@ -1,35 +1,7 @@
 <template>
   <div>
     <el-dialog v-model="showRentDialog" title="签合同出租" width="500px">
-      <el-form ref="rentFormRef" :model="rentForm" label-width="100px">
-        <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
-          <el-input v-model="rentForm.tenant_name" />
-        </el-form-item>
-        <el-form-item label="联系电话" prop="tenant_phone">
-          <el-input v-model="rentForm.tenant_phone" />
-        </el-form-item>
-        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input :model-value="rentForm.rent_price" @update:model-value="v => rentForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-          <el-input :model-value="rentForm.management_fee" @update:model-value="v => rentForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input :model-value="rentForm.deposit" @update:model-value="v => rentForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
-          <el-date-picker v-model="rentForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="结束日期" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
-          <el-date-picker v-model="rentForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-        <div v-if="isHistoricalStart" class="rent-historical-hint">
-          起租日期早于本月：系统只补记本月租金账单，之前月份的账单不再补录。
-          <el-checkbox v-if="rentForm.deposit > 0" v-model="rentForm.record_deposit_bill">
-            补记押金收入账单（勾选后押金计入本月收入；历史押金通常无需勾选）
-          </el-checkbox>
-        </div>
-      </el-form>
+      <ContractForm ref="rentFormRef" v-model="rentForm" mode="rent" :historical-start="isHistoricalStart" />
       <template #footer>
         <el-button @click="showRentDialog = false">取消</el-button>
         <el-button type="primary" :loading="rentSubmitting" @click="handleRent">确定出租</el-button>
@@ -37,33 +9,7 @@
     </el-dialog>
 
     <el-dialog v-model="showReserveDialog" :title="isFutureReserve ? '交定金预订（未来）' : '交定金预订'" width="500px">
-      <el-form ref="reserveFormRef" :model="reserveForm" label-width="100px">
-        <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
-          <el-input v-model="reserveForm.tenant_name" />
-        </el-form-item>
-        <el-form-item label="联系电话" prop="tenant_phone">
-          <el-input v-model="reserveForm.tenant_phone" />
-        </el-form-item>
-        <el-form-item label="定金金额" prop="earnest_money" :rules="[{ required: true, message: '请输入定金金额' }, { validator: (_, v) => v > 0, message: '定金必须大于0' }]">
-          <el-input :model-value="reserveForm.earnest_money" @update:model-value="v => reserveForm.earnest_money = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="定金金额" style="width:100%" />
-        </el-form-item>
-        <el-divider>约定信息（正式签约时可微调）</el-divider>
-        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input :model-value="reserveForm.rent_price" @update:model-value="v => reserveForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
-        </el-form-item>
-		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-		  <el-input :model-value="reserveForm.management_fee" @update:model-value="v => reserveForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
-		</el-form-item>
-        <el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input :model-value="reserveForm.deposit" @update:model-value="v => reserveForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="预计起租" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
-          <el-date-picker v-model="reserveForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="预计结束" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
-          <el-date-picker v-model="reserveForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-      </el-form>
+      <ContractForm ref="reserveFormRef" v-model="reserveForm" mode="reserve" />
       <template #footer>
         <el-button @click="showReserveDialog = false">取消</el-button>
         <el-button type="primary" :loading="reserveSubmitting" @click="handleReserve">确定预订</el-button>
@@ -71,29 +17,7 @@
     </el-dialog>
 
     <el-dialog v-model="showConfirmSignDialog" title="确认签约（收齐押租金）" width="500px">
-      <el-form ref="signFormRef" :model="signForm" label-width="100px">
-        <el-form-item label="租客姓名" prop="tenant_name" :rules="[{ required: true, message: '请输入租客姓名' }]">
-          <el-input v-model="signForm.tenant_name" />
-        </el-form-item>
-        <el-form-item label="联系电话" prop="tenant_phone">
-          <el-input v-model="signForm.tenant_phone" />
-        </el-form-item>
-        <el-form-item label="月租金" prop="rent_price" :rules="[{ required: true, message: '请输入租金' }]">
-          <el-input :model-value="signForm.rent_price" @update:model-value="v => signForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="月租金" style="width:100%" />
-        </el-form-item>
-		<el-form-item label="管理费" prop="management_fee" :rules="[{ required: true, message: '请输入管理费' }]">
-		  <el-input :model-value="signForm.management_fee" @update:model-value="v => signForm.management_fee = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="管理费" style="width:100%" />
-		</el-form-item>
-		<el-form-item label="押金" prop="deposit" :rules="[{ required: true, message: '请输入押金金额' }]">
-          <el-input :model-value="signForm.deposit" @update:model-value="v => signForm.deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="押金" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="起租日期" prop="start_date" :rules="[{ required: true, message: '请选择起租日期' }]">
-          <el-date-picker v-model="signForm.start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="结束日期" prop="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
-          <el-date-picker v-model="signForm.end_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
-        </el-form-item>
-      </el-form>
+      <ContractForm ref="signFormRef" v-model="signForm" mode="sign" />
       <template #footer>
         <el-button @click="showConfirmSignDialog = false">取消</el-button>
         <el-button type="primary" :loading="signSubmitting" @click="handleConfirmSign">确认签约并收款</el-button>
@@ -224,6 +148,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { buildingUpdateRoomStatus, buildingRenewContract, buildingUpdateRoom } from '../../api'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../../utils/constants'
+import ContractForm from './ContractForm.vue'
 
 const floorOptions = FLOOR_OPTIONS
 const layoutOptions = LAYOUT_OPTIONS
@@ -487,20 +412,5 @@ defineExpose({ openRent, openRenew, openVacant, openEdit, openReserve, openConfi
   font-size: 13px;
   color: #409eff;
   margin-top: 8px;
-}
-.rent-historical-hint {
-  background: #fdf6ec;
-  border: 1px solid #faecd8;
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #e6a23c;
-  line-height: 1.6;
-  margin: 0 0 12px 12px;
-}
-.rent-historical-hint .el-checkbox {
-  display: flex;
-  margin-top: 4px;
-  white-space: normal;
 }
 </style>

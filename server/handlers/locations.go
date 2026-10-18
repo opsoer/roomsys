@@ -104,7 +104,7 @@ func (h *LocationManageHandler) AddCustom(c *gin.Context) {
 	utils.Success(c, gin.H{"custom": entry})
 }
 
-// DeleteCustom 删除自定义条目：只要还有公寓（含软删除的）引用该位置就禁止，避免位置信息丢失
+// DeleteCustom 删除自定义条目：只要还有未删除的公寓引用该位置就禁止，避免位置信息丢失（GORM 默认排除软删除行）
 func (h *LocationManageHandler) DeleteCustom(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {

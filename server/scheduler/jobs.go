@@ -1,5 +1,5 @@
-// Package handlers 提供后台定时检查任务，如自动更新到期合同状态
-package handlers
+// Package scheduler 提供后台定时检查任务，如自动更新到期合同状态
+package scheduler
 
 import (
 	"fmt"

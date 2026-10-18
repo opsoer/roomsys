@@ -117,10 +117,11 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { buildingGetRooms, buildingGetContracts } from '../api'
 import { ElMessage } from 'element-plus'
+import { useInfiniteList } from '../composables/useInfiniteList'
 
 const PAGE_SIZE = 20
 
@@ -131,13 +132,24 @@ const rooms = ref([])
 const selectedRoomId = ref(null)
 const statusFilter = ref('')
 const keyword = ref('')
-const contracts = ref([])
-const total = ref(0)
-const loading = ref(false)
-const loadingMore = ref(false)
-const sentinel = ref(null)
 
-let observer = null
+// 无限滚动 + 游标分页（last_id + last_key 起租日）
+const { items: contracts, total, loading, loadingMore, sentinel, fetch: fetchContracts } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await buildingGetContracts(params)
+    return { list: res.data.contracts || [], total: res.data.total || 0 }
+  },
+  pageSize: PAGE_SIZE,
+  cursorKey: (last) => ({ last_id: last.id, last_key: last.start_date }),
+  getExtraParams: () => {
+    const params = {}
+    if (selectedRoomId.value) params.room_id = selectedRoomId.value
+    if (statusFilter.value) params.status = statusFilter.value
+    if (keyword.value.trim()) params.keyword = keyword.value.trim()
+    return params
+  },
+  onError: () => ElMessage.error('获取合同列表失败'),
+})
 
 function roomLabel(r) {
   return [r.room_number, r.floor ? r.floor + '层' : '', r.layout].filter(Boolean).join(' · ')
@@ -152,71 +164,8 @@ function mgmtFeeLabel(fee) {
   return '无管理费'
 }
 
-async function fetchContracts(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
-    const params = { page_size: PAGE_SIZE }
-    if (append && contracts.value.length > 0) {
-      const last = contracts.value[contracts.value.length - 1]
-      params.last_id = last.id
-      params.last_key = last.start_date
-    }
-    if (selectedRoomId.value) params.room_id = selectedRoomId.value
-    if (statusFilter.value) params.status = statusFilter.value
-    if (keyword.value.trim()) params.keyword = keyword.value.trim()
-
-    const res = await buildingGetContracts(params)
-    const data = res.data.contracts || []
-    if (!append) {
-      total.value = res.data.total || 0
-      contracts.value = data
-    } else {
-      // 去重兜底：游标分页偶发重复时避免同一合同显示多次
-      const existingIds = new Set(contracts.value.map(c => c.id))
-      const fresh = data.filter(c => !existingIds.has(c.id))
-      if (fresh.length === 0) {
-        total.value = Math.max(total.value, contracts.value.length)
-      } else {
-        contracts.value = [...contracts.value, ...fresh]
-      }
-    }
-  } catch {
-    ElMessage.error('获取合同列表失败')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
 function search() {
   fetchContracts()
-}
-
-function loadMore() {
-  fetchContracts(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      total.value > 0 &&
-      contracts.value.length < total.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
 }
 
 // 拉取全部房间供选择器使用（page_size 上限 100，超过时用游标分页循环取完）
@@ -245,10 +194,6 @@ async function fetchAllRoomsForPicker() {
 onMounted(async () => {
   rooms.value = await fetchAllRoomsForPicker()
   fetchContracts()
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
 })
 </script>
 

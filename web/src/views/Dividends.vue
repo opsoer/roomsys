@@ -132,24 +132,32 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { buildingGetDividends, buildingCalculateDividend, buildingGetShareholders, buildingCreateShareholder, buildingUpdateShareholder, buildingDeleteShareholder } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useInfiniteList } from '../composables/useInfiniteList'
 
 const calcMonth = ref('')
 const preview = ref(null)
-const dividends = ref([])
 const shareholders = ref([])
 const showShareholderDialog = ref(false)
 const shSubmitting = ref(false)
 const shForm = ref({ name: '', share_ratio: 0 })
 const shFormRef = ref(null)
 const editingSHId = ref(null)
-const divTotal = ref(0)
 const divPageSize = 20
-const divLoadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
+
+// 无限滚动 + 游标分页（last_id + last_key 结算月）；原实现 append 不去重、无整页 loading，保持行为一致
+const { items: dividends, total: divTotal, loadingMore: divLoadingMore, sentinel, fetch: fetchDividends } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await buildingGetDividends(params)
+    return { list: res.data.dividends || [], total: res.data.total || 0 }
+  },
+  pageSize: divPageSize,
+  cursorKey: (last) => ({ last_id: last.id, last_key: last.settle_month }),
+  onError: () => ElMessage.error('获取分红记录失败'),
+  dedupe: false,
+})
 
 async function handleCalculate() {
   if (!calcMonth.value) {
@@ -162,50 +170,6 @@ async function handleCalculate() {
   } catch {
     ElMessage.error('获取分红预览失败')
   }
-}
-
-async function fetchDividends(append = false) {
-  if (append) divLoadingMore.value = true
-  try {
-    const params = { page_size: divPageSize }
-    if (append && dividends.value.length > 0) {
-      params.last_id = dividends.value[dividends.value.length - 1].id
-      params.last_key = dividends.value[dividends.value.length - 1].settle_month
-    }
-    const res = await buildingGetDividends(params)
-    const data = res.data.dividends || []
-    if (!append) divTotal.value = res.data.total || 0
-    if (append) {
-      dividends.value = [...dividends.value, ...data]
-    } else {
-      dividends.value = data
-    }
-  } catch {
-    ElMessage.error('获取分红记录失败')
-  } finally {
-    divLoadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchDividends(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !divLoadingMore.value &&
-      dividends.value.length < divTotal.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
 }
 
 async function fetchShareholders() {
@@ -262,11 +226,6 @@ async function handleDeleteSH(id) {
 onMounted(() => {
   fetchDividends()
   fetchShareholders()
-})
-
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
 })
 </script>
 

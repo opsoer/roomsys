@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"rental-server/logger"
+	"rental-server/scheduler"
 	"rental-server/services"
 	"rental-server/utils"
 
@@ -73,7 +74,7 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		Uint("user_id", userID).
 		Int64("offset_seconds", offsetSeconds).
 		Msg("模拟时间已更新，触发合同到期检查")
-	AutoCheckExpiringContracts(h.DB)
+	scheduler.AutoCheckExpiringContracts(h.DB)
 	now := utils.Now()
 	offset := utils.GetTimeOffset()
 	utils.Success(c, TimeResp{
@@ -89,11 +90,11 @@ func (h *SystemHandler) RunTasks(c *gin.Context) {
 	logger.Log.Info().Uint("user_id", userID).Msg("手动触发全部定时任务")
 
 	results := []string{
-		AutoCheckExpiringContracts(h.DB),
+		scheduler.AutoCheckExpiringContracts(h.DB),
 		AutoCreateMonthlyRentBills(h.DB),
-		CheckExpiredBuildings(h.DB),
+		scheduler.CheckExpiredBuildings(h.DB),
 		utils.CleanupRevokedTokens(),
-		AutoCleanupData(h.DB),
+		scheduler.AutoCleanupData(h.DB),
 	}
 
 	utils.Success(c, gin.H{"results": results})

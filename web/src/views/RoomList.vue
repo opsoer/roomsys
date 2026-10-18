@@ -449,13 +449,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { buildingGetRooms, buildingCreateRoom, buildingGetRoom, buildingImportRentedRooms, buildingBatchUpdatePricing } from '../api'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, DocumentAdd, SetUp } from '@element-plus/icons-vue'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 import { mediaUrl, statusLabel } from '../utils/format'
+import { useInfiniteList } from '../composables/useInfiniteList'
 
 const router = useRouter()
 
@@ -489,11 +490,6 @@ const copySourceRoomOptions = computed(() => {
   return addCopyAllRooms.value.filter(r => r.floor === copySourceFloor.value)
 })
 
-const rooms = ref([])
-const loading = ref(true)
-const loadingMore = ref(false)
-const sentinel = ref(null)
-let observer = null
 const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
@@ -519,8 +515,26 @@ const showBatchResult = ref(false)
 const batchFailures = ref([])
 const batchSuccessCount = ref(0)
 const batchResultTitle = ref('批量创建结果')
-const roomTotal = ref(0)
 const roomPageSize = 20
+
+// 无限滚动 + 游标分页（last_id + last_key 房间号）
+const { items: rooms, total: roomTotal, loading, loadingMore, sentinel, fetch: fetchRooms } = useInfiniteList({
+  fetcher: async (params) => {
+    const res = await buildingGetRooms(params)
+    return { list: res.data.rooms || [], total: res.data.total || 0 }
+  },
+  pageSize: roomPageSize,
+  cursorKey: (last) => ({ last_id: last.id, last_key: last.room_number }),
+  getExtraParams: () => {
+    const params = {}
+    if (statusFilter.value) params.status = statusFilter.value
+    if (floorFilter.value) params.floor = floorFilter.value
+    if (layoutFilter.value) params.layout = layoutFilter.value
+    return params
+  },
+  onError: () => ElMessage.error('获取房间列表失败'),
+  initialLoading: true,
+})
 
 // 导入在租房间：共用房间信息 + 逐间租约明细
 const showImportDialog = ref(false)
@@ -739,67 +753,6 @@ const dialogTitle = computed(() => {
   }
   return '添加房间'
 })
-
-async function fetchRooms(append = false) {
-  if (!append) {
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
-  try {
-    const params = { page_size: roomPageSize }
-    if (append && rooms.value.length > 0) {
-      params.last_id = rooms.value[rooms.value.length - 1].id
-      params.last_key = rooms.value[rooms.value.length - 1].room_number
-    }
-    if (statusFilter.value) params.status = statusFilter.value
-    if (floorFilter.value) params.floor = floorFilter.value
-    if (layoutFilter.value) params.layout = layoutFilter.value
-    const res = await buildingGetRooms(params)
-    const data = res.data.rooms || []
-    if (!append) roomTotal.value = res.data.total || 0
-    if (append) {
-      // 去重兜底：游标分页偶发重复时避免同一房间显示多次
-      const existingIds = new Set(rooms.value.map(r => r.id))
-      const fresh = data.filter(r => !existingIds.has(r.id))
-      if (fresh.length === 0) {
-        // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免无匹配房间时反复请求刷屏
-        roomTotal.value = Math.max(roomTotal.value, rooms.value.length)
-      } else {
-        rooms.value = [...rooms.value, ...fresh]
-      }
-    } else {
-      rooms.value = data
-    }
-  } catch {
-    ElMessage.error('获取房间列表失败')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-    nextTick(setupInfiniteScroll)
-  }
-}
-
-function loadMore() {
-  fetchRooms(true)
-}
-
-// 触底自动加载：sentinel 进入视口附近时加载下一页
-function setupInfiniteScroll() {
-  if (observer) observer.disconnect()
-  if (!sentinel.value) return
-  observer = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      !loading.value &&
-      !loadingMore.value &&
-      rooms.value.length < roomTotal.value
-    ) {
-      loadMore()
-    }
-  }, { rootMargin: '200px 0px' })
-  observer.observe(sentinel.value)
-}
 
 function mgmtFee(room) {
   return room.contract_management_fee != null ? room.contract_management_fee : room.management_fee
@@ -1075,10 +1028,6 @@ async function handleImportRented() {
 }
 
 onMounted(fetchRooms)
-onBeforeUnmount(() => {
-  if (observer) observer.disconnect()
-  observer = null
-})
 </script>
 
 <style scoped>

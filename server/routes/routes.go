@@ -32,36 +32,45 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	authSvc := services.NewAuthService(db, cfg)
 	settingsSvc := services.NewSettingsService(db)
 	recruitSvc := services.NewRecruitService(db)
+	statsSvc := services.NewStatsService(db)
+
+	// handler 单例：各 handler 只持有依赖（DB/Cfg/Service），无请求态，三组共享同一实例
 	locationH := &handlers.LocationManageHandler{DB: db}
+	authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
+	buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
+	roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
+	recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
+	mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
+	statsH := &handlers.StatsHandler{DB: db, StatsService: statsSvc}
+	taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
+	platformTaskH := &handlers.PlatformTaskHandler{DB: db, TaskService: taskSvc, RecruitService: recruitSvc}
+	systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc}
+	settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
+	billH := &handlers.BillHandler{DB: db, BillService: billSvc, RoomService: roomSvc}
+	divH := &handlers.DividendHandler{DB: db, DividendService: dividendSvc}
 
 	// ========== 公开接口 ==========
 	public := r.Group("/api")
 	{
-		auth := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
-		public.POST("/auth/login", auth.Login)
-		public.POST("/auth/refresh", auth.RefreshToken)
-		public.POST("/auth/logout", auth.Logout)
+		public.POST("/auth/login", authH.Login)
+		public.POST("/auth/refresh", authH.RefreshToken)
+		public.POST("/auth/logout", authH.Logout)
 
-		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		public.GET("/buildings", buildingH.ListPublic)
 		public.GET("/buildings/locations", buildingH.ListLocations)
 		public.GET("/locations/manage", locationH.List)
 		public.GET("/buildings/:id", buildingH.GetPublic)
 		public.GET("/buildings/:id/rooms", buildingH.GetRooms)
 
-		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		public.GET("/buildings/:id/rooms/:rid", roomH.GetPublic)
 		public.GET("/captcha", handlers.GetCaptcha)
 		public.POST("/buildings/:id/reveal-phone", buildingH.RevealPhone)
 
-		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		public.POST("/recruit/submit", recruitH.Submit)
 
-		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		public.GET("/media/*filepath", mediaH.Serve)
 		public.POST("/qiniu/pfop-callback", mediaH.PfopCallback)
 
-		statsH := &handlers.StatsHandler{DB: db}
 		public.POST("/stats/landlord-view", statsH.RecordLandlordView)
 
 		public.GET("/config", func(c *gin.Context) {
@@ -82,7 +91,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	platform.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
-		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		platform.POST("/buildings", buildingH.Create)
 		platform.GET("/buildings", buildingH.List)
 		platform.PUT("/buildings/:id", buildingH.Update)
@@ -93,32 +101,26 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.PUT("/buildings/:id/deposit", buildingH.AdjustDeposit)
 		platform.GET("/buildings/:id/deposit-logs", buildingH.DepositLogs)
 
-		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
 		platform.POST("/auth/create-admin", authH.CreateAdmin)
 		platform.POST("/auth/create-building-admin", authH.CreateBuildingAdmin)
 		platform.GET("/auth/users", authH.ListUsers)
 		platform.PUT("/auth/users/:id", authH.UpdateUser)
 		platform.DELETE("/auth/users/:id", authH.DeleteUser)
 
-		systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
 		platform.POST("/system/run-tasks", systemH.RunTasks)
 
-		recruitH := &handlers.RecruitHandler{DB: db, RecruitService: recruitSvc, TaskService: taskSvc}
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)
 
-		platformTaskH := &handlers.PlatformTaskHandler{DB: db, TaskService: taskSvc, RecruitService: recruitSvc}
 		platform.GET("/tasks", platformTaskH.List)
 		platform.GET("/tasks/count", platformTaskH.Count)
 		platform.POST("/tasks/:id/process", platformTaskH.Process)
 
-		settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 		platform.GET("/settings/:key", settingsH.Get)
 		platform.PUT("/settings/:key", settingsH.Update)
 
-		statsH := &handlers.StatsHandler{DB: db}
 		platform.GET("/stats/overview", statsH.Overview)
 		platform.GET("/stats/building/:id", statsH.BuildingDetail)
 		platform.GET("/stats/trend", statsH.Trend)
@@ -135,16 +137,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	building.Use(middleware.AdminOrBuildingAdminMiddleware())
 	building.Use(middleware.BuildingScopeMiddleware(db))
 	{
-		authH := &handlers.AuthHandler{DB: db, Cfg: cfg, AuthService: authSvc}
-
 		// 楼栋信息
-		buildingH := &handlers.BuildingHandler{DB: db, Cfg: cfg, BuildingService: buildingSvc}
 		building.GET("/info", buildingH.MyBuilding)
 		building.PUT("/info", buildingH.UpdateMyBuilding)
 		building.GET("/stats", buildingH.MyStats)
 
 		// 房间管理
-		roomH := &handlers.RoomHandler{DB: db, Cfg: cfg, RoomService: roomSvc}
 		building.GET("/rooms", roomH.List)
 		building.GET("/rooms/:id", roomH.Get)
 		building.POST("/rooms", roomH.Create)
@@ -158,7 +156,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.PUT("/rooms/:id/contract", roomH.RenewContract)
 
 		// 媒体管理
-		mediaH := &handlers.MediaHandler{DB: db, Cfg: cfg, MediaService: mediaSvc}
 		building.POST("/rooms/:id/media", mediaH.Upload)
 		building.DELETE("/rooms/:id/media/:mediaId", mediaH.Delete)
 		building.POST("/rooms/:id/media/copy", mediaH.CopyMedia)
@@ -173,14 +170,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		building.GET("/auth/users", authH.ListBuildingUsers)
 
 		// 待办任务（不限制套餐：到期提醒/预订超时等待办由系统对所有公寓生成，基础套餐也需可见可处理）
-		taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
 		building.GET("/tasks", taskH.List)
 		building.POST("/tasks/:id/process", taskH.Process)
 		building.PUT("/tasks/:id/complete", taskH.Complete)
 		building.DELETE("/tasks/:id", taskH.Delete)
 
 		// 数据统计
-		statsH := &handlers.StatsHandler{DB: db}
 		building.GET("/stats/pv", statsH.MyBuildingStats)
 		building.GET("/stats/trend", statsH.MyBuildingTrend)
 
@@ -188,7 +183,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		fullPkg := building.Group("")
 		fullPkg.Use(middleware.FullPackageMiddleware(db))
 		{
-			billH := &handlers.BillHandler{DB: db, BillService: billSvc, RoomService: roomSvc}
 			fullPkg.GET("/bills", billH.List)
 			fullPkg.POST("/bills", billH.Create)
 			fullPkg.PUT("/bills/:id", billH.Update)
@@ -198,7 +192,6 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			fullPkg.GET("/bills/export", billH.ExportCSV)
 
 			// 分红管理
-			divH := &handlers.DividendHandler{DB: db, DividendService: dividendSvc}
 			fullPkg.GET("/dividends", divH.List)
 			fullPkg.GET("/dividends/calculate", divH.Calculate)
 			fullPkg.POST("/dividends/settle", divH.Settle)

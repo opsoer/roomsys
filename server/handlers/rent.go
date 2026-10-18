@@ -7,6 +7,7 @@ import (
 
 	"rental-server/logger"
 	"rental-server/models"
+	"rental-server/services"
 	"rental-server/utils"
 
 	"gorm.io/gorm"
@@ -96,7 +97,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 
 		totalAmount := float64(int((rentAmount+mgmtAmount)*100)) / 100
 
-		billNo := utils.NextBillNo(db, now.Format("20060102"))
+		billNo := services.NextBillNo(db, now.Format("20060102"))
 
 		bill := models.Bill{
 			BuildingID:  contract.BuildingID,

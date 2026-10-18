@@ -18,6 +18,7 @@ import (
 	"rental-server/middleware"
 	"rental-server/models"
 	"rental-server/routes"
+	"rental-server/scheduler"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -71,7 +72,7 @@ func main() {
 	}()
 
 	// 每天凌晨3点检查公寓到期（启动时先执行一次，保证到期公寓尽快置为不可见并生成提醒待办）
-	handlers.CheckExpiredBuildings(db)
+	scheduler.CheckExpiredBuildings(db)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -82,7 +83,7 @@ func main() {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
 			time.Sleep(next.Sub(now))
-			handlers.CheckExpiredBuildings(db)
+			scheduler.CheckExpiredBuildings(db)
 		}
 	}()
 
@@ -110,12 +111,12 @@ func main() {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
 			time.Sleep(next.Sub(now))
-			handlers.AutoCleanupData(db)
+			scheduler.AutoCleanupData(db)
 		}
 	}()
 
 	// 启动时检查到期合同
-	handlers.AutoCheckExpiringContracts(db)
+	scheduler.AutoCheckExpiringContracts(db)
 	// 每天凌晨3点自动检查到期合同
 	go func() {
 		defer func() {
@@ -127,7 +128,7 @@ func main() {
 			now := utils.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
 			time.Sleep(next.Sub(now))
-			handlers.AutoCheckExpiringContracts(db)
+			scheduler.AutoCheckExpiringContracts(db)
 		}
 	}()
 
@@ -359,11 +360,14 @@ func ensureFFmpegCore(uploadDir string) {
 // gzipWriter 包装 gin.ResponseWriter，用 gzip 压缩响应体。
 type gzipWriter struct {
 	gin.ResponseWriter
-	writer *gzip.Writer
+	writer  *gzip.Writer
+	written int64
 }
 
-// Write 使用 gzip.Writer 压缩后写入响应。
+// Write 使用 gzip.Writer 压缩后写入响应，同时记录原始写入字节数。
+// 不能依赖内嵌 ResponseWriter 的 Size()：经本包装后它无法反映 handler 是否实际写出内容。
 func (g *gzipWriter) Write(data []byte) (int, error) {
+	g.written += int64(len(data))
 	return g.writer.Write(data)
 }
 
@@ -392,11 +396,12 @@ func gzipMiddleware() gin.HandlerFunc {
 		}
 		c.Header("Content-Encoding", "gzip")
 		c.Header("Vary", "Accept-Encoding")
-		c.Writer = &gzipWriter{ResponseWriter: c.Writer, writer: gz}
+		gw := &gzipWriter{ResponseWriter: c.Writer, writer: gz}
+		c.Writer = gw
 		c.Next()
 		gz.Close()
 		// 如果响应为空，去掉 Content-Encoding 头防止浏览器误解
-		if c.Writer.Size() == 0 {
+		if gw.written == 0 {
 			c.Header("Content-Encoding", "")
 		}
 	}

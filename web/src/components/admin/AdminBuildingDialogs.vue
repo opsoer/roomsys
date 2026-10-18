@@ -1,159 +1,90 @@
 <template>
   <div>
-    <!-- 创建公寓 -->
-    <el-dialog v-model="showCreate" title="创建公寓" width="600px">
-      <el-form ref="createFormRef" :model="createForm" label-width="100px">
-        <el-form-item label="公寓名称" prop="name" :rules="[{required:true,message:'请输入'}]">
-          <el-input v-model="createForm.name" />
+    <!-- 创建/编辑公寓（建/编合一：isEdit 切换校验规则、创建专属字段与按钮文案） -->
+    <el-dialog v-model="showForm" :title="isEdit ? '编辑公寓' : '创建公寓'" width="600px">
+      <el-form ref="formRef" :model="activeForm" label-width="100px">
+        <el-form-item label="公寓名称" prop="name" :rules="rulesFor('name')">
+          <el-input v-model="activeForm.name" />
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="签约日期" prop="contract_date" :rules="[{required:true,message:'请选择签约日期'}]">
-              <el-date-picker v-model="createForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" @change="onCreateContractDateChange" />
+            <el-form-item label="签约日期" prop="contract_date" :rules="rulesFor('contract_date')">
+              <el-date-picker v-model="activeForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" @change="onCreateContractDateChange" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="到期日期" prop="expired_at" :rules="[{ validator: validateCreateExpiredAt }]">
-              <el-date-picker v-model="createForm.expired_at" type="date" placeholder="选择到期日期" :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
+            <el-form-item label="到期日期" prop="expired_at" :rules="[{ validator: isEdit ? validateEditExpiredAt : validateCreateExpiredAt }]">
+              <el-date-picker v-model="activeForm.expired_at" type="date" placeholder="选择到期日期" :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="区域" prop="district" :rules="[{required:true,message:'请选择区域'}]">
-              <el-select v-model="createForm.district" placeholder="选择区域" filterable allow-create style="width:100%" @change="createForm.street='';createForm.village=''">
+            <el-form-item label="区域" prop="district" :rules="rulesFor('district')">
+              <el-select v-model="activeForm.district" placeholder="选择区域" filterable allow-create style="width:100%" @change="activeForm.street='';activeForm.village=''">
                 <el-option v-for="d in districts" :key="d.value" :label="d.label" :value="d.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="街道" prop="street" :rules="[{required:true,message:'请选择街道'}]">
-              <el-select v-model="createForm.street" placeholder="选择街道" filterable allow-create style="width:100%" @change="createForm.village=''">
-                <el-option v-for="s in currentStreets" :key="s.value" :label="s.label" :value="s.value" />
+            <el-form-item label="街道" prop="street" :rules="rulesFor('street')">
+              <el-select v-model="activeForm.street" placeholder="选择街道" filterable allow-create style="width:100%" @change="activeForm.village=''">
+                <el-option v-for="s in activeStreets" :key="s.value" :label="s.label" :value="s.value" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="村/小区" prop="village" :rules="[{required:true,message:'请选择村/小区'}]">
-              <el-select v-model="createForm.village" placeholder="选择或输入" filterable allow-create style="width:100%">
-                <el-option v-for="v in currentVillages" :key="v" :label="v" :value="v" />
+            <el-form-item label="村/小区" prop="village" :rules="rulesFor('village')">
+              <el-select v-model="activeForm.village" placeholder="选择或输入" filterable allow-create style="width:100%">
+                <el-option v-for="v in activeVillages" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="楼牌号" prop="building_no" :rules="[{required:true,message:'请输入楼牌号'}]">
-              <el-input v-model="createForm.building_no" />
+            <el-form-item label="楼牌号" prop="building_no" :rules="rulesFor('building_no')">
+              <el-input v-model="activeForm.building_no" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="套餐" prop="package" :rules="[{required:true,message:'请选择套餐'}]">
-          <el-radio-group v-model="createForm.package">
+        <el-form-item label="套餐" prop="package" :rules="rulesFor('package')">
+          <el-radio-group v-model="activeForm.package">
             <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
             <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="押金（元）" prop="deposit" :rules="[{ validator: validateDeposit }]">
-          <el-input-number v-model="createForm.deposit" :min="0" :precision="2" :step="1000" :controls="false" placeholder="公寓入驻平台缴纳的押金" style="width:100%" />
+        <el-form-item v-if="!isEdit" label="押金（元）" prop="deposit" :rules="[{ validator: validateDeposit }]">
+          <el-input-number v-model="activeForm.deposit" :min="0" :precision="2" :step="1000" :controls="false" placeholder="公寓入驻平台缴纳的押金" style="width:100%" />
           <div style="font-size:12px;color:#999;line-height:1.6;">公寓入驻时缴纳的押金；后续可在卡片「修改押金」中增减（每次需填写原因并留痕）</div>
         </el-form-item>
         <el-form-item label="简介" prop="description">
-          <el-input v-model="createForm.description" type="textarea" :rows="3" />
+          <el-input v-model="activeForm.description" type="textarea" :rows="3" />
         </el-form-item>
-        <el-divider>房东信息（必填）</el-divider>
-        <el-form-item label="房东姓名" prop="landlord_name" :rules="[{required:true,message:'请输入房东姓名'}]">
-          <el-input v-model="createForm.landlord_name" placeholder="房东姓名" />
+        <el-divider>{{ isEdit ? '房东信息' : '房东信息（必填）' }}</el-divider>
+        <el-form-item label="房东姓名" prop="landlord_name" :rules="rulesFor('landlord_name')">
+          <el-input v-model="activeForm.landlord_name" placeholder="房东姓名" />
         </el-form-item>
-        <div v-for="(p, i) in createForm.landlord_phones" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px; margin-left:100px;">
-          <el-input v-model="createForm.landlord_phones[i]" placeholder="房东电话" style="flex:1" @input="onPhoneInput" />
-          <el-button v-if="createForm.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="createForm.landlord_phones.splice(i,1)" />
+        <div v-for="(p, i) in activeForm.landlord_phones" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px; margin-left:100px;">
+          <el-input v-model="activeForm.landlord_phones[i]" placeholder="房东电话" style="flex:1" @input="onPhoneInput" />
+          <el-button v-if="activeForm.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="activeForm.landlord_phones.splice(i,1)" />
         </div>
-        <el-button size="small" style="margin-left:100px" @click="createForm.landlord_phones.push('')">+ 添加电话</el-button>
-        <el-divider />
-        <el-form-item label="管理员账号" prop="admin_username" :rules="[{required:true,message:'请输入管理员账号'}]">
-          <el-input v-model="createForm.admin_username" placeholder="默认使用房东电话" />
-        </el-form-item>
-        <el-form-item label="管理员密码" prop="admin_password" :rules="[{required:true,message:'请输入管理员密码'}]">
-          <el-input v-model="createForm.admin_password" type="password" placeholder="公寓管理员的登录密码" />
-        </el-form-item>
+        <el-button size="small" style="margin-left:100px" @click="activeForm.landlord_phones.push('')">+ 添加电话</el-button>
+        <template v-if="!isEdit">
+          <el-divider />
+          <el-form-item label="管理员账号" prop="admin_username" :rules="rulesFor('admin_username')">
+            <el-input v-model="activeForm.admin_username" placeholder="默认使用房东电话" />
+          </el-form-item>
+          <el-form-item label="管理员密码" prop="admin_password" :rules="rulesFor('admin_password')">
+            <el-input v-model="activeForm.admin_password" type="password" placeholder="公寓管理员的登录密码" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
-        <el-button @click="showCreate = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleCreate">确定创建</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 编辑公寓 -->
-    <el-dialog v-model="showEdit" title="编辑公寓" width="600px">
-      <el-form ref="editFormRef" :model="editForm" label-width="100px">
-        <el-form-item label="公寓名称" prop="name">
-          <el-input v-model="editForm.name" />
-        </el-form-item>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="签约日期" prop="contract_date">
-              <el-date-picker v-model="editForm.contract_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="到期日期" prop="expired_at" :rules="[{ validator: validateEditExpiredAt }]">
-              <el-date-picker v-model="editForm.expired_at" type="date" placeholder="选择到期日期" :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="区域" prop="district">
-              <el-select v-model="editForm.district" placeholder="选择区域" filterable allow-create style="width:100%" @change="editForm.street='';editForm.village=''">
-                <el-option v-for="d in districts" :key="d.value" :label="d.label" :value="d.value" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="街道" prop="street">
-              <el-select v-model="editForm.street" placeholder="选择街道" filterable allow-create style="width:100%" @change="editForm.village=''">
-                <el-option v-for="s in editStreets" :key="s.value" :label="s.label" :value="s.value" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="村/小区" prop="village">
-              <el-select v-model="editForm.village" placeholder="选择或输入" filterable allow-create style="width:100%">
-                <el-option v-for="v in editVillages" :key="v" :label="v" :value="v" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="楼牌号" prop="building_no">
-              <el-input v-model="editForm.building_no" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="套餐" prop="package">
-          <el-radio-group v-model="editForm.package">
-            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
-            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="简介" prop="description">
-          <el-input v-model="editForm.description" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-divider>房东信息</el-divider>
-        <el-form-item label="房东姓名">
-          <el-input v-model="editForm.landlord_name" placeholder="房东姓名" />
-        </el-form-item>
-        <div v-for="(p, i) in editForm.landlord_phones" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px; margin-left:100px;">
-          <el-input v-model="editForm.landlord_phones[i]" placeholder="房东电话" style="flex:1" />
-          <el-button v-if="editForm.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="editForm.landlord_phones.splice(i,1)" />
-        </div>
-        <el-button size="small" style="margin-left:100px" @click="editForm.landlord_phones.push('')">+ 添加电话</el-button>
-      </el-form>
-      <template #footer>
-        <el-button @click="showEdit = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleEdit">确定更新</el-button>
+        <el-button @click="showForm = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="isEdit ? handleEdit() : handleCreate()">
+          {{ isEdit ? '确定更新' : '确定创建' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -317,7 +248,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { adminCreateBuilding, adminUpdateBuilding, adminCreateBuildingAdmin, adminUpgradePackage, adminRenewBuilding, adminGetBuildingRenewals, adminAdjustDeposit, adminGetDepositLogs } from '../../api'
@@ -330,8 +261,8 @@ const locationStore = useLocationStore()
 locationStore.load()
 const districts = computed(() => locationStore.fullTree)
 const submitting = ref(false)
-const showCreate = ref(false)
-const showEdit = ref(false)
+const showForm = ref(false)
+const isEdit = ref(false)
 const showCreateAdmin = ref(false)
 const showUpgrade = ref(false)
 const upgradeBuildingName = ref('')
@@ -362,7 +293,7 @@ const depositLogsLoading = ref(false)
 const selectedBuildingName = ref('')
 const selectedBuildingId = ref(0)
 const adminSubmitting = ref(false)
-const createFormRef = ref(null)
+const formRef = ref(null)
 
 const createForm = ref({
   name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
@@ -372,27 +303,23 @@ const createForm = ref({
 const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
 const adminForm = ref({ username: '', password: '' })
 
+// 建/编合一弹窗的当前绑定对象：创建用 createForm、编辑用 editForm（两者提交接口不同，保持独立）
+const activeForm = computed(() => isEdit.value ? editForm.value : createForm.value)
+
 function findStreet(district) {
   return districts.value.find(x => x.value === district)?.streets || []
 }
 
-const currentStreets = computed(() => findStreet(createForm.value.district))
+const activeStreets = computed(() => findStreet(activeForm.value.district))
 
-const currentVillages = computed(() => {
-  const streets = findStreet(createForm.value.district)
-  const s = streets.find(x => x.value === createForm.value.street)
-  return s ? s.villages : []
-})
-
-const editStreets = computed(() => findStreet(editForm.value.district))
-
-const editVillages = computed(() => {
-  const streets = findStreet(editForm.value.district)
-  const s = streets.find(x => x.value === editForm.value.street)
+const activeVillages = computed(() => {
+  const streets = findStreet(activeForm.value.district)
+  const s = streets.find(x => x.value === activeForm.value.street)
   return s ? s.villages : []
 })
 
 function onPhoneInput() {
+  if (isEdit.value) return
   const phone = createForm.value.landlord_phones.find(p => p.trim())
   if (phone) {
     createForm.value.admin_username = phone
@@ -405,7 +332,9 @@ function buildLandlords(name, phones) {
 
 function openCreate() {
   createForm.value = { name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
-  showCreate.value = true
+  isEdit.value = false
+  showForm.value = true
+  clearFormValidate()
 }
 
 function openEdit(row) {
@@ -421,7 +350,9 @@ function openEdit(row) {
     landlord_name: name,
     landlord_phones: phones.length > 0 ? phones : [''],
   }
-  showEdit.value = true
+  isEdit.value = true
+  showForm.value = true
+  clearFormValidate()
 }
 
 function openUpgrade(row) {
@@ -449,8 +380,31 @@ function expiredAtValidator(getContractDate) {
 const validateCreateExpiredAt = expiredAtValidator(() => createForm.value.contract_date)
 const validateEditExpiredAt = expiredAtValidator(() => editForm.value.contract_date)
 
-// 签约日期变更时，若尚未填写到期日期则按 1 年预填（可手动修改）
+// 创建模式的必填校验；编辑模式不校验（与原创建/编辑两个弹窗行为一致）
+const createRules = {
+  name: [{ required: true, message: '请输入' }],
+  contract_date: [{ required: true, message: '请选择签约日期' }],
+  district: [{ required: true, message: '请选择区域' }],
+  street: [{ required: true, message: '请选择街道' }],
+  village: [{ required: true, message: '请选择村/小区' }],
+  building_no: [{ required: true, message: '请输入楼牌号' }],
+  package: [{ required: true, message: '请选择套餐' }],
+  landlord_name: [{ required: true, message: '请输入房东姓名' }],
+  admin_username: [{ required: true, message: '请输入管理员账号' }],
+  admin_password: [{ required: true, message: '请输入管理员密码' }],
+}
+function rulesFor(prop) {
+  return isEdit.value ? undefined : createRules[prop]
+}
+
+// 建/编弹窗已合一：打开时清除上一次（含另一种模式）残留的校验提示
+function clearFormValidate() {
+  nextTick(() => formRef.value?.clearValidate())
+}
+
+// 签约日期变更时，若尚未填写到期日期则按 1 年预填（可手动修改）；编辑模式不预填（与原编辑弹窗一致）
 function onCreateContractDateChange(val) {
+  if (isEdit.value) return
   if (val && !createForm.value.expired_at) {
     createForm.value.expired_at = dayjs(val).add(1, 'year').format('YYYY-MM-DD')
   }
@@ -544,7 +498,7 @@ function openCreateAdmin(row) {
 }
 
 async function handleCreate() {
-  const valid = await createFormRef.value.validate().catch(() => false)
+  const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
   submitting.value = true
   try {
@@ -563,7 +517,7 @@ async function handleCreate() {
         building_id: createdId,
       })
     }
-    showCreate.value = false
+    showForm.value = false
     const newBuilding = createdId ? { id: createdId } : null
     if (newBuilding) {
       const loginUrl = `${window.location.origin}/login`
@@ -605,7 +559,7 @@ async function handleEdit() {
     delete data.landlord_phones
     await adminUpdateBuilding(editForm.value.id, data)
     ElMessage.success('更新成功')
-    showEdit.value = false
+    showForm.value = false
     emit('save-success')
   } finally {
     submitting.value = false
