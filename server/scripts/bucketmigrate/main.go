@@ -4,9 +4,9 @@
 //
 // 为什么能做到"无感"：
 //   - roomsys 数据库里存的只是文件 key（如 buildings/3_xxx/rooms/xxx/images/uuid.jpg），
-//     不是完整 URL；bucket 名与 CDN 域名只在 config.json 与运行时配置里（见
+//     不是完整 URL；bucket 名与 CDN 域名只在 config.yaml 与运行时配置里（见
 //     handlers/media.go，URL 是请求时动态拼的）。因此 key 原样拷贝到新桶后，
-//     数据库一行都不用改，只需切换 qiniu_bucket 和 qiniu_domain 两个配置。
+//     数据库一行都不用改，只需切换 storage.qiniu.bucket 和 storage.qiniu.domain 两个配置。
 //
 // 使用场景：
 //   - 七牛测试域名到期（30 天，不可续期），新建 bucket 拿新域名时迁移历史文件
@@ -15,7 +15,7 @@
 //   不经过任何域名，也**不消耗 CDN/下载流量**。
 //
 // 流程与原理：
-//  1. config.Load() 读取七牛 AK/SK 与区域（qiniu_zone；新旧桶必须在同一区域，
+//  1. config.Load() 读取七牛 AK/SK 与区域（storage.qiniu.zone；新旧桶必须在同一区域，
 //     跨区域 rs 拷贝不支持，需改用 qshell 的 qdownload+qupload 方案）
 //  2. 校验源/目标 bucket 都存在于当前账号（防止名字敲错后白跑）
 //  3. ListFiles 分页遍历源桶全部文件（每页 1000）
@@ -25,14 +25,14 @@
 //  5. 输出汇总与"迁移后操作"提示
 //
 // 迁移后操作（脚本结束时也会打印）：
-//   1. 停后端 → 改 config.json：qiniu_bucket 改成新桶、qiniu_domain 改成新桶绑定的域名
+//   1. 停后端 → 改 config.yaml：storage.qiniu.bucket 改成新桶、storage.qiniu.domain 改成新桶绑定的域名
 //   2. 启动后端，图片/视频即从新桶读取
 //   3. 旧桶确认无回滚需求后，可在七牛控制台清空以释放存储额度（迁移期间两份数据都占额度）
 //   4. rs 拷贝会保留文件的 MIME 与自定义元数据（含 cache-control）；如个别文件元数据
 //      异常，重跑 scripts/fixcache 兜底
 //
-// 用法（在 server 目录下，需读取 config.json）：
-//   go run ./scripts/bucketmigrate -dst 新桶名            # 源桶默认取 config.json 的 qiniu_bucket
+// 用法（在 server 目录下，需读取 config.yaml）：
+//   go run ./scripts/bucketmigrate -dst 新桶名            # 源桶默认取 config.yaml 的 storage.qiniu.bucket
 //   go run ./scripts/bucketmigrate -src 旧桶 -dst 新桶
 //   go run ./scripts/bucketmigrate -dst 新桶 -dry         # 只统计不拷贝，预览迁移规模
 //   go run ./scripts/bucketmigrate -dst 新桶 -force       # 覆盖目标桶同名文件（默认跳过）
@@ -59,7 +59,7 @@ const codeExists = 614
 
 func main() {
 	var (
-		src   = flag.String("src", "", "源 bucket，默认取 config.json 的 qiniu_bucket")
+		src   = flag.String("src", "", "源 bucket，默认取 config.yaml 的 storage.qiniu.bucket")
 		dst   = flag.String("dst", "", "目标 bucket（必填）")
 		force = flag.Bool("force", false, "目标已存在同名文件时覆盖（默认跳过）")
 		dry   = flag.Bool("dry", false, "只列出源桶文件统计规模，不执行拷贝")
@@ -67,8 +67,8 @@ func main() {
 	flag.Parse()
 
 	cfg := config.Load()
-	if cfg.QiniuAccessKey == "" || cfg.QiniuSecretKey == "" {
-		fmt.Println("错误：config.json 未配置七牛 AK/SK（qiniu_access_key / qiniu_secret_key）")
+	if cfg.Storage.Qiniu.AccessKey == "" || cfg.Storage.Qiniu.SecretKey == "" {
+		fmt.Println("错误：config.yaml 未配置七牛 AK/SK（storage.qiniu.access_key / storage.qiniu.secret_key）")
 		os.Exit(1)
 	}
 	if *dst == "" {
@@ -77,15 +77,15 @@ func main() {
 		os.Exit(1)
 	}
 	if *src == "" {
-		*src = cfg.QiniuBucket
-		fmt.Printf("未指定 -src，使用 config.json 的 qiniu_bucket: %s\n", *src)
+		*src = cfg.Storage.Qiniu.Bucket
+		fmt.Printf("未指定 -src，使用 config.yaml 的 storage.qiniu.bucket: %s\n", *src)
 	}
 	if *src == *dst {
 		fmt.Println("警告：源与目标是同一个 bucket，拷贝会全部以\"目标已存在\"跳过（可用于校验脚本连通性）")
 	}
 
-	mac := qiniuAuth.NewMac(cfg.QiniuAccessKey, cfg.QiniuSecretKey)
-	bm := storage.NewBucketManager(mac, &storage.Config{Region: getZone(cfg.QiniuZone), UseHTTPS: cfg.QiniuUseHTTPS})
+	mac := qiniuAuth.NewMac(cfg.Storage.Qiniu.AccessKey, cfg.Storage.Qiniu.SecretKey)
+	bm := storage.NewBucketManager(mac, &storage.Config{Region: getZone(cfg.Storage.Qiniu.Zone), UseHTTPS: cfg.Storage.Qiniu.UseHTTPS})
 
 	// 校验两个 bucket 都在当前账号下，避免名字敲错后跑到一半才发现
 	buckets, err := bm.Buckets(false)
@@ -107,7 +107,7 @@ func main() {
 		os.Exit(1)
 	}
 	if !dstOK {
-		fmt.Printf("错误：目标 bucket %q 不在当前账号的空间列表里（先在七牛控制台创建，且必须与源桶同区域 %s）\n", *dst, zoneName(cfg.QiniuZone))
+		fmt.Printf("错误：目标 bucket %q 不在当前账号的空间列表里（先在七牛控制台创建，且必须与源桶同区域 %s）\n", *dst, zoneName(cfg.Storage.Qiniu.Zone))
 		os.Exit(1)
 	}
 
@@ -181,12 +181,12 @@ func main() {
 
 	fmt.Println(`
 —— 迁移后操作 ——
-1. 停止后端，修改 config.json：qiniu_bucket 改为 ` + *dst + `，qiniu_domain 改为新桶绑定的域名
+1. 停止后端，修改 config.yaml：storage.qiniu.bucket 改为 ` + *dst + `，storage.qiniu.domain 改为新桶绑定的域名
 2. 启动后端，即从新桶读取图片/视频，数据库无需任何改动
 3. 旧桶 ` + *src + ` 保留可作回滚备份；确认无误后在七牛控制台清空以释放免费存储额度`)
 }
 
-// getZone 把 config.json 的 qiniu_zone 转为 SDK 区域对象
+// getZone 把 config.yaml 的 storage.qiniu.zone 转为 SDK 区域对象
 func getZone(zone string) *storage.Zone {
 	var regionID storage.RegionID
 	switch zone {

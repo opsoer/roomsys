@@ -1,4 +1,4 @@
-// export_sqlite 一次性数据迁移工具：把 config.json 所配置 MySQL 库的全部业务表
+// export_sqlite 一次性数据迁移工具：把 config.yaml 所配置 MySQL 库的全部业务表
 // 搬运到 SQLite 数据库文件，用于把部署从 MySQL 切换到 SQLite（或迁移到新服务器）。
 //
 // 用法（在 server 目录下）：
@@ -6,8 +6,8 @@
 //	go run ./cmd/export_sqlite -out ./storage/export.db [-force]
 //
 // 说明：
-//   - 源库永远按 db_host/db_port/db_user/db_password/db_name 走 MySQL
-//     （无论 config.json 里 db_driver 当前设为什么）
+//   - 源库永远按 database.mysql.* 走 MySQL
+//     （无论 config.yaml 里 database.driver 当前设为什么）
 //   - 目标文件已存在时拒绝执行，-force 可覆盖
 //   - 软删除记录一并迁移，主键 ID 原样保留，切换后数据无感
 //   - 完成后做 WAL checkpoint 并输出逐表行数校验，行数不一致以非零码退出
@@ -58,9 +58,10 @@ func main() {
 
 	cfg := config.Load()
 
-	// 源库：MySQL，连接参数与 db_driver 取值无关
+	// 源库：MySQL，连接参数与 database.driver 取值无关
+	m := cfg.Database.MySQL
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		m.User, m.Password, m.Host, m.Port, m.Name)
 	src, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic(fmt.Sprintf("连接 MySQL 源库失败: %v", err))
@@ -77,8 +78,8 @@ func main() {
 
 	// 目标库复用 database 包的 SQLite 初始化（WAL、PRAGMA、连接池），仅替换路径
 	tcfg := *cfg
-	tcfg.DBDriver = config.DriverSQLite
-	tcfg.DBPath = *out
+	tcfg.Database.Driver = config.DriverSQLite
+	tcfg.Database.SQLite.Path = *out
 	dst, err := database.Open(&tcfg)
 	if err != nil {
 		panic(fmt.Sprintf("初始化 SQLite 目标库失败: %v", err))
@@ -139,7 +140,7 @@ func main() {
 		fmt.Println("警告：源/目标行数不一致，请检查上方标记后重跑")
 		os.Exit(1)
 	}
-	fmt.Printf("切换方式：config.json 中设 \"db_driver\": %q 并将 \"db_path\" 指向该文件（或把它复制为服务器上的 ./storage/rental.db）\n",
+	fmt.Printf("切换方式：config.yaml 中设 database.driver: %q 并将 database.sqlite.path 指向该文件（或把它复制为服务器上的 ./storage/rental.db）\n",
 		config.DriverSQLite)
 }
 

@@ -524,7 +524,7 @@ type RevealPhoneRequest struct {
 }
 
 // RevealPhone 查看公寓房东的完整电话号码。
-// 每个IP每日前 RevealFreePerDay 次直接放行（配置 reveal_free_per_day），
+// 每个IP每日前 RevealFreePerDay 次直接放行（配置 server.reveal_free_per_day），
 // 之后每次要求先通过图片验证码；不设硬性上限。
 func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 	buildingID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -539,7 +539,7 @@ func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 	}
 
 	ip := utils.GetRealIP(c)
-	if utils.RevealCount(ip) >= h.Cfg.RevealFreePerDay {
+	if utils.RevealCount(ip) >= h.Cfg.Server.RevealFreePerDay {
 		var req RevealPhoneRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			req = RevealPhoneRequest{}
@@ -590,7 +590,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	canViewAll := false
 	authHeader := c.GetHeader("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		if claims, err := utils.ParseToken(strings.TrimPrefix(authHeader, "Bearer "), h.Cfg.JWTSecret); err == nil {
+		if claims, err := utils.ParseToken(strings.TrimPrefix(authHeader, "Bearer "), h.Cfg.Server.JWTSecret); err == nil {
 			if claims.Role == "super_admin" || (claims.BuildingID > 0 && claims.BuildingID == uint(buildingID)) {
 				canViewAll = true
 			}

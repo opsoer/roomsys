@@ -21,6 +21,7 @@ server/config.yaml
 server/config.yml
 server/config.local.json
 server/scripts/resetdb/config.json
+server/scripts/resetdb/config.yaml
 server/config.local.yaml
 server/config.local.yml
 server/config.prod.json
@@ -48,6 +49,8 @@ project.private.config.json
 .web/
 .vite/
 *.tsbuildinfo
+__pycache__/
+*.pyc
 
 # IDE
 .vscode/
@@ -80,6 +83,7 @@ ehthumbs.db
 *.pptx
 
 # 项目非代码文档
+*.md
 README.md
 回归检查报告.md
 快速部署文档.md

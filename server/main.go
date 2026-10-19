@@ -31,16 +31,16 @@ func main() {
 	cfg := config.Load()
 
 	logger.Init(logger.Config{
-		Level: cfg.LogLevel,
-		Dir:   cfg.LogDir,
+		Level: cfg.Server.LogLevel,
+		Dir:   cfg.Server.LogDir,
 	})
-	logger.Log.Info().Str("level", cfg.LogLevel).Str("dir", cfg.LogDir).Msg("日志系统初始化完成")
+	logger.Log.Info().Str("level", cfg.Server.LogLevel).Str("dir", cfg.Server.LogDir).Msg("日志系统初始化完成")
 
 	db, err := database.Open(cfg)
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("数据库连接失败")
 	}
-	logger.Log.Info().Str("driver", cfg.DBDriver).Msg("数据库连接成功")
+	logger.Log.Info().Str("driver", cfg.Database.Driver).Msg("数据库连接成功")
 
 	if os.Getenv("RESET_DATABASE") == "true" {
 		logger.Log.Warn().Msg("检测到 RESET_DATABASE=true，将删除所有表并重建")
@@ -132,12 +132,12 @@ func main() {
 		}
 	}()
 
-	if err := os.MkdirAll(cfg.UploadDir, 0750); err != nil {
-		logger.Log.Fatal().Err(err).Str("dir", cfg.UploadDir).Msg("创建上传目录失败")
+	if err := os.MkdirAll(cfg.Server.UploadDir, 0750); err != nil {
+		logger.Log.Fatal().Err(err).Str("dir", cfg.Server.UploadDir).Msg("创建上传目录失败")
 	}
-	logger.Log.Info().Str("dir", cfg.UploadDir).Msg("上传目录就绪")
+	logger.Log.Info().Str("dir", cfg.Server.UploadDir).Msg("上传目录就绪")
 
-	ensureFFmpegCore(cfg.UploadDir)
+	ensureFFmpegCore(cfg.Server.UploadDir)
 
 	if gin.Mode() != gin.ReleaseMode {
 		gin.SetMode(gin.ReleaseMode)
@@ -204,9 +204,9 @@ func main() {
 	utils.InitStatsWriter(db)
 
 	routes.Setup(r, db, cfg)
-	logger.Log.Info().Str("port", cfg.ServerPort).Msg("服务启动")
+	logger.Log.Info().Str("port", cfg.Server.Port).Msg("服务启动")
 	srv := &http.Server{
-		Addr:         ":" + cfg.ServerPort,
+		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 60 * time.Second,

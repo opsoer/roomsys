@@ -75,7 +75,7 @@ func (s *AuthService) GenerateToken(user *models.User) (string, error) {
 	if user.BuildingID != nil {
 		buildingID = *user.BuildingID
 	}
-	return utils.GenerateToken(user.ID, user.Username, user.Role, s.Cfg.JWTSecret, buildingID)
+	return utils.GenerateToken(user.ID, user.Username, user.Role, s.Cfg.Server.JWTSecret, buildingID)
 }
 
 // GenerateRefreshToken 生成JWT刷新令牌
@@ -84,7 +84,7 @@ func (s *AuthService) GenerateRefreshToken(user *models.User) (string, error) {
 	if user.BuildingID != nil {
 		buildingID = *user.BuildingID
 	}
-	return utils.GenerateRefreshToken(user.ID, user.Username, user.Role, s.Cfg.JWTSecret, buildingID)
+	return utils.GenerateRefreshToken(user.ID, user.Username, user.Role, s.Cfg.Server.JWTSecret, buildingID)
 }
 
 // GetBuildingByID 根据ID查找楼栋

@@ -1,5 +1,5 @@
 // fixcache 给七牛 bucket 中所有已存在的对象补写 Cache-Control 响应缓存头
-// （默认 public, max-age=604800, immutable，时长取配置 media_max_age），跑一次即可。
+// （默认 public, max-age=604800, immutable，时长取配置 storage.media_max_age），跑一次即可。
 //
 // 使用场景：
 //   - 存量文件是一次性修复：早期版本上传到七牛的图片/视频没有缓存元数据，
@@ -8,12 +8,12 @@
 //     因此本脚本只用于给「修复之前」上传的文件补写，重复运行无害但没必要。
 //
 // 基本原理：
-//  1. 读取 config.json（或 CONFIG_PATH）拿到七牛 AK/SK/bucket/区域
+//  1. 读取 config.yaml（或 CONFIG_PATH）拿到七牛 AK/SK/bucket/区域
 //  2. 用 BucketManager.ListFiles 分页（每页 1000）遍历 bucket 内全部对象
 //  3. 逐个 ChangeMeta 写入 cache-control 元数据并打印进度
 //
 // 注意：
-//   - 必须在 server 目录下运行（要读 config.json）；未配置七牛时会直接跳过
+//   - 必须在 server 目录下运行（要读 config.yaml）；未配置七牛时会直接跳过
 //   - 文件名都是 UUID，内容不会变化，所以 immutable 缓存策略是安全的
 //   - 对象较多时会发起等量次数的 ChangeMeta 请求，属于七牛管理类接口，正常计费无额外费用
 //
@@ -30,13 +30,13 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if cfg.QiniuAccessKey == "" || cfg.QiniuBucket == "" {
+	if cfg.Storage.Qiniu.AccessKey == "" || cfg.Storage.Qiniu.Bucket == "" {
 		fmt.Println("七牛云未配置，跳过")
 		return
 	}
 
-	mac := qiniuAuth.NewMac(cfg.QiniuAccessKey, cfg.QiniuSecretKey)
-	qiniuCfg := storage.Config{Region: getZone(cfg.QiniuZone), UseHTTPS: cfg.QiniuUseHTTPS}
+	mac := qiniuAuth.NewMac(cfg.Storage.Qiniu.AccessKey, cfg.Storage.Qiniu.SecretKey)
+	qiniuCfg := storage.Config{Region: getZone(cfg.Storage.Qiniu.Zone), UseHTTPS: cfg.Storage.Qiniu.UseHTTPS}
 	bucketMgr := storage.NewBucketManager(mac, &qiniuCfg)
 
 	limit := 1000
@@ -45,7 +45,7 @@ func main() {
 	total := 0
 
 	for {
-		entries, _, nextMarker, hasNext, err := bucketMgr.ListFiles(cfg.QiniuBucket, prefix, "", marker, limit)
+		entries, _, nextMarker, hasNext, err := bucketMgr.ListFiles(cfg.Storage.Qiniu.Bucket, prefix, "", marker, limit)
 		if err != nil {
 			fmt.Printf("列出文件失败: %v\n", err)
 			return
@@ -55,7 +55,7 @@ func main() {
 			metas := map[string]string{
 				"cache-control": cfg.MediaCacheControl(),
 			}
-			err := bucketMgr.ChangeMeta(cfg.QiniuBucket, entry.Key, metas)
+			err := bucketMgr.ChangeMeta(cfg.Storage.Qiniu.Bucket, entry.Key, metas)
 			if err != nil {
 				fmt.Printf("设置 %s 失败: %v\n", entry.Key, err)
 			} else {

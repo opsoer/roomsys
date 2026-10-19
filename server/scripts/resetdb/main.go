@@ -2,7 +2,7 @@
 // 清完后无需手工做任何事——下次启动后端进程时，启动流程里的 AutoMigrate 会把全部表
 // 重建出来，并自动创建超级管理员 root/root，即得到一个与全新部署等效的干净环境。
 //
-// 支持双存储后端，按 config.json 的 db_driver 连接对应数据库：
+// 支持双存储后端，按 config.yaml 的 database.driver 连接对应数据库：
 //   - mysql  ：清空 MySQL 库中查到的全部表
 //   - sqlite ：清空 SQLite 文件中的全部表（保留文件本身，表结构与数据一并清空）
 //
@@ -12,7 +12,7 @@
 //   - 演示数据灌坏了、想推倒重来
 //
 // 流程与原理：
-//  1. config.Load() 读取 config.json 拿数据库连接参数（因此必须在 server 目录下运行）
+//  1. config.Load() 读取 config.yaml 拿数据库连接参数（因此必须在 server 目录下运行）
 //  2. 动态查出当前库的全部表——MySQL 查 information_schema.tables，SQLite 查
 //     sqlite_master——不硬编码模型清单，以后 models 增删表也不会漏清
 //     （旧版 drop_all 脚本就漏了 BuildingRenewal/AuditLog/PageView 三张表）
@@ -28,7 +28,7 @@
 // 参数：
 //
 //	-y, --yes  跳过交互确认
-//	--media    额外清空本地媒体上传目录（config.json 的 upload_dir，默认 ./storage/media）。
+//	--media    额外清空本地媒体上传目录（config.yaml 的 server.upload_dir，默认 ./storage/media）。
 //	           注意七牛上的对象不受影响（配置了七牛时文件实际存在云端，本地目录可能为空），
 //	           清云端请到七牛控制台操作
 //
@@ -82,10 +82,10 @@ func main() {
 		return
 	}
 
-	if cfg.DBDriver == config.DriverSQLite {
-		fmt.Printf("目标：SQLite 文件 %s\n", cfg.DBPath)
+	if cfg.Database.Driver == config.DriverSQLite {
+		fmt.Printf("目标：SQLite 文件 %s\n", cfg.Database.SQLite.Path)
 	} else {
-		fmt.Printf("目标：%s:%s / 库 %s\n", cfg.DBHost, cfg.DBPort, cfg.DBName)
+		fmt.Printf("目标：%s:%s / 库 %s\n", cfg.Database.MySQL.Host, cfg.Database.MySQL.Port, cfg.Database.MySQL.Name)
 	}
 	fmt.Printf("即将删除 %d 张表（含 root 账号），此操作不可恢复：\n", len(tables))
 	for i, t := range tables {
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	dropped := 0
-	if cfg.DBDriver == config.DriverSQLite {
+	if cfg.Database.Driver == config.DriverSQLite {
 		dropped, err = dropTablesSQLite(db, tables)
 	} else {
 		dropped, err = dropTablesMySQL(db, tables)
@@ -117,10 +117,10 @@ func main() {
 	fmt.Printf("已删除 %d/%d 张表\n", dropped, len(tables))
 
 	if cleanMedia {
-		if err := os.RemoveAll(cfg.UploadDir); err != nil {
-			fmt.Printf("清空媒体目录 %s 失败: %v\n", cfg.UploadDir, err)
+		if err := os.RemoveAll(cfg.Server.UploadDir); err != nil {
+			fmt.Printf("清空媒体目录 %s 失败: %v\n", cfg.Server.UploadDir, err)
 		} else {
-			fmt.Printf("已清空本地媒体目录 %s（七牛云端文件不受影响）\n", cfg.UploadDir)
+			fmt.Printf("已清空本地媒体目录 %s（七牛云端文件不受影响）\n", cfg.Server.UploadDir)
 		}
 	}
 
@@ -129,10 +129,10 @@ func main() {
 
 // listTables 按方言返回当前库中全部表名。
 func listTables(db *gorm.DB, cfg *config.Config) ([]string, error) {
-	if cfg.DBDriver == config.DriverSQLite {
+	if cfg.Database.Driver == config.DriverSQLite {
 		return listTablesSQLite(db)
 	}
-	return listTablesMySQL(db, cfg.DBName)
+	return listTablesMySQL(db, cfg.Database.MySQL.Name)
 }
 
 // dropTablesMySQL 关闭外键检查后逐表 DROP，规避表间依赖顺序。

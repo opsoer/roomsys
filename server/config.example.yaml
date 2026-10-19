@@ -1,0 +1,79 @@
+# ============================================================
+# 房间管理系统 服务端配置模板（复制为 config.yaml 后按需修改）
+#
+# 加载顺序：
+#   1. 默认读取当前目录 config.yaml（server/ 下运行）
+#   2. 环境变量 CONFIG_PATH 可指定其他配置文件
+#   3. 环境变量（DB_DRIVER / JWT_SECRET / QINIU_* 等）会覆盖本文件同名配置
+# ============================================================
+
+# ---------------------- 服务配置 ----------------------
+server:
+  # HTTP 监听端口（仅端口号，不带冒号）
+  port: "8080"
+  # JWT 签名密钥（必填）：生成/校验登录令牌，更换后所有登录态失效
+  jwt_secret: "change-me-to-a-random-secret"
+  # 上传文件本地存储目录
+  upload_dir: "./storage/media"
+  # 日志级别：debug / info / warn / error
+  log_level: "info"
+  # 日志输出目录
+  log_dir: "./logs"
+  # 前端构建产物目录（服务端托管静态页面）
+  web_dist_dir: "../web/dist"
+  # 每个 IP 每日免费查看房东完整电话次数（自然日重置）。
+  # 超过后每次查看都要求图片验证码；0 = 每次都要验证码
+  reveal_free_per_day: 5
+
+# ---------------------- 数据库配置 ----------------------
+database:
+  # ★ 唯一切换参数：sqlite（默认，纯 Go 实现、零安装）或 mysql
+  #   sqlite - 数据库是单个文件，适合开发/小规模/低并发，部署无需安装任何数据库
+  #   mysql  - 需要独立 MySQL 服务，适合生产/高并发，密码必填
+  driver: "sqlite"
+  # SQLite 配置（仅 driver=sqlite 时生效）
+  sqlite:
+    # 数据库文件路径，所在目录不存在时自动创建
+    path: "./storage/rental.db"
+  # MySQL 配置（仅 driver=mysql 时生效）
+  mysql:
+    host: "127.0.0.1"
+    port: "3306"
+    user: "root"
+    password: "your_db_password"
+    name: "rental"
+
+# ---------------------- 对象存储 + CDN（七牛） ----------------------
+# 留空（access_key/bucket 为空）则使用本地存储，媒体文件存在 upload_dir 下
+storage:
+  # 媒体文件浏览器缓存时长（秒），默认一周。
+  # 代理模式下改这里立即生效；直连/CDN 模式下存量文件需重跑 scripts/fixcache
+  media_max_age: 604800
+  # 七牛对象存储 + CDN 绑定参数
+  qiniu:
+    # AccessKey / SecretKey（七牛控制台-个人中心-密钥管理）
+    access_key: ""
+    secret_key: ""
+    # 存储空间名（bucket）
+    bucket: ""
+    # CDN 绑定域名（不带协议）。测试域名 30 天到期后需换桶重绑
+    domain: ""
+    # 是否以 https 访问 CDN/七牛资源
+    use_https: false
+    # 存储区域：z0华东 / z1华北 / z2华南 / na0北美 / as0新加坡
+    zone: "z2"
+    # 媒体访问模式：
+    #   true (默认) = 代理模式：浏览器只请求本站 /api/media/xxx，由服务器从七牛拉取后
+    #                 透传，浏览器不与七牛域名直接通信，微信内可正常显示；
+    #                 代价是流量走服务器带宽。HTTP 非备案测试域名必须用这个。
+    #   false       = 直连模式：服务器返回 302，浏览器直连七牛 CDN，不占服务器带宽、
+    #                 走 CDN 加速；要求七牛域名是已备案的 HTTPS 域名，否则微信会拦截。
+    #                 更换正式 CDN 域名后建议改为 false
+    proxy_mode: true
+    # 视频转码：true 时上传的视频自动触发七牛持久化转码压成 720p 并删除原片
+    # （按输出时长计费，约 0.019 元/分钟，有免费额度）；false 则视频按原件存储
+    pfop_enable: false
+    # 转码回调校验密钥，防止伪造回调（请求头 X-Pfop-Secret）
+    pfop_callback_secret: ""
+    # 转码回调地址（服务器公网可访问）；留空自动用上传请求的 Host 推导
+    pfop_callback_url: ""

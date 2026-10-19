@@ -1,6 +1,6 @@
 // 工具包，提供「查看房东完整电话」的按 IP 每日计数。
 // 用途：公开接口不再返回完整号码，唯一出口是 reveal 接口；
-// 每个 IP 每日前 N 次直接放行（N 来自配置 reveal_free_per_day），之后每次要求图片验证码。
+// 每个 IP 每日前 N 次直接放行（N 来自配置 server.reveal_free_per_day），之后每次要求图片验证码。
 package utils
 
 import (

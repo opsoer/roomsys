@@ -67,7 +67,7 @@ func main() {
 	fmt.Printf("   超级管理员: root / %s\n", password)
 
 	fmt.Println("5. 清理媒体文件...")
-	mediaDir := cfg.UploadDir
+	mediaDir := cfg.Server.UploadDir
 	if mediaDir == "" {
 		mediaDir = "./storage/media"
 	}

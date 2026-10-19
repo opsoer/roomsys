@@ -107,7 +107,7 @@ func (h *MediaHandler) uploadToStorage(key string, file io.Reader, size int64) e
 	if h.useQiniu() {
 		return h.qiniuUpload(key, file, size)
 	}
-	absPath := filepath.Join(h.Cfg.UploadDir, key)
+	absPath := filepath.Join(h.Cfg.Server.UploadDir, key)
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return err
 	}
@@ -160,23 +160,23 @@ var qiniuDomainMu sync.RWMutex
 
 // useQiniu 判断是否配置了七牛云存储
 func (h *MediaHandler) useQiniu() bool {
-	return h.Cfg.QiniuAccessKey != "" && h.Cfg.QiniuBucket != ""
+	return h.Cfg.Storage.Qiniu.AccessKey != "" && h.Cfg.Storage.Qiniu.Bucket != ""
 }
 
 // qiniuMac 创建七牛云鉴权对象
 func (h *MediaHandler) qiniuMac() *qiniuAuth.Mac {
-	return qiniuAuth.NewMac(h.Cfg.QiniuAccessKey, h.Cfg.QiniuSecretKey)
+	return qiniuAuth.NewMac(h.Cfg.Storage.Qiniu.AccessKey, h.Cfg.Storage.Qiniu.SecretKey)
 }
 
 // qiniuConfig 创建七牛云存储配置
 func (h *MediaHandler) qiniuConfig() storage.Config {
-	return storage.Config{Region: getZone(h.Cfg.QiniuZone), UseHTTPS: h.Cfg.QiniuUseHTTPS}
+	return storage.Config{Region: getZone(h.Cfg.Storage.Qiniu.Zone), UseHTTPS: h.Cfg.Storage.Qiniu.UseHTTPS}
 }
 
 // qiniuUpload 将文件上传到七牛云存储
 func (h *MediaHandler) qiniuUpload(key string, reader io.Reader, size int64) error {
 	putPolicy := storage.PutPolicy{
-		Scope:   h.Cfg.QiniuBucket,
+		Scope:   h.Cfg.Storage.Qiniu.Bucket,
 		Expires: 3600,
 	}
 	upToken := putPolicy.UploadToken(h.qiniuMac())
@@ -200,22 +200,22 @@ func (h *MediaHandler) getDomain() (string, error) {
 		return d, nil
 	}
 
-	if h.Cfg.QiniuDomain != "" {
+	if h.Cfg.Storage.Qiniu.Domain != "" {
 		qiniuDomainMu.Lock()
-		qiniuDomain = h.Cfg.QiniuDomain
+		qiniuDomain = h.Cfg.Storage.Qiniu.Domain
 		qiniuDomainMu.Unlock()
-		logger.Log.Info().Str("domain", h.Cfg.QiniuDomain).Msg("使用配置的七牛域名")
-		return h.Cfg.QiniuDomain, nil
+		logger.Log.Info().Str("domain", h.Cfg.Storage.Qiniu.Domain).Msg("使用配置的七牛域名")
+		return h.Cfg.Storage.Qiniu.Domain, nil
 	}
 
 	cfg := h.qiniuConfig()
 	bucketMgr := storage.NewBucketManager(h.qiniuMac(), &cfg)
-	domains, err := bucketMgr.ListBucketDomains(h.Cfg.QiniuBucket)
+	domains, err := bucketMgr.ListBucketDomains(h.Cfg.Storage.Qiniu.Bucket)
 	if err != nil {
 		return "", fmt.Errorf("获取七牛域名失败: %w", err)
 	}
 	if len(domains) == 0 {
-		return "", fmt.Errorf("bucket %s 未绑定域名", h.Cfg.QiniuBucket)
+		return "", fmt.Errorf("bucket %s 未绑定域名", h.Cfg.Storage.Qiniu.Bucket)
 	}
 
 	qiniuDomainMu.Lock()
@@ -255,11 +255,11 @@ func deleteStoredFile(cfg *config.Config, key string) {
 	if key == "" {
 		return
 	}
-	if cfg.QiniuAccessKey != "" && cfg.QiniuBucket != "" {
-		mac := qiniuAuth.NewMac(cfg.QiniuAccessKey, cfg.QiniuSecretKey)
-		qcfg := storage.Config{Region: getZone(cfg.QiniuZone), UseHTTPS: cfg.QiniuUseHTTPS}
+	if cfg.Storage.Qiniu.AccessKey != "" && cfg.Storage.Qiniu.Bucket != "" {
+		mac := qiniuAuth.NewMac(cfg.Storage.Qiniu.AccessKey, cfg.Storage.Qiniu.SecretKey)
+		qcfg := storage.Config{Region: getZone(cfg.Storage.Qiniu.Zone), UseHTTPS: cfg.Storage.Qiniu.UseHTTPS}
 		bucketMgr := storage.NewBucketManager(mac, &qcfg)
-		if err := bucketMgr.Delete(cfg.QiniuBucket, key); err != nil {
+		if err := bucketMgr.Delete(cfg.Storage.Qiniu.Bucket, key); err != nil {
 			logger.Log.Warn().Err(err).Str("key", key).Msg("删除七牛文件失败")
 		}
 		return
@@ -269,8 +269,8 @@ func deleteStoredFile(cfg *config.Config, key string) {
 		logger.Log.Warn().Str("key", key).Msg("删除文件失败: 非法路径")
 		return
 	}
-	absPath := filepath.Join(cfg.UploadDir, cleanKey)
-	cleanUploadDir := filepath.Clean(cfg.UploadDir)
+	absPath := filepath.Join(cfg.Server.UploadDir, cleanKey)
+	cleanUploadDir := filepath.Clean(cfg.Server.UploadDir)
 	if !strings.HasPrefix(absPath, cleanUploadDir+string(os.PathSeparator)) {
 		logger.Log.Warn().Str("key", key).Str("path", absPath).Msg("删除文件失败: 路径越界")
 		return
@@ -300,7 +300,7 @@ func transcodeKey(key string) string {
 // 使用 QBox 签名直接调用 api.qiniu.com，不依赖 SDK 的 media 包。
 func (h *MediaHandler) pfopTrigger(fops, key, notifyURL string) (string, error) {
 	form := url.Values{}
-	form.Set("bucket", h.Cfg.QiniuBucket)
+	form.Set("bucket", h.Cfg.Storage.Qiniu.Bucket)
 	form.Set("key", key)
 	form.Set("fops", fops)
 	if notifyURL != "" {
@@ -347,7 +347,7 @@ func (h *MediaHandler) pfopTrigger(fops, key, notifyURL string) (string, error) 
 
 // pfopNotifyURL 生成七牛转码回调地址（带校验密钥，防止伪造回调）
 func (h *MediaHandler) pfopNotifyURL(c *gin.Context) string {
-	base := h.Cfg.QiniuPfopCallbackURL
+	base := h.Cfg.Storage.Qiniu.PfopCallbackURL
 	if base == "" && c != nil && c.Request != nil {
 		scheme := "http"
 		if c.Request.TLS != nil || strings.HasPrefix(c.Request.Header.Get("X-Forwarded-Proto"), "https") {
@@ -363,11 +363,11 @@ func (h *MediaHandler) pfopNotifyURL(c *gin.Context) string {
 
 // tryTriggerTranscode 视频上传后触发七牛持久化转码（720p H.264），失败不阻塞上传
 func (h *MediaHandler) tryTriggerTranscode(c *gin.Context, media *models.RoomMedia) {
-	if !h.useQiniu() || !h.Cfg.QiniuPfopEnable || media.Type != "video" || media.Status == "processing" {
+	if !h.useQiniu() || !h.Cfg.Storage.Qiniu.PfopEnable || media.Type != "video" || media.Status == "processing" {
 		return
 	}
 	newKey := transcodeKey(media.FilePath)
-	saveas := urlSafeBase64([]byte(fmt.Sprintf("%s:%s", h.Cfg.QiniuBucket, newKey)))
+	saveas := urlSafeBase64([]byte(fmt.Sprintf("%s:%s", h.Cfg.Storage.Qiniu.Bucket, newKey)))
 	fops := fmt.Sprintf(
 		"avthumb/mp4/vcodec/libx264/vb/1500k/acodec/aac/ab/128k/s/1280x720/autoscale/1/movflags/faststart|saveas/%s",
 		saveas,
@@ -401,7 +401,7 @@ type PfopCallbackReq struct {
 // PfopCallback 接收七牛转码完成回调：更新媒体记录指向压缩版并删除原片
 func (h *MediaHandler) PfopCallback(c *gin.Context) {
 	secret := c.GetHeader("X-Pfop-Secret")
-	if h.Cfg.QiniuPfopCallbackSecret == "" || secret != h.Cfg.QiniuPfopCallbackSecret {
+	if h.Cfg.Storage.Qiniu.PfopCallbackSecret == "" || secret != h.Cfg.Storage.Qiniu.PfopCallbackSecret {
 		utils.Error(c, http.StatusForbidden, "无效的回调密钥")
 		return
 	}
@@ -432,7 +432,7 @@ func (h *MediaHandler) PfopCallback(c *gin.Context) {
 		if h.useQiniu() {
 			cfg := h.qiniuConfig()
 			bm := storage.NewBucketManager(h.qiniuMac(), &cfg)
-			if info, e := bm.Stat(h.Cfg.QiniuBucket, newKey); e == nil {
+			if info, e := bm.Stat(h.Cfg.Storage.Qiniu.Bucket, newKey); e == nil {
 				newSize = info.Fsize
 			}
 		}
@@ -543,7 +543,7 @@ func (h *MediaHandler) CheckTranscodeStatus(c *gin.Context) {
 			if h.useQiniu() {
 				cfg := h.qiniuConfig()
 				bm := storage.NewBucketManager(h.qiniuMac(), &cfg)
-				if info, e := bm.Stat(h.Cfg.QiniuBucket, newKey); e == nil {
+				if info, e := bm.Stat(h.Cfg.Storage.Qiniu.Bucket, newKey); e == nil {
 					newSize = info.Fsize
 				}
 			}
@@ -880,12 +880,12 @@ func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomStr, subDir, uuidName))
 
 	putPolicy := storage.PutPolicy{
-		Scope:   fmt.Sprintf("%s:%s", h.Cfg.QiniuBucket, key),
+		Scope:   fmt.Sprintf("%s:%s", h.Cfg.Storage.Qiniu.Bucket, key),
 		Expires: 3600,
 	}
 	upToken := putPolicy.UploadToken(h.qiniuMac())
 
-	uploadHost := qiniuUploadURL(h.Cfg.QiniuZone)
+	uploadHost := qiniuUploadURL(h.Cfg.Storage.Qiniu.Zone)
 
 	domain, dErr := h.getDomain()
 	if dErr != nil {
@@ -893,7 +893,7 @@ func (h *MediaHandler) GetUploadToken(c *gin.Context) {
 		return
 	}
 	scheme := "http"
-	if h.Cfg.QiniuUseHTTPS {
+	if h.Cfg.Storage.Qiniu.UseHTTPS {
 		scheme = "https"
 	}
 
@@ -1125,11 +1125,11 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 			return
 		}
 		scheme := "http"
-		if h.Cfg.QiniuUseHTTPS {
+		if h.Cfg.Storage.Qiniu.UseHTTPS {
 			scheme = "https"
 		}
 		upstream := fmt.Sprintf("%s://%s/%s", scheme, domain, safePath)
-		if h.Cfg.QiniuProxyMode {
+		if h.Cfg.Storage.Qiniu.ProxyMode {
 			// 代理模式：微信内置浏览器会拦截对 HTTP 非备案 CDN 域名的资源加载，
 			// 导致图片加载失败，故由服务端代理回源，浏览器只与本站同源通信。
 			logger.Log.Debug().Str("path", safePath).Msg("文件服务: 代理回源")
@@ -1144,8 +1144,8 @@ func (h *MediaHandler) Serve(c *gin.Context) {
 		return
 	}
 
-	absPath := filepath.Clean(filepath.Join(h.Cfg.UploadDir, safePath))
-	cleanUploadDir := filepath.Clean(h.Cfg.UploadDir)
+	absPath := filepath.Clean(filepath.Join(h.Cfg.Server.UploadDir, safePath))
+	cleanUploadDir := filepath.Clean(h.Cfg.Server.UploadDir)
 	if !strings.HasPrefix(absPath, cleanUploadDir) {
 		logger.Log.Warn().Str("path", filePath).Msg("文件服务: 非法路径请求")
 		utils.Error(c, http.StatusBadRequest, "非法路径")
@@ -1234,7 +1234,7 @@ func mimeTypeByExt(path string) string {
 
 // ReDownloadFFmpeg 重新下载 FFmpeg 核心文件
 func (h *MediaHandler) ReDownloadFFmpeg(c *gin.Context) {
-	dir := filepath.Join(h.Cfg.UploadDir, "ffmpeg")
+	dir := filepath.Join(h.Cfg.Server.UploadDir, "ffmpeg")
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "创建目录失败")
 		return

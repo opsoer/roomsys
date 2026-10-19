@@ -34,7 +34,7 @@ func (h *RoomHandler) hasAuth(c *gin.Context) bool {
 		return false
 	}
 	tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
-	_, err := utils.ParseToken(tokenStr, h.Cfg.JWTSecret)
+	_, err := utils.ParseToken(tokenStr, h.Cfg.Server.JWTSecret)
 	return err == nil
 }
 
@@ -259,7 +259,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	}
 	if h.hasAuth(c) && contract != nil {
 		tokenStr := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-		claims, err := utils.ParseToken(tokenStr, h.Cfg.JWTSecret)
+		claims, err := utils.ParseToken(tokenStr, h.Cfg.Server.JWTSecret)
 		if err == nil && claims.BuildingID > 0 && claims.BuildingID == room.BuildingID {
 			detail.CurrentContract = contract
 		}

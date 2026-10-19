@@ -304,7 +304,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "缺少刷新令牌")
 		return
 	}
-	claims, err := utils.ParseToken(req.RefreshToken, h.Cfg.JWTSecret)
+	claims, err := utils.ParseToken(req.RefreshToken, h.Cfg.Server.JWTSecret)
 	if err != nil {
 		logger.Log.Warn().Err(err).Msg("刷新令牌解析失败")
 		utils.Error(c, http.StatusUnauthorized, "刷新令牌无效或已过期")
@@ -315,7 +315,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		utils.Error(c, http.StatusUnauthorized, "无效的刷新令牌")
 		return
 	}
-	token, err := utils.GenerateToken(claims.UserID, claims.Username, claims.Role, h.Cfg.JWTSecret, claims.BuildingID)
+	token, err := utils.GenerateToken(claims.UserID, claims.Username, claims.Role, h.Cfg.Server.JWTSecret, claims.BuildingID)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", claims.UserID).Msg("重新生成令牌失败")
 		utils.Error(c, http.StatusInternalServerError, "生成令牌失败")

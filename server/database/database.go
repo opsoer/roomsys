@@ -1,8 +1,8 @@
 // Package database 统一封装存储后端的选择与初始化。
 //
-// 目前支持两种后端，由配置项 db_driver 决定，进程启动时二选一：
-//   - mysql  （默认，兼容既有部署）：独立 MySQL 服务，走 TCP 连接
-//   - sqlite （单机推荐）：进程内嵌入式数据库，单文件零运维
+// 目前支持两种后端，由配置项 database.driver 决定，进程启动时二选一：
+//   - sqlite （默认，纯 Go 实现零安装）：进程内嵌入式数据库，单文件零运维
+//   - mysql  ：独立 MySQL 服务，走 TCP 连接
 //
 // 新增后端（如 PostgreSQL）时的扩展点：
 //  1. config 包加 Driver 常量并在 normalize 里放行
@@ -27,20 +27,21 @@ import (
 // Open 按配置选择存储后端并打开连接，返回的 *gorm.DB 对上层完全透明，
 // 业务代码不感知底层是哪种数据库。
 func Open(cfg *config.Config) (*gorm.DB, error) {
-	switch cfg.DBDriver {
+	switch cfg.Database.Driver {
 	case config.DriverMySQL:
 		return openMySQL(cfg)
 	case config.DriverSQLite:
-		return openSQLite(cfg.DBPath)
+		return openSQLite(cfg.Database.SQLite.Path)
 	default:
-		return nil, fmt.Errorf("不支持的 db_driver: %q（可选 mysql / sqlite）", cfg.DBDriver)
+		return nil, fmt.Errorf("不支持的 database.driver: %q（可选 mysql / sqlite）", cfg.Database.Driver)
 	}
 }
 
 // openMySQL 连接独立 MySQL 服务，连接参数与池大小沿用原有线上配置。
 func openMySQL(cfg *config.Config) (*gorm.DB, error) {
+	m := cfg.Database.MySQL
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		m.User, m.Password, m.Host, m.Port, m.Name)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err

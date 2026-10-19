@@ -15,12 +15,12 @@ import (
 
 // Setup 注册所有路由，包括静态文件服务、公开接口、平台管理后台和公寓管理后台。
 func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
-	r.Static("/assets", cfg.WebDistDir+"/assets")
-	r.StaticFile("/default-image.svg", cfg.WebDistDir+"/default-image.svg")
-	r.StaticFile("/", cfg.WebDistDir+"/index.html")
-	r.Static("/api/ffmpeg", filepath.Join(cfg.UploadDir, "ffmpeg"))
+	r.Static("/assets", cfg.Server.WebDistDir+"/assets")
+	r.StaticFile("/default-image.svg", cfg.Server.WebDistDir+"/default-image.svg")
+	r.StaticFile("/", cfg.Server.WebDistDir+"/index.html")
+	r.Static("/api/ffmpeg", filepath.Join(cfg.Server.UploadDir, "ffmpeg"))
 	r.NoRoute(func(c *gin.Context) {
-		c.File(cfg.WebDistDir + "/index.html")
+		c.File(cfg.Server.WebDistDir + "/index.html")
 	})
 
 	buildingSvc := services.NewBuildingService(db)
@@ -76,11 +76,11 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		public.GET("/config", func(c *gin.Context) {
 			domain := ""
 			scheme := "http"
-			if cfg.QiniuUseHTTPS {
+			if cfg.Storage.Qiniu.UseHTTPS {
 				scheme = "https"
 			}
-			if cfg.QiniuDomain != "" {
-				domain = cfg.QiniuDomain
+			if cfg.Storage.Qiniu.Domain != "" {
+				domain = cfg.Storage.Qiniu.Domain
 			}
 			c.JSON(200, gin.H{"cdn_domain": domain, "cdn_scheme": scheme})
 		})
@@ -88,7 +88,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	// ========== 平台超级管理员 ==========
 	platform := r.Group("/api/admin")
-	platform.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	platform.Use(middleware.AuthMiddleware(db, cfg.Server.JWTSecret))
 	platform.Use(middleware.SuperAdminMiddleware())
 	{
 		platform.POST("/buildings", buildingH.Create)
@@ -133,7 +133,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	// ========== 公寓管理后台（building_admin + admin）==========
 	building := r.Group("/api/building")
-	building.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	building.Use(middleware.AuthMiddleware(db, cfg.Server.JWTSecret))
 	building.Use(middleware.AdminOrBuildingAdminMiddleware())
 	building.Use(middleware.BuildingScopeMiddleware(db))
 	{

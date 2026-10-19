@@ -23,7 +23,7 @@
 // 且收到 429 后自动等待限流窗口重置再重试，无需人工干预。
 //
 // 环境变量：
-//   SEED_BASE_URL      后端地址，默认 http://127.0.0.1:8081（与 config.json 的 server_port 对应）
+//   SEED_BASE_URL      后端地址，默认 http://127.0.0.1:8081（与 config.yaml 的 server.port 对应）
 //   SEED_RATE_PER_MIN  脚本自限速（次/分钟），默认 200；若启动后端时已调大
 //                      RATE_LIMIT_PER_MIN，可设为 0 关闭自限速以提速
 //
