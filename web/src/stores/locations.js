@@ -146,6 +146,30 @@ export const useLocationStore = defineStore('locations', () => {
       if (c.level === 1) ensureDistrict(applyRename(1, '', '', c.name))
     }
 
+    // 6) 自定义街道补挂：步骤 2 只在静态区域循环内并入，自定义区域（及仅数据库录入的区域）下的街道会漏掉
+    for (const c of customs.value) {
+      if (c.level !== 2) continue
+      const dName = applyRename(1, '', '', c.district)
+      const dNode = tree.find(n => n.label === dName) || ensureDistrict(dName)
+      const cName = applyRename(2, c.district, '', c.name)
+      if (dNode.streets.some(s => normStreet(s.label) === normStreet(cName))) continue
+      dNode.streets.push({ value: cName, label: cName, villages: [] })
+    }
+
+    // 7) 自定义村/小区补挂：步骤 3 同样只覆盖静态区域，非静态街道下的小区会漏掉
+    for (const c of customs.value) {
+      if (c.level !== 3) continue
+      const dName = applyRename(1, '', '', c.district)
+      const dNode = tree.find(n => n.label === dName) || ensureDistrict(dName)
+      const sName = applyRename(2, c.district, '', c.street)
+      let sNode = dNode.streets.find(s => normStreet(s.label) === normStreet(sName))
+      if (!sNode) {
+        sNode = { value: sName, label: sName, villages: [] }
+        dNode.streets.push(sNode)
+      }
+      if (!sNode.villages.some(v => normVillage(v) === normVillage(c.name))) sNode.villages.push(c.name)
+    }
+
     return tree
   })
 
