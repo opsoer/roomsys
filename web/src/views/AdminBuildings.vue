@@ -154,7 +154,7 @@ async function handleToggleVisibility(row) {
 }
 
 async function copyHomeLink(row) {
-  const url = buildingHomeUrl(row.id)
+  const url = buildingHomeUrl(row.id, row.name)
   const ok = await copyText(url)
   if (ok) {
     ElMessage.success('已复制公寓主页链接')
@@ -175,7 +175,7 @@ function openBuildingQr(row) {
   buildingQrVisible.value = true
   buildingQrDataUrl.value = ''
   buildingQrBuilding.value = row
-  buildingQrLink.value = buildingHomeUrl(row.id)
+  buildingQrLink.value = buildingHomeUrl(row.id, row.name)
   generateBrandedQrDataUrl({
     text: buildingQrLink.value,
     title: row.name || '公寓主页',

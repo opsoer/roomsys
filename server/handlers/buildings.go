@@ -494,8 +494,8 @@ func (h *BuildingHandler) ListLocations(c *gin.Context) {
 // GetPublic 获取公寓详情（公开端），含统计信息并记录访问
 func (h *BuildingHandler) GetPublic(c *gin.Context) {
 	id := c.Param("id")
-	buildingID, err := strconv.ParseUint(id, 10, 32)
-	if err != nil {
+	buildingID, ok := utils.ParseIdKey(id)
+	if !ok {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
@@ -527,8 +527,8 @@ type RevealPhoneRequest struct {
 // 每个IP每日前 RevealFreePerDay 次直接放行（配置 server.reveal_free_per_day），
 // 之后每次要求先通过图片验证码；不设硬性上限。
 func (h *BuildingHandler) RevealPhone(c *gin.Context) {
-	buildingID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
+	buildingID, ok := utils.ParseIdKey(c.Param("id"))
+	if !ok {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
@@ -563,8 +563,8 @@ func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 // GetRooms 获取公寓的房间列表，支持楼层、户型、状态筛选
 func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	id := c.Param("id")
-	buildingID, err := strconv.ParseUint(id, 10, 32)
-	if err != nil {
+	buildingID, ok := utils.ParseIdKey(id)
+	if !ok {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}

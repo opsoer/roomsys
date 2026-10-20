@@ -3,7 +3,7 @@
     <van-nav-bar
       :title="room.room_number"
       left-arrow
-      @click-left="$router.push(`/building/${buildingId}`)"
+      @click-left="$router.push(buildingPath)"
     >
 <template #right>
         <div class="nav-right">
@@ -180,6 +180,7 @@ import { showToast, showImagePreview } from 'vant'
 import { getPublicRoom, getBuildingDetail } from '../api'
 import { mediaUrl, statusLabel, statusTagType, copyText } from '../utils/format'
 import { roomHomeUrl, generateRoomQrDataUrl, downloadQrImage } from '../utils/qr'
+import { buildingKey, parseIdKey } from '../utils/buildingKey'
 import { useAuthStore } from '../stores/auth'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 import CaptchaDialog from '../components/common/CaptchaDialog.vue'
@@ -188,8 +189,10 @@ import { revealedLandlords, revealLandlords } from '../utils/reveal'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const buildingId = computed(() => route.params.bid)
-const roomId = computed(() => route.params.id)
+// URL 形如 /building/ygxy_1/room/205_8，取下划线后的数字 id 调接口；缩写仅装饰
+const buildingId = computed(() => parseIdKey(route.params.bid))
+const roomId = computed(() => parseIdKey(route.params.id))
+const buildingPath = computed(() => `/building/${buildingKey(buildingId.value, building.value?.name)}`)
 const room = ref(null)
 const contract = ref(null)
 const building = ref(null)
@@ -292,7 +295,10 @@ const qrLink = ref('')
 function openQrShare() {
   qrVisible.value = true
   qrDataUrl.value = ''
-  qrLink.value = roomHomeUrl(buildingId.value, roomId.value)
+  qrLink.value = roomHomeUrl(buildingId.value, roomId.value, {
+    buildingName: building.value?.name || '',
+    roomNumber: room.value?.room_number || '',
+  })
   generateRoomQrDataUrl({
     text: qrLink.value,
     buildingName: building.value?.name || '',

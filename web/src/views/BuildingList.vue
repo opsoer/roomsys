@@ -161,7 +161,7 @@
           v-for="b in buildings"
           :key="b.id"
           class="building-card"
-          @click="$router.push(`/building/${b.id}`)"
+          @click="$router.push(`/building/${buildingKey(b.id, b.name)}`)"
         >
           <div class="card-img">
             <img v-if="b.cover_image" :src="mediaUrl(b.cover_image)" :alt="b.name" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
@@ -220,6 +220,7 @@ import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { getBuildings } from '../api'
 import { siteHomeUrl, locationFilterUrl, generateSiteQrDataUrl, generateLocationQrDataUrl, downloadQrImage } from '../utils/qr'
+import { buildingKey } from '../utils/buildingKey'
 import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useLocationStore } from '../stores/locations'

@@ -1,5 +1,7 @@
 // 品牌化二维码：Canvas 合成干净的二维码卡片（标题 + 二维码 + 信息行）并下载
 
+import { buildingKey, roomKey } from './buildingKey'
+
 export function siteHomeUrl() {
   return `${window.location.origin}/`
 }
@@ -14,12 +16,12 @@ export function canAutoDownloadImage() {
   return !isWechat() && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 }
 
-export function buildingHomeUrl(buildingId) {
-  return `${window.location.origin}/building/${buildingId}`
+export function buildingHomeUrl(buildingId, buildingName = '') {
+  return `${window.location.origin}/building/${buildingKey(buildingId, buildingName)}`
 }
 
-export function roomHomeUrl(buildingId, roomId) {
-  return `${window.location.origin}/building/${buildingId}/room/${roomId}`
+export function roomHomeUrl(buildingId, roomId, { buildingName = '', roomNumber = '' } = {}) {
+  return `${window.location.origin}/building/${buildingKey(buildingId, buildingName)}/room/${roomKey(roomId, roomNumber)}`
 }
 
 // 从公寓对象提取信息行（有值才显示）

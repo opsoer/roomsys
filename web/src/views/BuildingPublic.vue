@@ -103,7 +103,7 @@
         v-for="room in displayRooms"
         :key="room.id"
         class="room-card"
-        @click="$router.push(`/building/${id}/room/${room.id}`)"
+        @click="$router.push(`/building/${buildingKey(id, building?.name)}/room/${roomKey(room.id, room.room_number)}`)"
       >
         <div class="room-card-img">
           <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
@@ -171,6 +171,7 @@ import { showToast } from 'vant'
 import { getBuildingDetail, getBuildingRooms } from '../api'
 import { mediaUrl, statusLabel, statusTagType, maskPhone, copyText } from '../utils/format'
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
+import { buildingKey, roomKey, parseIdKey } from '../utils/buildingKey'
 import { useAuthStore } from '../stores/auth'
 import { useInfiniteList } from '../composables/useInfiniteList'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
@@ -180,7 +181,8 @@ import { revealedLandlords, revealLandlords } from '../utils/reveal'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const id = computed(() => route.params.id)
+// URL 形如 /building/ygxy_1，取下划线后的数字 id 调接口；缩写仅装饰
+const id = computed(() => parseIdKey(route.params.id))
 const building = ref(null)
 const loadError = ref(false)
 const statusFilter = ref('')
@@ -318,7 +320,7 @@ const qrLink = ref('')
 function openQrShare() {
   qrVisible.value = true
   qrDataUrl.value = ''
-  qrLink.value = buildingHomeUrl(id.value)
+  qrLink.value = buildingHomeUrl(id.value, building.value?.name)
   generateBrandedQrDataUrl({
     text: qrLink.value,
     title: building.value?.name || '公寓主页',

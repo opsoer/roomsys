@@ -196,6 +196,7 @@ import { ElMessage } from 'element-plus'
 import { showToast } from 'vant'
 import { getBuildingInfo, buildingGetTasks } from '../api'
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines, canAutoDownloadImage } from '../utils/qr'
+import { buildingKey } from '../utils/buildingKey'
 import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
@@ -238,7 +239,7 @@ function handleLogout() {
 function goToBuildingPage() {
   const bid = authStore.buildingId
   if (bid) {
-    const url = router.resolve({ name: 'BuildingPublic', params: { id: bid } }).href
+    const url = router.resolve({ name: 'BuildingPublic', params: { id: buildingKey(bid, buildingName.value) } }).href
     window.open(url, '_blank')
   } else {
     router.push('/')
@@ -257,7 +258,7 @@ async function handleDownloadQr() {
   }
   buildingQrVisible.value = true
   buildingQrDataUrl.value = ''
-  buildingQrLink.value = buildingHomeUrl(bid)
+  buildingQrLink.value = buildingHomeUrl(bid, buildingName.value)
   try {
     buildingQrDataUrl.value = await generateBrandedQrDataUrl({
       text: buildingQrLink.value,

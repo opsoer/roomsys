@@ -221,13 +221,13 @@ func validateContractDates(startDate, endDate string) error {
 func (h *RoomHandler) GetPublic(c *gin.Context) {
 	roomID := c.Param("rid")
 	buildingID := c.Param("id")
-	rid, err := strconv.ParseUint(roomID, 10, 32)
-	if err != nil {
+	rid, ok := utils.ParseIdKey(roomID)
+	if !ok {
 		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
 		return
 	}
-	bid, err := strconv.ParseUint(buildingID, 10, 32)
-	if err != nil {
+	bid, ok := utils.ParseIdKey(buildingID)
+	if !ok {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
