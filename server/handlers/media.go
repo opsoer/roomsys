@@ -569,6 +569,39 @@ func (h *MediaHandler) CheckTranscodeStatus(c *gin.Context) {
 	utils.Success(c, gin.H{"updated": updated})
 }
 
+// buildMediaKey 生成对象存储 key：buildings/{公寓id}_{公寓名}/rooms/{房间id}_{楼层}-{房号}/{子目录}/{uuid}.ext
+func (h *MediaHandler) buildMediaKey(bid uint, room *models.Room, vf *validatedFile, category string) string {
+	subDir := vf.MediaType + "s"
+	if category == "cover" {
+		subDir = "covers"
+	}
+	uuidName := uuid.New().String() + vf.Ext
+	building, _ := h.MediaService.GetBuildingByID(bid)
+	nameSlug := utils.Slugify(building.Name)
+	buildingStr := fmt.Sprintf("%d_%s", bid, nameSlug)
+	roomStr := fmt.Sprintf("%d_%s-%s", room.ID, room.Floor, room.RoomNumber)
+	return filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomStr, subDir, uuidName))
+}
+
+// removeOldCover 清理旧封面（文件与数据库记录），用于封面上传时的覆盖替换。
+func (h *MediaHandler) removeOldCover(roomID uint, category string) {
+	oldMedias, err := h.MediaService.GetMediaByRoomAndCategory(roomID, category)
+	if err != nil {
+		return
+	}
+	for _, oldMedia := range oldMedias {
+		h.deleteFile(oldMedia.FilePath)
+		if oldMedia.ThumbnailPath != "" {
+			h.deleteFile(oldMedia.ThumbnailPath)
+		}
+		if delErr := h.MediaService.DeleteMedia(&oldMedia); delErr != nil {
+			logger.Log.Error().Err(delErr).Uint("media_id", oldMedia.ID).Msg("删除旧封面记录失败")
+		} else {
+			logger.Log.Info().Uint("media_id", oldMedia.ID).Str("key", oldMedia.FilePath).Msg("已删除旧封面")
+		}
+	}
+}
+
 // Upload 上传媒体文件到房间，支持图片压缩和视频上传
 func (h *MediaHandler) Upload(c *gin.Context) {
 	bid, err := utils.GetBuildingID(c)
@@ -600,6 +633,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		category = "gallery"
 	}
 
+	// 每个房间的照片/视频数量上限
 	if vf.MediaType == "image" && category != "cover" {
 		count, _ := h.MediaService.CountMediaByRoomAndType(room.ID, "image")
 		if count >= 10 {
@@ -617,32 +651,12 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		}
 	}
 
-	subDir := vf.MediaType + "s"
+	// 封面是覆盖式：先清理旧封面文件与记录
 	if category == "cover" {
-		subDir = "covers"
-
-		oldMedias, err := h.MediaService.GetMediaByRoomAndCategory(room.ID, category)
-		if err == nil {
-			for _, oldMedia := range oldMedias {
-				h.deleteFile(oldMedia.FilePath)
-				if oldMedia.ThumbnailPath != "" {
-					h.deleteFile(oldMedia.ThumbnailPath)
-				}
-				if delErr := h.MediaService.DeleteMedia(&oldMedia); delErr != nil {
-					logger.Log.Error().Err(delErr).Uint("media_id", oldMedia.ID).Msg("删除旧封面记录失败")
-				} else {
-					logger.Log.Info().Uint("media_id", oldMedia.ID).Str("key", oldMedia.FilePath).Msg("已删除旧封面")
-				}
-			}
-		}
+		h.removeOldCover(room.ID, category)
 	}
 
-	uuidName := uuid.New().String() + vf.Ext
-	building, _ := h.MediaService.GetBuildingByID(bid)
-	nameSlug := utils.Slugify(building.Name)
-	buildingStr := fmt.Sprintf("%d_%s", bid, nameSlug)
-	roomStr := fmt.Sprintf("%d_%s-%s", room.ID, room.Floor, room.RoomNumber)
-	key := filepath.ToSlash(filepath.Join("buildings", buildingStr, "rooms", roomStr, subDir, uuidName))
+	key := h.buildMediaKey(bid, room, vf, category)
 
 	var thumbKey string
 	var processedSize int64

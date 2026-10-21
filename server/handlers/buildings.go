@@ -192,26 +192,9 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	utils.Created(c, "公寓创建成功", gin.H{"building": building})
 }
 
-// Update 更新公寓信息，支持修改名称、地址、封面等
-func (h *BuildingHandler) Update(c *gin.Context) {
-	id := c.Param("id")
-	buildingID, err := strconv.ParseUint(id, 10, 32)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
-		return
-	}
-	building, err := h.BuildingService.GetByID(uint(buildingID))
-	if err != nil {
-		logger.Log.Warn().Str("id", id).Msg("更新公寓失败: 公寓不存在")
-		utils.Error(c, http.StatusNotFound, "公寓不存在")
-		return
-	}
-	var req UpdateBuildingReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Log.Warn().Uint("building_id", building.ID).Msg("更新公寓请求参数错误")
-		utils.Error(c, http.StatusBadRequest, "参数错误")
-		return
-	}
+// buildBuildingUpdates 把更新请求映射为数据库字段更新集，并校验到期日期规则。
+// 拆出来单独成函数，让 Update 主流程只负责「校验 → 落库 → 审计」。
+func (h *BuildingHandler) buildBuildingUpdates(req *UpdateBuildingReq, building *models.Building) (map[string]interface{}, error) {
 	updates := map[string]interface{}{}
 	if req.Name != "" {
 		updates["name"] = req.Name
@@ -231,8 +214,7 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 			contractDate = building.ContractDate
 		}
 		if err := validateExpiredAt(req.ExpiredAt, contractDate); err != nil {
-			utils.Error(c, http.StatusBadRequest, err.Error())
-			return
+			return nil, utils.BadRequest("%s", err.Error())
 		}
 		updates["expired_at"] = req.ExpiredAt
 	} else if req.ContractDate != "" {
@@ -261,6 +243,34 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 	if req.Status != "" {
 		updates["status"] = req.Status
+	}
+	return updates, nil
+}
+
+// Update 更新公寓信息，支持修改名称、地址、封面等
+func (h *BuildingHandler) Update(c *gin.Context) {
+	id := c.Param("id")
+	buildingID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
+		return
+	}
+	building, err := h.BuildingService.GetByID(uint(buildingID))
+	if err != nil {
+		logger.Log.Warn().Str("id", id).Msg("更新公寓失败: 公寓不存在")
+		utils.Error(c, http.StatusNotFound, "公寓不存在")
+		return
+	}
+	var req UpdateBuildingReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Log.Warn().Uint("building_id", building.ID).Msg("更新公寓请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	updates, err := h.buildBuildingUpdates(&req, building)
+	if err != nil {
+		utils.Fail(c, err)
+		return
 	}
 
 	if req.Name != "" && req.Name != building.Name {
@@ -293,14 +303,14 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 
 	if len(req.Landlords) > 0 {
-		h.BuildingService.DeleteLandlords(building.ID)
+		landlords := make([]services.LandlordInput, 0, len(req.Landlords))
 		for _, l := range req.Landlords {
-			ll := models.BuildingLandlord{
-				BuildingID: building.ID,
-				Name:       l.Name,
-				Phone:      l.Phone,
-			}
-			h.BuildingService.CreateLandlord(&ll)
+			landlords = append(landlords, services.LandlordInput{Name: l.Name, Phone: l.Phone})
+		}
+		if err := h.BuildingService.ReplaceLandlords(building.ID, landlords); err != nil {
+			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新房东信息失败")
+			utils.Error(c, http.StatusInternalServerError, "更新失败")
+			return
 		}
 	}
 
@@ -331,7 +341,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.BuildingService.Delete(uint(buildingID)); err != nil {
-		if err.Error() == "active_contracts_exist" {
+		if errors.Is(err, services.ErrActiveContracts) {
 			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在活跃合同")
 			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract, "该公寓存在活跃合同，无法删除")
 			return
@@ -586,6 +596,20 @@ func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 }
 
 // GetRooms 获取公寓的房间列表，支持楼层、户型、状态筛选
+// canViewAllRooms 判断当前请求者是否有权查看该公寓的全部房间（含已出租房间）。
+// 平台管理员与该公寓的管理员/楼管可见全部；未登录访客只能看未签约房间。
+func (h *BuildingHandler) canViewAllRooms(c *gin.Context, buildingID uint) bool {
+	authHeader := c.GetHeader("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return false
+	}
+	claims, err := utils.ParseToken(strings.TrimPrefix(authHeader, "Bearer "), h.Cfg.Server.JWTSecret)
+	if err != nil {
+		return false
+	}
+	return claims.Role == "super_admin" || (claims.BuildingID > 0 && claims.BuildingID == buildingID)
+}
+
 func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, ok := utils.ParseIdKey(id)
@@ -612,16 +636,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 
 	// 已登录且为该公寓的管理员（或超级管理员）可见全部房间；
 	// 未登录或其它公寓管理员仅可见「未出租」和「即将到期」的房间
-	canViewAll := false
-	authHeader := c.GetHeader("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		if claims, err := utils.ParseToken(strings.TrimPrefix(authHeader, "Bearer "), h.Cfg.Server.JWTSecret); err == nil {
-			if claims.Role == "super_admin" || (claims.BuildingID > 0 && claims.BuildingID == uint(buildingID)) {
-				canViewAll = true
-			}
-		}
-	}
-	if !canViewAll {
+	if !h.canViewAllRooms(c, uint(buildingID)) {
 		today := utils.Now().Format("2006-01-02")
 		expiringBefore := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
 		query = query.Where(

@@ -2,6 +2,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -560,6 +561,10 @@ func (s *BuildingService) HasActiveContracts(id uint) (bool, error) {
 	return count > 0, err
 }
 
+// ErrActiveContracts 公寓存在生效中的合同，不允许删除。
+// 用哨兵错误替代字符串比较，handler 通过 errors.Is 判断。
+var ErrActiveContracts = errors.New("active_contracts_exist")
+
 // Delete 删除楼栋及所有关联数据（房间、合同、账单、用户等）
 func (s *BuildingService) Delete(id uint) error {
 	has, err := s.HasActiveContracts(id)
@@ -567,7 +572,7 @@ func (s *BuildingService) Delete(id uint) error {
 		return err
 	}
 	if has {
-		return fmt.Errorf("active_contracts_exist")
+		return ErrActiveContracts
 	}
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		var roomIDs []uint
@@ -627,6 +632,35 @@ func (s *BuildingService) UpgradePackage(id uint, packageType string) error {
 // CreateLandlord 创建房东信息
 func (s *BuildingService) CreateLandlord(landlord *models.BuildingLandlord) error {
 	return s.DB.Create(landlord).Error
+}
+
+// LandlordInput 房东信息输入（用于覆盖式更新）。
+type LandlordInput struct {
+	// Name 房东姓名。
+	Name string
+	// Phone 联系电话。
+	Phone string
+}
+
+// ReplaceLandlords 覆盖式更新房东列表（先清空再按新列表写入，事务内完成）。
+// 用于公寓信息更新时的房东信息同步，避免中途失败留下「清空但没写回」的中间态。
+func (s *BuildingService) ReplaceLandlords(buildingID uint, landlords []LandlordInput) error {
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("building_id = ?", buildingID).Delete(&models.BuildingLandlord{}).Error; err != nil {
+			return err
+		}
+		for _, l := range landlords {
+			ll := models.BuildingLandlord{
+				BuildingID: buildingID,
+				Name:       l.Name,
+				Phone:      l.Phone,
+			}
+			if err := tx.Create(&ll).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // DeleteLandlords 删除楼栋下的所有房东信息

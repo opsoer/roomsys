@@ -2,7 +2,7 @@
 // 合并出一棵完整的位置树，主页筛选与创建/编辑公寓弹窗共用，保证各处选项一致。
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getBuildingLocations, getLocationManage } from '../api'
+import { getBuildingLocations, getLocationOptions, getLocationManage } from '../api'
 import shenzhen from '../utils/shenzhen'
 
 export const useLocationStore = defineStore('locations', () => {
@@ -14,6 +14,23 @@ export const useLocationStore = defineStore('locations', () => {
   const loaded = ref(false)
 
   async function load(force = false) {
+    if (loaded.value && !force) return
+    const tasks = [
+      getBuildingLocations().then(res => { dbLocations.value = res.data.locations || [] }).catch(() => { dbLocations.value = [] }),
+      getLocationOptions().then(res => {
+        customs.value = res.data.customs || []
+        renames.value = res.data.renames || []
+      }).catch(() => {
+        customs.value = []
+        renames.value = []
+      }),
+    ]
+    await Promise.all(tasks)
+    loaded.value = true
+  }
+
+  // loadManage 超管管理端使用：读取带 id 的全量数据（新增/删除自定义条目需要 id）。
+  async function loadManage(force = false) {
     if (loaded.value && !force) return
     const tasks = [
       getBuildingLocations().then(res => { dbLocations.value = res.data.locations || [] }).catch(() => { dbLocations.value = [] }),
@@ -181,5 +198,5 @@ export const useLocationStore = defineStore('locations', () => {
     return streetsOf(districtLabel).find(s => s.label === streetLabel)?.villages || []
   }
 
-  return { dbLocations, customs, renames, loaded, load, invalidate, fullTree, streetsOf, villagesOf }
+  return { dbLocations, customs, renames, loaded, load, loadManage, invalidate, fullTree, streetsOf, villagesOf }
 })

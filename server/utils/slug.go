@@ -29,6 +29,11 @@ func Slugify(s string) string {
 	}
 
 	slug := strings.Join(parts, "-")
+	if slug == "" {
+		// 没有中文可转写（如纯英文/数字名称）时，退化为原字符串的 ASCII slug，
+		// 避免所有同类名称都变成 "unnamed" 而撞到同一目录。
+		slug = s
+	}
 	re := regexp.MustCompile(`[^a-zA-Z0-9-]+`)
 	slug = re.ReplaceAllString(slug, "-")
 	re2 := regexp.MustCompile(`-+`)

@@ -116,6 +116,9 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 	return rooms, total, err
 }
 
+// ErrRoomNumberExists 房间号在本公寓内已存在。
+var ErrRoomNumberExists = errors.New("房间号已存在")
+
 // Create 创建房间
 func (s *RoomService) Create(room *models.Room) error {
 	var count int64
@@ -123,7 +126,7 @@ func (s *RoomService) Create(room *models.Room) error {
 		Where("building_id = ? AND room_number = ?", room.BuildingID, room.RoomNumber).
 		Count(&count)
 	if count > 0 {
-		return errors.New("房间号已存在")
+		return ErrRoomNumberExists
 	}
 	return s.DB.Create(room).Error
 }

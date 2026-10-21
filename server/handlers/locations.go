@@ -59,6 +59,45 @@ func (h *LocationManageHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"customs": customs, "renames": renames})
 }
 
+// ListOptions 公开只读接口：返回渲染位置选项树所需的最小字段。
+//
+// 与管理端 List 的区别：不暴露内部主键 id 与创建时间，
+// 避免未登录访客拿到平台内部管理数据。
+func (h *LocationManageHandler) ListOptions(c *gin.Context) {
+	var customs []models.LocationCustom
+	if err := h.DB.Order("id ASC").Find(&customs).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	var renames []models.LocationRename
+	if err := h.DB.Order("id ASC").Find(&renames).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	type customOption struct {
+		Level    int    `json:"level"`
+		District string `json:"district"`
+		Street   string `json:"street"`
+		Name     string `json:"name"`
+	}
+	type renameOption struct {
+		Level    int    `json:"level"`
+		District string `json:"district"`
+		Street   string `json:"street"`
+		OldName  string `json:"old_name"`
+		NewName  string `json:"new_name"`
+	}
+	customOpts := make([]customOption, 0, len(customs))
+	for _, cu := range customs {
+		customOpts = append(customOpts, customOption{Level: cu.Level, District: cu.District, Street: cu.Street, Name: cu.Name})
+	}
+	renameOpts := make([]renameOption, 0, len(renames))
+	for _, r := range renames {
+		renameOpts = append(renameOpts, renameOption{Level: r.Level, District: r.District, Street: r.Street, OldName: r.OldName, NewName: r.NewName})
+	}
+	utils.Success(c, gin.H{"customs": customOpts, "renames": renameOpts})
+}
+
 // AddCustom 新增自定义位置条目（区域/街道/村小区），自定义表内重复时拒绝
 func (h *LocationManageHandler) AddCustom(c *gin.Context) {
 	var req locationReq

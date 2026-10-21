@@ -13,19 +13,23 @@ import (
 	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/database"
-	"rental-server/logger"
-	"rental-server/utils"
 	"rental-server/handlers"
+	"rental-server/logger"
 	"rental-server/middleware"
+	"rental-server/migrations"
 	"rental-server/models"
 	"rental-server/routes"
 	"rental-server/scheduler"
+	"rental-server/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// Version 编译期注入的版本号（CI 构建时写入 commit sha），用于确认线上跑的是哪一版。
+var Version = "dev"
 
 // main 是程序入口：加载配置、初始化日志、连接数据库、设置定时任务和路由。
 func main() {
@@ -51,10 +55,16 @@ func main() {
 		resetDatabase(db)
 	}
 
-	if err := models.AutoMigrate(db); err != nil {
+	// 数据库结构迁移：按编号顺序执行尚未应用的版本（台账表 schema_migrations）
+	migrated, err := migrations.Apply(db)
+	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("数据库迁移失败")
 	}
-	logger.Log.Info().Msg("数据库迁移完成")
+	if len(migrated) > 0 {
+		logger.Log.Info().Ints("versions", migrated).Msg("数据库结构已更新")
+	} else {
+		logger.Log.Info().Msg("数据库结构已是最新")
+	}
 
 	seedAdmin(db)
 
@@ -146,7 +156,7 @@ func main() {
 	utils.InitStatsWriter(db)
 
 	routes.Setup(r, db, cfg, jobs)
-	logger.Log.Info().Str("port", cfg.Server.Port).Msg("服务启动")
+	logger.Log.Info().Str("port", cfg.Server.Port).Str("version", Version).Msg("服务启动")
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,

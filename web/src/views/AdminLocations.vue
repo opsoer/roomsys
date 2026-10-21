@@ -124,12 +124,12 @@ function inUse(level, name) {
 }
 
 onMounted(() => {
-  locationStore.load(true)
+  locationStore.loadManage(true)
   if (!selDistrict.value && tree.value.length) selDistrict.value = tree.value[0].label
 })
 
 async function reload() {
-  await locationStore.load(true)
+  await locationStore.loadManage(true)
 }
 
 async function openAdd(level) {

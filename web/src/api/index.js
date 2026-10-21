@@ -149,8 +149,14 @@ export function adminGetDepositLogs(id) {
 
 // ===== 位置字典（列表为公开接口，增删改为超管接口） =====
 // 自定义条目与静态改名映射列表
+// 公开位置选项树（自定义条目 + 静态基座改名映射）
+export function getLocationOptions() {
+  return api.get('/locations/options', { silent: true })
+}
+
+// 平台管理端位置全量数据
 export function getLocationManage() {
-  return api.get('/locations/manage', { silent: true })
+  return api.get('/admin/locations/manage', { silent: true })
 }
 
 // 新增自定义位置条目 { level: 1|2|3, district, street, name }

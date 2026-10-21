@@ -195,7 +195,7 @@ func (h *RoomHandler) importOneRentedRoom(bid, uid uint, item ImportRentedRoomIt
 	}
 
 	recordDeposit := item.RecordDepositBill
-	if err := createRentedBills(tx, bid, room.ID, uid, rentedBillsParams{
+	if err := services.CreateRentedBills(tx, bid, room.ID, uid, services.RentBillsParams{
 		RentPrice:         *item.RentPrice,
 		ManagementFee:     *item.ManagementFee,
 		Deposit:           item.Deposit,
