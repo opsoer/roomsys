@@ -4,6 +4,7 @@ package handlers
 import (
 	"net/http"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/services"
 	"rental-server/utils"
@@ -44,6 +45,8 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
+	// 审计只记录被改的键，不记录设置值（可能含联系方式等敏感内容）
+	audit.Log(c, audit.ActionConfig, audit.ResourceSettings, key, "更新系统设置")
 	utils.Success(c, gin.H{"key": key, "value": body.Value})
 }
 

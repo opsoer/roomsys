@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -94,5 +95,6 @@ func (h *PlatformTaskHandler) Process(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("task_id", task.ID).Str("type", task.Type).Msg("平台待办处理完成")
+	audit.Log(c, audit.ActionAudit, audit.ResourceTask, audit.ID(task.ID), "处理平台待办 类型="+task.Type)
 	utils.SuccessWithMsg(c, "已处理", nil)
 }

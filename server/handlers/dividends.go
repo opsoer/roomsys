@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -62,7 +64,7 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 	summary := services.QueryMonthlyFinance(h.DB, bid, month)
 	netProfit := summary.NetProfit
 	if netProfit <= 0 {
-		logger.Log.Info().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Msg("分红计算: 无净利润")
+		logger.Log.Debug().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Msg("分红计算: 无净利润")
 		utils.SuccessWithMsg(c, fmt.Sprintf("%s 无净利润，不分红", month), gin.H{
 			"month":         month,
 			"total_income":  summary.TotalIncome,
@@ -84,7 +86,7 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 			DividendAmount: amount,
 		})
 	}
-	logger.Log.Info().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Int("shareholders", len(results)).Msg("分红预览计算完成")
+	logger.Log.Debug().Uint("building_id", bid).Str("month", month).Float64("net_profit", netProfit).Int("shareholders", len(results)).Msg("分红预览计算完成")
 	utils.Success(c, gin.H{
 		"month":         month,
 		"total_income":  summary.TotalIncome,
@@ -183,6 +185,9 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 		Float64("net_profit", netProfit).
 		Int("shareholders", len(created)).
 		Msg("分红已结算")
+	audit.Log(c, audit.ActionSettle, audit.ResourceDividend, req.Month,
+		"分红结算 月份="+req.Month+" 净利润="+strconv.FormatFloat(netProfit, 'f', 2, 64)+
+			" 股东数="+strconv.Itoa(len(created)))
 	utils.Created(c, fmt.Sprintf("%s 分红已结算", req.Month), gin.H{
 		"month":      req.Month,
 		"net_profit": netProfit,
@@ -236,6 +241,8 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("shareholder_id", sh.ID).Str("name", sh.Name).Float64("ratio", sh.ShareRatio).Uint("building_id", bid).Msg("股东创建成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceShareholder, audit.ID(sh.ID),
+		"新增股东 姓名="+sh.Name+" 持股比例="+strconv.FormatFloat(sh.ShareRatio, 'f', 2, 64))
 	utils.Created(c, "创建成功", gin.H{"shareholder": sh})
 }
 
@@ -278,6 +285,8 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceShareholder, id,
+		"修改股东 姓名="+sh.Name+" 字段="+strings.Join(audit.Keys(updates), ","))
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
@@ -305,6 +314,7 @@ func (h *DividendHandler) DeleteShareholder(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
+	audit.Log(c, audit.ActionDelete, audit.ResourceShareholder, id, "删除股东 姓名="+sh.Name)
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 

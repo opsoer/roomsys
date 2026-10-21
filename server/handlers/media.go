@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
@@ -204,7 +205,7 @@ func (h *MediaHandler) getDomain() (string, error) {
 		qiniuDomainMu.Lock()
 		qiniuDomain = h.Cfg.Storage.Qiniu.Domain
 		qiniuDomainMu.Unlock()
-		logger.Log.Info().Str("domain", h.Cfg.Storage.Qiniu.Domain).Msg("使用配置的七牛域名")
+		logger.Log.Debug().Str("domain", h.Cfg.Storage.Qiniu.Domain).Msg("使用配置的七牛域名")
 		return h.Cfg.Storage.Qiniu.Domain, nil
 	}
 
@@ -221,7 +222,7 @@ func (h *MediaHandler) getDomain() (string, error) {
 	qiniuDomainMu.Lock()
 	qiniuDomain = domains[0].Domain
 	qiniuDomainMu.Unlock()
-	logger.Log.Info().Str("domain", domains[0].Domain).Msg("自动发现七牛域名")
+	logger.Log.Debug().Str("domain", domains[0].Domain).Msg("自动发现七牛域名")
 	return domains[0].Domain, nil
 }
 
@@ -698,6 +699,9 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		Int64("size", header.Size).
 		Int64("compressed_size", processedSize).
 		Msg("文件上传成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceMedia, audit.ID(media.ID),
+		"上传房间媒体 房间id="+audit.ID(room.ID)+" 类型="+media.Type+
+			" 大小="+strconv.FormatInt(header.Size, 10))
 	utils.Created(c, "上传成功", gin.H{"media": media})
 }
 
@@ -751,6 +755,8 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 	}
 
 	logger.Log.Info().Uint("media_id", media.ID).Uint("room_id", room.ID).Str("file_path", media.FilePath).Msg("媒体文件已删除")
+	audit.Log(c, audit.ActionDelete, audit.ResourceMedia, audit.ID(media.ID),
+		"删除媒体 房间id="+audit.ID(room.ID)+" 类型="+media.Type)
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
@@ -811,6 +817,7 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("building_id", bid).Str("key", key).Msg("公寓封面上传成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, audit.ID(bid), "上传公寓封面")
 	utils.Created(c, "封面上传成功", gin.H{"cover_image": key})
 }
 
@@ -992,7 +999,9 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 		Uint("room_id", room.ID).
 		Uint("building_id", bid).
 		Str("key", req.Key).
-		Msg("直传文件确认成功")
+		Msg("直传文件登记成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceMedia, audit.ID(media.ID),
+		"直传媒体登记 房间id="+audit.ID(room.ID)+" key="+req.Key)
 	utils.Created(c, "上传成功", gin.H{"media": media})
 }
 
@@ -1105,6 +1114,8 @@ func (h *MediaHandler) CopyMedia(c *gin.Context) {
 		Uint("source_room_id", sourceRoom.ID).
 		Int("media_count", len(sourceMedia)).
 		Msg("房间媒体复用成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceMedia, audit.ID(currentRoom.ID),
+		"复用房间媒体 源房间id="+audit.ID(sourceRoom.ID)+" 数量="+strconv.Itoa(len(sourceMedia)))
 	utils.SuccessWithMsg(c, fmt.Sprintf("已复用 %d 个媒体文件", len(sourceMedia)), nil)
 }
 

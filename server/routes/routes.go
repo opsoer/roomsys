@@ -114,6 +114,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, jobs *scheduler.Regis
 		platform.POST("/system/run-tasks", systemH.RunTasks)
 		platform.GET("/system/jobs", systemH.ListJobs)
 		platform.POST("/system/jobs/:name/run", systemH.RunJob)
+		platform.GET("/system/audit-logs", systemH.ListAuditLogs)
 
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)

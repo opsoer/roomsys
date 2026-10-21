@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/utils"
@@ -257,6 +258,8 @@ func (h *LocationManageHandler) Rename(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "改名失败")
 		return
 	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceLocation, req.OldName,
+		"位置改名 "+req.OldName+"→"+req.NewName+" 影响楼栋数="+strconv.FormatInt(buildingCount, 10))
 	utils.Success(c, gin.H{"affected_buildings": buildingCount})
 }
 

@@ -8,6 +8,7 @@
           <el-menu-item index="/admin/buildings" class="menu-item-light">公寓管理</el-menu-item>
           <el-menu-item index="/admin/locations" class="menu-item-light">位置管理</el-menu-item>
           <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
+          <el-menu-item index="/admin/audit-logs" class="menu-item-light">操作审计</el-menu-item>
           <el-menu-item index="/admin/test" class="menu-item-light">测试</el-menu-item>
           <el-menu-item index="/admin/tasks" class="menu-item-light">
             <span>代办事项</span>
@@ -36,6 +37,7 @@
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/locations' }]" @click="$router.push('/admin/locations')">位置管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/stats' }]" @click="$router.push('/admin/stats')">数据看板</div>
+        <div :class="['mobile-tab', { active: $route.path === '/admin/audit-logs' }]" @click="$router.push('/admin/audit-logs')">操作审计</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/test' }]" @click="$router.push('/admin/test')">测试</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/tasks' }]" @click="$router.push('/admin/tasks')">
           代办事项

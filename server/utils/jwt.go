@@ -43,7 +43,7 @@ func IsTokenRevoked(tokenStr string) bool {
 
 // CleanupRevokedTokens 清理已过期超过 30 天的吊销记录
 func CleanupRevokedTokens() string {
-	logger.Log.Info().Int("before_count", len(revokedTokens)).Msg("CleanupRevokedTokens: 开始执行")
+	logger.Log.Debug().Int("before_count", len(revokedTokens)).Msg("CleanupRevokedTokens: 开始执行")
 
 	revokedTokensMu.Lock()
 	defer revokedTokensMu.Unlock()
@@ -62,7 +62,7 @@ func CleanupRevokedTokens() string {
 	} else {
 		result = "令牌清理: 无过期记录"
 	}
-	logger.Log.Info().Int("cleaned", cleaned).Int("remaining", len(revokedTokens)).Msg("CleanupRevokedTokens: 执行完毕")
+	logger.Log.Debug().Int("cleaned", cleaned).Int("remaining", len(revokedTokens)).Msg("CleanupRevokedTokens: 执行完毕")
 	return result
 }
 

@@ -4,10 +4,13 @@ package handlers
 import (
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
@@ -157,6 +160,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Uint("building_id", buildingID).
 		Str("ip", c.ClientIP()).
 		Msg("登录成功")
+	audit.LogAs(user.ID, user.Username, user.Role, audit.ActionLogin, audit.ResourceUser, audit.ID(user.ID),
+		"登录成功 role="+user.Role)
 	refreshToken, err := h.AuthService.GenerateRefreshToken(user)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("生成刷新令牌失败")
@@ -205,7 +210,8 @@ func (h *AuthHandler) CreateAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
 	}
-	logger.Log.Info().Uint("user_id", user.ID).Str("username", user.Username).Str("role", user.Role).Msg("公寓管理员创建成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceUser, audit.ID(user.ID),
+		"创建公寓管理员 username="+user.Username+" role="+user.Role)
 	utils.Created(c, "公寓管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role}})
 }
 
@@ -247,7 +253,8 @@ func (h *AuthHandler) CreateBuildingAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
 	}
-	logger.Log.Info().Uint("user_id", user.ID).Str("username", user.Username).Uint("building_id", req.BuildingID).Msg("公寓管理员创建成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceUser, audit.ID(user.ID),
+		"创建公寓管理员 username="+user.Username+" building_id="+strconv.FormatUint(uint64(req.BuildingID), 10))
 	utils.Created(c, "公寓管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "building_id": req.BuildingID}})
 }
 
@@ -288,7 +295,8 @@ func (h *AuthHandler) CreateRegularAdmin(c *gin.Context) {
 		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
 	}
-	logger.Log.Info().Uint("user_id", user.ID).Str("username", user.Username).Uint("building_id", bid).Msg("管理员创建成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceUser, audit.ID(user.ID),
+		"创建管理员 username="+user.Username+" building_id="+strconv.FormatUint(uint64(bid), 10))
 	utils.Created(c, "管理员创建成功", gin.H{"user": gin.H{"id": user.ID, "username": user.Username, "role": user.Role}})
 }
 
@@ -322,7 +330,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 	utils.RevokeToken(req.RefreshToken)
-	logger.Log.Info().Uint("user_id", claims.UserID).Msg("令牌刷新成功")
+	logger.Log.Debug().Uint("user_id", claims.UserID).Msg("令牌刷新成功")
 	utils.Success(c, gin.H{"token": token})
 }
 
@@ -405,7 +413,18 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	if operatorID == 0 {
 		logger.Log.Warn().Uint("user_id", user.ID).Msg("更新用户: 无法获取操作者ID")
 	}
-	logger.Log.Info().Str("target_id", id).Uint("operator_id", operatorID).Interface("updates", updates).Msg("用户信息更新成功")
+	// 只记录变更了哪些字段，绝不记录密码哈希等敏感值
+	changed := make([]string, 0, len(updates))
+	for k := range updates {
+		if k == "password_hash" {
+			changed = append(changed, "password")
+			continue
+		}
+		changed = append(changed, k)
+	}
+	sort.Strings(changed)
+	audit.Log(c, audit.ActionUpdate, audit.ResourceUser, audit.ID(user.ID),
+		"更新用户字段: "+strings.Join(changed, ","))
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
@@ -443,7 +462,8 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	if operatorID == 0 {
 		logger.Log.Warn().Uint("user_id", user.ID).Msg("删除用户: 无法获取操作者ID")
 	}
-	logger.Log.Info().Uint("deleted_id", user.ID).Str("username", user.Username).Uint("operator_id", operatorID).Msg("用户已删除")
+	audit.Log(c, audit.ActionDelete, audit.ResourceUser, audit.ID(user.ID),
+		"删除用户 username="+user.Username+" role="+user.Role)
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
@@ -456,6 +476,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	tokenStr := auth[7:]
 	utils.RevokeToken(tokenStr)
-	logger.Log.Info().Uint("user_id", c.GetUint("user_id")).Msg("用户登出")
+	logger.Log.Debug().Uint("user_id", c.GetUint("user_id")).Msg("用户登出")
+	audit.Log(c, audit.ActionLogout, audit.ResourceUser, audit.ID(c.GetUint("user_id")), "用户登出")
 	utils.SuccessWithMsg(c, "登出成功", nil)
 }

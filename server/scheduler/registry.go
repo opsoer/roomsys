@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/utils"
@@ -154,6 +155,10 @@ func (r *Registry) run(name, trigger string) (string, error) {
 
 	result, ms := execJob(job)
 	r.finish(name, trigger, result, ms)
+	// 手动触发由 HTTP 层记录审计（带操作人）；调度/启动触发的由这里记录
+	if trigger != triggerManual {
+		audit.LogSystem(trigger, audit.ResourceJob, name, result)
+	}
 	return result, nil
 }
 
@@ -256,6 +261,7 @@ func (r *Registry) loop(j *Job) {
 		}
 		result, ms := execJob(j)
 		r.finish(j.Name, triggerScheduler, result, ms)
+		audit.LogSystem(triggerScheduler, audit.ResourceJob, j.Name, result)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/database"
 	"rental-server/logger"
@@ -41,6 +42,9 @@ func main() {
 		logger.Log.Fatal().Err(err).Msg("数据库连接失败")
 	}
 	logger.Log.Info().Str("driver", cfg.Database.Driver).Msg("数据库连接成功")
+
+	// 审计模块需要数据库句柄：写操作审计既写日志文件，也落库到 audit_logs 表
+	audit.Init(db)
 
 	if os.Getenv("RESET_DATABASE") == "true" {
 		logger.Log.Warn().Msg("检测到 RESET_DATABASE=true，将删除所有表并重建")
@@ -156,6 +160,11 @@ func main() {
 }
 
 // requestLogger 返回 Gin 中间件，记录每个 HTTP 请求的方法、路径、状态码和耗时。
+//
+// 分级策略（写操作审计由 audit 包单独记录，这里只做请求轨迹）：
+//   - 2xx/3xx：查询与读请求，默认不输出（降为 Debug），避免访问日志淹没关键信息；
+//   - 4xx：客户端错误，记 Warn（越权、参数错误、限流等）；
+//   - 5xx：服务端错误，记 Error。
 func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -169,7 +178,7 @@ func requestLogger() gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		method := c.Request.Method
 
-		lvl := zerolog.InfoLevel
+		lvl := zerolog.DebugLevel
 		if status >= 500 {
 			lvl = zerolog.ErrorLevel
 		} else if status >= 400 {

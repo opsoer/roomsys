@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -149,6 +150,9 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		Uint("building_id", bid).
 		Float64("refunded_deposit", req.RefundedDeposit).
 		Msg("退租任务处理完成")
+	audit.Log(c, audit.ActionAudit, audit.ResourceTask, audit.ID(task.ID),
+		"处理退租待办 房间id="+audit.ID(*task.RoomID)+
+			" 退还押金="+strconv.FormatFloat(req.RefundedDeposit, 'f', 2, 64))
 	utils.SuccessWithMsg(c, "退租处理完成", nil)
 }
 
@@ -177,6 +181,7 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("task_id", task.ID).Str("title", task.Title).Msg("任务标记完成")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceTask, audit.ID(task.ID), "标记任务完成 标题="+task.Title)
 	utils.SuccessWithMsg(c, "任务已完成", nil)
 }
 
@@ -205,6 +210,7 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Str("id", id).Uint("building_id", bid).Msg("任务已删除")
+	audit.Log(c, audit.ActionDelete, audit.ResourceTask, id, "删除任务 标题="+task.Title)
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
 

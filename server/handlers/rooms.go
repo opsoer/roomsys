@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
@@ -480,6 +482,8 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		}
 	}
 
+	audit.Log(c, audit.ActionCreate, audit.ResourceRoom, audit.ID(room.ID),
+		"新增房间 房间号="+room.RoomNumber+" 户型="+room.Layout)
 	utils.Created(c, "创建成功", gin.H{"room": room})
 }
 
@@ -553,6 +557,13 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
+	changed := make([]string, 0, len(updates))
+	for k := range updates {
+		changed = append(changed, k)
+	}
+	sort.Strings(changed)
+	audit.Log(c, audit.ActionUpdate, audit.ResourceRoom, audit.ID(room.ID),
+		"修改房间 房间号="+room.RoomNumber+" 字段="+strings.Join(changed, ","))
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
@@ -667,6 +678,10 @@ func (h *RoomHandler) BatchUpdatePricing(c *gin.Context) {
 		updatedCount += result.RowsAffected
 	}
 
+	audit.Log(c, audit.ActionUpdate, audit.ResourceRoom, strconv.Itoa(len(ids)),
+		"批量调整房间价格 房间数="+strconv.Itoa(len(ids))+
+			" 影响数="+strconv.FormatInt(updatedCount, 10)+
+			" 字段="+strings.Join(audit.Keys(updates), ","))
 	utils.Success(c, gin.H{"updated": updatedCount})
 }
 
@@ -713,6 +728,7 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		}
 	}
 
+	audit.Log(c, audit.ActionDelete, audit.ResourceRoom, strconv.FormatUint(rid, 10), "删除房间")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
@@ -881,6 +897,8 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 			utils.Error(c, http.StatusInternalServerError, "状态更新失败")
 			return
 		}
+		audit.Log(c, audit.ActionStatus, audit.ResourceRoom, audit.ID(room.ID),
+			"房间状态变更为 rented（签约入住）房间号="+room.RoomNumber)
 		utils.SuccessWithMsg(c, "状态更新成功", nil)
 		return
 	} else if req.Status == "vacant" {
@@ -982,13 +1000,19 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		}
 
 		if hasFutureReservation {
+			audit.Log(c, audit.ActionStatus, audit.ResourceRoom, audit.ID(room.ID),
+				"房间退租（存在后续预订）房间号="+room.RoomNumber)
 			utils.SuccessWithMsg(c, "退租成功，下一租客已预定，请完成签约入住", nil)
 		} else {
+			audit.Log(c, audit.ActionStatus, audit.ResourceRoom, audit.ID(room.ID),
+				"房间退租 房间号="+room.RoomNumber)
 			utils.SuccessWithMsg(c, "状态更新成功", nil)
 		}
 		return
 	}
 
+	audit.Log(c, audit.ActionStatus, audit.ResourceRoom, audit.ID(room.ID),
+		"房间状态变更为 "+req.Status+" 房间号="+room.RoomNumber)
 	utils.SuccessWithMsg(c, "状态更新成功", nil)
 }
 
@@ -1082,8 +1106,12 @@ func (h *RoomHandler) reserveRoom(c *gin.Context, room *models.Room, req *Update
 	}
 
 	if isFutureReservation {
+		audit.Log(c, audit.ActionCreate, audit.ResourceContract, audit.ID(contract.ID),
+			"创建预订合同（未来生效）房间号="+room.RoomNumber)
 		utils.SuccessWithMsg(c, "未来预订成功，当前租客退租后生效", nil)
 	} else {
+		audit.Log(c, audit.ActionCreate, audit.ResourceContract, audit.ID(contract.ID),
+			"创建预订合同 房间号="+room.RoomNumber+" 定金="+strconv.FormatFloat(req.EarnestMoney, 'f', 2, 64))
 		utils.SuccessWithMsg(c, "预订成功", nil)
 	}
 }
@@ -1174,6 +1202,8 @@ func (h *RoomHandler) cancelReservation(c *gin.Context, room *models.Room, req *
 		utils.Error(c, http.StatusInternalServerError, "取消预订失败")
 		return
 	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceContract, audit.ID(contract.ID),
+		"取消预订合同 房间号="+room.RoomNumber)
 	utils.SuccessWithMsg(c, "已取消预订", nil)
 }
 
@@ -1277,6 +1307,8 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 		}
 	}
 
+	audit.Log(c, audit.ActionUpdate, audit.ResourceContract, audit.ID(contract.ID),
+		"合同续租 新到期日="+req.EndDate)
 	utils.SuccessWithMsg(c, "续租成功", nil)
 }
 

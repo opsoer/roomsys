@@ -47,7 +47,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 	startDate := month + "-01"
 	endDate := now.AddDate(0, 1, 0).Format("2006-01-02")
 
-	logger.Log.Info().
+	logger.Log.Debug().
 		Str("now", now.Format(time.RFC3339)).
 		Str("month", month).
 		Str("startDate", startDate).
@@ -60,7 +60,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 		Where("rental_contracts.status = ? AND bills.id IS NULL", "active").
 		Find(&contracts)
 
-	logger.Log.Info().
+	logger.Log.Debug().
 		Int("contracts_found", len(contracts)).
 		Msg("AutoCreateMonthlyRentBills: 查询到待创建账单的合同数")
 
@@ -113,7 +113,7 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 			logger.Log.Error().Err(err).Uint("room_id", contract.RoomID).Msg("创建月度租金账单失败")
 		} else {
 			billsCreated++
-			logger.Log.Info().
+			logger.Log.Debug().
 				Uint("room_id", contract.RoomID).
 				Str("bill_no", bill.BillNo).
 				Float64("amount", bill.Amount).
@@ -123,6 +123,6 @@ func AutoCreateMonthlyRentBills(db *gorm.DB) string {
 	}
 
 	result := fmt.Sprintf("租金账单: 创建 %d 条", billsCreated)
-	logger.Log.Info().Int("bills_created", billsCreated).Msg("AutoCreateMonthlyRentBills: 执行完毕")
+	logger.Log.Debug().Int("bills_created", billsCreated).Msg("AutoCreateMonthlyRentBills: 执行完毕")
 	return result
 }

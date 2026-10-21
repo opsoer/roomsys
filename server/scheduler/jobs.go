@@ -17,7 +17,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 	now := utils.Now()
 	expireThreshold := now.AddDate(0, 0, 30)
 
-	logger.Log.Info().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("AutoCheckExpiringContracts: 开始执行")
+	logger.Log.Debug().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("AutoCheckExpiringContracts: 开始执行")
 
 	var contracts []models.RentalContract
 	db.Where("status = ? AND end_date != '' AND end_date <= ?",
@@ -50,7 +50,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 				}
 				db.Create(&task)
 				taskCount++
-				logger.Log.Info().
+				logger.Log.Debug().
 					Uint("room_id", contract.RoomID).
 					Uint("building_id", contract.BuildingID).
 					Msg("创建到期退租任务")
@@ -59,7 +59,7 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 	}
 
 	result := fmt.Sprintf("合同检查: 创建 %d 条退租待办", taskCount)
-	logger.Log.Info().Int("task_count", taskCount).Msg("AutoCheckExpiringContracts: 执行完毕")
+	logger.Log.Debug().Int("task_count", taskCount).Msg("AutoCheckExpiringContracts: 执行完毕")
 
 	overdueResult := AutoCheckOverdueReservations(db)
 	return result + "，" + overdueResult
@@ -72,7 +72,7 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 	now := utils.Now()
 	expireThreshold := now.AddDate(0, 0, 30)
 
-	logger.Log.Info().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("CheckExpiredBuildings: 开始执行")
+	logger.Log.Debug().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("CheckExpiredBuildings: 开始执行")
 
 	var buildings []models.Building
 	db.Where("status IN ? AND expired_at IS NOT NULL AND expired_at != ''", []string{"active", "expiring"}).Find(&buildings)
@@ -115,7 +115,7 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 	}
 
 	result := fmt.Sprintf("公寓到期: %d 栋已到期, %d 栋即将到期", expiredCount, expiringCount)
-	logger.Log.Info().Int("expired", expiredCount).Int("expiring", expiringCount).Msg("到期公寓检查完成")
+	logger.Log.Debug().Int("expired", expiredCount).Int("expiring", expiringCount).Msg("到期公寓检查完成")
 	return result
 }
 
@@ -140,7 +140,7 @@ func createBuildingExpiryTasks(db *gorm.DB, b models.Building, taskType, title, 
 			Description: description,
 		}
 		db.Create(&task)
-		logger.Log.Info().
+		logger.Log.Debug().
 			Uint("building_id", b.ID).
 			Str("type", taskType).
 			Str("scope", scope).
@@ -155,7 +155,7 @@ func AutoCleanupData(db *gorm.DB) string {
 		logger.Log.Error().Err(err).Msg("软删除数据清理失败")
 		cleanupResult = "软删除: 失败"
 	} else {
-		logger.Log.Info().Msg("软删除数据清理完成")
+		logger.Log.Debug().Msg("软删除数据清理完成")
 		cleanupResult = "软删除: 完成"
 	}
 	cutoff := time.Now().AddDate(0, 0, -90)
@@ -164,8 +164,13 @@ func AutoCleanupData(db *gorm.DB) string {
 		logger.Log.Error().Err(pvResult).Msg("page_views 清理失败")
 		cleanupResult += "，PageView: 失败"
 	} else {
-		logger.Log.Info().Msg("page_views 清理完成")
+		logger.Log.Debug().Msg("page_views 清理完成")
 		cleanupResult += "，PageView: 完成"
+	}
+	// 审计日志保留 180 天，避免 audit_logs 表无限膨胀
+	auditCutoff := time.Now().AddDate(0, 0, -180)
+	if err := db.Where("created_at < ?", auditCutoff).Delete(&models.AuditLog{}).Error; err != nil {
+		logger.Log.Warn().Err(err).Msg("审计日志清理失败")
 	}
 	return "数据清理: " + cleanupResult
 }
@@ -174,7 +179,7 @@ func AutoCleanupData(db *gorm.DB) string {
 func AutoCheckOverdueReservations(db *gorm.DB) string {
 	now := utils.Now()
 
-	logger.Log.Info().Msg("AutoCheckOverdueReservations: 开始执行")
+	logger.Log.Debug().Msg("AutoCheckOverdueReservations: 开始执行")
 
 	var contracts []models.RentalContract
 	db.Where("status = ? AND start_date != '' AND start_date <= ?",
@@ -200,7 +205,7 @@ func AutoCheckOverdueReservations(db *gorm.DB) string {
 			}
 			db.Create(&task)
 			taskCount++
-			logger.Log.Info().
+			logger.Log.Debug().
 				Uint("room_id", contract.RoomID).
 				Uint("building_id", contract.BuildingID).
 				Msg("创建预订超时待办任务")
@@ -208,6 +213,6 @@ func AutoCheckOverdueReservations(db *gorm.DB) string {
 	}
 
 	result := fmt.Sprintf("预订超时: 创建 %d 条待办", taskCount)
-	logger.Log.Info().Int("task_count", taskCount).Msg("AutoCheckOverdueReservations: 执行完毕")
+	logger.Log.Debug().Int("task_count", taskCount).Msg("AutoCheckOverdueReservations: 执行完毕")
 	return result
 }

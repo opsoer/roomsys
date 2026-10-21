@@ -42,7 +42,7 @@ func openMySQL(cfg *config.Config) (*gorm.DB, error) {
 	m := cfg.Database.MySQL
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		m.User, m.Password, m.Host, m.Port, m.Name)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(dsn), newGormConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func openSQLite(path string) (*gorm.DB, error) {
 	}
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)",
 		filepath.ToSlash(path))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dsn), newGormConfig())
 	if err != nil {
 		return nil, err
 	}

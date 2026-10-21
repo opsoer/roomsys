@@ -3,9 +3,12 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/logger"
+	"rental-server/models"
 	"rental-server/scheduler"
 	"rental-server/services"
 	"rental-server/utils"
@@ -76,6 +79,8 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		Uint("user_id", userID).
 		Int64("offset_seconds", offsetSeconds).
 		Msg("模拟时间已更新，触发合同到期检查")
+	audit.Log(c, audit.ActionConfig, audit.ResourceTime, "simulated",
+		"修改模拟时间 偏移秒="+strconv.FormatInt(offsetSeconds, 10))
 	if _, err := h.Jobs.Run("contract_expiry"); err != nil {
 		logger.Log.Warn().Err(err).Msg("模拟时间变更后触发合同检查失败")
 	}
@@ -92,6 +97,7 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 func (h *SystemHandler) RunTasks(c *gin.Context) {
 	userID, _ := utils.GetUserID(c)
 	logger.Log.Info().Uint("user_id", userID).Msg("手动触发全部定时任务")
+	audit.Log(c, audit.ActionTrigger, audit.ResourceJob, "all", "手动触发全部定时任务")
 
 	utils.Success(c, gin.H{"results": h.Jobs.RunAll()})
 }
@@ -106,10 +112,43 @@ func (h *SystemHandler) RunJob(c *gin.Context) {
 	name := c.Param("name")
 	userID, _ := utils.GetUserID(c)
 	logger.Log.Info().Uint("user_id", userID).Str("job", name).Msg("手动触发定时任务")
+	audit.Log(c, audit.ActionTrigger, audit.ResourceJob, name, "手动触发定时任务")
 	result, err := h.Jobs.Run(name)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"result": result})
+}
+
+// ListAuditLogs 查询操作审计记录（超级管理员专用），支持按资源/动作过滤与分页。
+func (h *SystemHandler) ListAuditLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page <= 0 {
+		page = 1
+	}
+	q := h.DB.Model(&models.AuditLog{})
+	if res := c.Query("resource"); res != "" {
+		q = q.Where("resource = ?", res)
+	}
+	if act := c.Query("action"); act != "" {
+		q = q.Where("action = ?", act)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("查询审计记录总数失败")
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	var logs []models.AuditLog
+	if err := q.Order("id DESC").Limit(limit).Offset((page - 1) * limit).Find(&logs).Error; err != nil {
+		logger.Log.Error().Err(err).Msg("查询审计记录失败")
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	utils.Success(c, gin.H{"logs": logs, "total": total, "page": page, "limit": limit})
 }

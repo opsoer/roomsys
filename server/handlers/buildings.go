@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/logger"
 	"rental-server/models"
@@ -180,6 +181,14 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		}
 	}
 	logger.Log.Info().Uint("building_id", building.ID).Str("name", building.Name).Uint("created_by", uid).Msg("公寓创建成功")
+	// 审计只记录房东姓名与数量，不记录手机号等联系方式
+	landlordNames := make([]string, 0, len(req.Landlords))
+	for _, l := range req.Landlords {
+		landlordNames = append(landlordNames, l.Name)
+	}
+	audit.Log(c, audit.ActionCreate, audit.ResourceBuilding, audit.ID(building.ID),
+		"创建公寓 name="+building.Name+" 房东数="+strconv.Itoa(len(req.Landlords))+
+			" 房东="+strings.Join(landlordNames, "/"))
 	utils.Created(c, "公寓创建成功", gin.H{"building": building})
 }
 
@@ -296,6 +305,20 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	}
 
 	logger.Log.Info().Uint("building_id", building.ID).Msg("公寓更新成功")
+	changed := make([]string, 0, len(updates))
+	for k := range updates {
+		changed = append(changed, k)
+	}
+	sort.Strings(changed)
+	detail := "更新公寓字段: " + strings.Join(changed, ",")
+	if len(req.Landlords) > 0 {
+		landlordNames := make([]string, 0, len(req.Landlords))
+		for _, l := range req.Landlords {
+			landlordNames = append(landlordNames, l.Name)
+		}
+		detail += " 房东已覆盖 房东数=" + strconv.Itoa(len(req.Landlords)) + " 房东=" + strings.Join(landlordNames, "/")
+	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, audit.ID(building.ID), detail)
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
@@ -334,6 +357,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		}
 	}
 	logger.Log.Info().Str("id", id).Msg("公寓已删除")
+	audit.Log(c, audit.ActionDelete, audit.ResourceBuilding, id, "删除公寓")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
@@ -362,6 +386,7 @@ func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Str("id", id).Str("package", req.Package).Msg("套餐升级成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, id, "套餐升级为 "+req.Package)
 	utils.SuccessWithMsg(c, "升级成功", nil)
 }
 
@@ -788,6 +813,8 @@ func (h *BuildingHandler) Renew(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("building_id", uint(buildingID)).Str("expired_at", req.ExpiredAt).Msg("公寓续约成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, strconv.FormatUint(buildingID, 10),
+		"公寓续约 expired_at="+req.ExpiredAt)
 	utils.SuccessWithMsg(c, "续约成功，公寓已恢复展示", nil)
 }
 
@@ -856,6 +883,8 @@ func (h *BuildingHandler) AdjustDeposit(c *gin.Context) {
 		return
 	}
 	logger.Log.Info().Uint("building_id", uint(buildingID)).Float64("amount", req.Amount).Str("operator", operator).Msg("公寓押金已调整")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, strconv.FormatUint(buildingID, 10),
+		"押金调整 amount="+strconv.FormatFloat(req.Amount, 'f', 2, 64)+" reason="+req.Reason)
 	utils.SuccessWithMsg(c, "押金已更新", gin.H{"deposit": building.Deposit})
 }
 

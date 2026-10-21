@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -58,6 +59,8 @@ func (h *RecruitHandler) Submit(c *gin.Context) {
 			logger.Log.Error().Err(err).Uint("recruit_id", sub.ID).Msg("创建招商待办失败")
 		}
 	}
+	// 审计只记录申请单 id，不记录电话、地址等个人敏感信息
+	audit.Log(c, audit.ActionCreate, audit.ResourceRecruit, audit.ID(sub.ID), "收到招商申请")
 	utils.SuccessWithMsg(c, "提交成功，我们会尽快联系您", nil)
 }
 
@@ -87,5 +90,6 @@ func (h *RecruitHandler) Process(c *gin.Context) {
 				"platform", "recruit", uint(recruitID), "pending").
 			Update("status", "completed")
 	}
+	audit.Log(c, audit.ActionAudit, audit.ResourceRecruit, id, "处理招商申请")
 	utils.SuccessWithMsg(c, "已处理", nil)
 }

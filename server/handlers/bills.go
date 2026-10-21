@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"rental-server/audit"
 	"rental-server/logger"
 	"rental-server/models"
 	"rental-server/services"
@@ -194,6 +195,9 @@ func (h *BillHandler) Create(c *gin.Context) {
 		Float64("amount", req.Amount).
 		Uint("building_id", bid).
 		Msg("账单创建成功")
+	audit.Log(c, audit.ActionCreate, audit.ResourceBill, audit.ID(bill.ID),
+		"新建账单 单号="+billNo+" 类型="+req.Type+"/"+req.Subtype+
+			" 金额="+strconv.FormatFloat(req.Amount, 'f', 2, 64))
 	utils.Created(c, "创建成功", gin.H{"bill": bill})
 }
 
@@ -268,6 +272,10 @@ func (h *BillHandler) Update(c *gin.Context) {
 		Float64("new_amount", newAmount).
 		Str("modify_reason", req.ModifyReason).
 		Msg("账单更新成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBill, audit.ID(bill.ID),
+		"修改账单 单号="+bill.BillNo+
+			" 金额 "+strconv.FormatFloat(oldAmount, 'f', 2, 64)+"→"+strconv.FormatFloat(newAmount, 'f', 2, 64)+
+			" 原因="+req.ModifyReason)
 	utils.Success(c, gin.H{"bill": updatedBill})
 }
 
@@ -299,6 +307,8 @@ func (h *BillHandler) Delete(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
+	audit.Log(c, audit.ActionDelete, audit.ResourceBill, audit.ID(bill.ID),
+		"删除账单 单号="+bill.BillNo+" 金额="+strconv.FormatFloat(bill.Amount, 'f', 2, 64))
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 

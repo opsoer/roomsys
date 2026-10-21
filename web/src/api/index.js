@@ -191,6 +191,10 @@ export function adminRunSystemJob(name) {
   return api.post(`/admin/system/jobs/${encodeURIComponent(name)}/run`)
 }
 
+export function adminListAuditLogs(params) {
+  return api.get('/admin/system/audit-logs', { params })
+}
+
 export function adminUpdateUser(id, data) {
   return api.put(`/admin/auth/users/${id}`, data)
 }
