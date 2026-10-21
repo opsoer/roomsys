@@ -7,6 +7,7 @@ import (
 	"rental-server/config"
 	"rental-server/handlers"
 	"rental-server/middleware"
+	"rental-server/scheduler"
 	"rental-server/services"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,8 @@ import (
 )
 
 // Setup 注册所有路由，包括静态文件服务、公开接口、平台管理后台和公寓管理后台。
-func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
+// jobs 为定时任务注册表，供管理后台查看/手动执行。
+func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, jobs *scheduler.Registry) {
 	r.Static("/assets", cfg.Server.WebDistDir+"/assets")
 	r.StaticFile("/default-image.svg", cfg.Server.WebDistDir+"/default-image.svg")
 	r.StaticFile("/", cfg.Server.WebDistDir+"/index.html")
@@ -44,7 +46,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	statsH := &handlers.StatsHandler{DB: db, StatsService: statsSvc}
 	taskH := &handlers.TaskHandler{DB: db, TaskService: taskSvc}
 	platformTaskH := &handlers.PlatformTaskHandler{DB: db, TaskService: taskSvc, RecruitService: recruitSvc}
-	systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc}
+	systemH := &handlers.SystemHandler{DB: db, SettingsService: settingsSvc, Jobs: jobs}
 	settingsH := &handlers.SettingsHandler{DB: db, SettingsService: settingsSvc}
 	billH := &handlers.BillHandler{DB: db, BillService: billSvc, RoomService: roomSvc}
 	divH := &handlers.DividendHandler{DB: db, DividendService: dividendSvc}
@@ -110,6 +112,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		platform.GET("/system/time", systemH.GetTime)
 		platform.POST("/system/time", systemH.SetTime)
 		platform.POST("/system/run-tasks", systemH.RunTasks)
+		platform.GET("/system/jobs", systemH.ListJobs)
+		platform.POST("/system/jobs/:name/run", systemH.RunJob)
 
 		platform.GET("/recruit/list", recruitH.List)
 		platform.PUT("/recruit/process/:id", recruitH.Process)

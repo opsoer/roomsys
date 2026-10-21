@@ -18,6 +18,8 @@ import (
 type SystemHandler struct {
 	DB              *gorm.DB
 	SettingsService *services.SettingsService
+	// Jobs 定时任务注册表：列表查看与单个/全部手动执行共用
+	Jobs *scheduler.Registry
 }
 
 // SetTimeReq 设置模拟时间的请求参数
@@ -74,7 +76,9 @@ func (h *SystemHandler) SetTime(c *gin.Context) {
 		Uint("user_id", userID).
 		Int64("offset_seconds", offsetSeconds).
 		Msg("模拟时间已更新，触发合同到期检查")
-	scheduler.AutoCheckExpiringContracts(h.DB)
+	if _, err := h.Jobs.Run("contract_expiry"); err != nil {
+		logger.Log.Warn().Err(err).Msg("模拟时间变更后触发合同检查失败")
+	}
 	now := utils.Now()
 	offset := utils.GetTimeOffset()
 	utils.Success(c, TimeResp{
@@ -89,13 +93,23 @@ func (h *SystemHandler) RunTasks(c *gin.Context) {
 	userID, _ := utils.GetUserID(c)
 	logger.Log.Info().Uint("user_id", userID).Msg("手动触发全部定时任务")
 
-	results := []string{
-		scheduler.AutoCheckExpiringContracts(h.DB),
-		AutoCreateMonthlyRentBills(h.DB),
-		scheduler.CheckExpiredBuildings(h.DB),
-		utils.CleanupRevokedTokens(),
-		scheduler.AutoCleanupData(h.DB),
-	}
+	utils.Success(c, gin.H{"results": h.Jobs.RunAll()})
+}
 
-	utils.Success(c, gin.H{"results": results})
+// ListJobs 列出全部定时任务（含调度配置与最近一次执行记录）。
+func (h *SystemHandler) ListJobs(c *gin.Context) {
+	utils.Success(c, gin.H{"jobs": h.Jobs.List()})
+}
+
+// RunJob 手动执行单个定时任务（不受配置 enabled 限制，便于验证）。
+func (h *SystemHandler) RunJob(c *gin.Context) {
+	name := c.Param("name")
+	userID, _ := utils.GetUserID(c)
+	logger.Log.Info().Uint("user_id", userID).Str("job", name).Msg("手动触发定时任务")
+	result, err := h.Jobs.Run(name)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	utils.Success(c, gin.H{"result": result})
 }

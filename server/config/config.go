@@ -16,7 +16,7 @@ const (
 	DriverSQLite = "sqlite"
 )
 
-// Config 存储所有应用程序配置项，按 server / database / storage 三组划分。
+// Config 存储所有应用程序配置项，按 server / database / storage / scheduler 四组划分。
 type Config struct {
 	// Server 服务自身配置：监听端口、鉴权密钥、目录与日志等。
 	Server ServerConfig `yaml:"server"`
@@ -24,6 +24,8 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	// Storage 对象存储 + CDN 配置（七牛），含浏览器缓存策略。
 	Storage StorageConfig `yaml:"storage"`
+	// Scheduler 定时任务配置：每个任务可独立设置启用开关与执行周期。
+	Scheduler SchedulerConfig `yaml:"scheduler"`
 }
 
 // ServerConfig 服务配置组。
@@ -68,6 +70,35 @@ type MySQLConfig struct {
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
 	Name     string `yaml:"name"`
+}
+
+// JobConfig 单个定时任务的调度配置。Time 与 IntervalHours 二选一：
+// Time 非空时按「每天 HH:MM」执行；否则按 IntervalHours 每隔 N 小时执行。
+type JobConfig struct {
+	// Enabled 是否启用该任务的自动调度（手动触发接口不受影响）。
+	Enabled bool `yaml:"enabled"`
+	// Time 每天定时执行时刻，格式 "HH:MM"。
+	Time string `yaml:"time"`
+	// IntervalHours 每隔 N 小时执行一次（Time 为空时生效）。
+	IntervalHours int `yaml:"interval_hours"`
+	// Keep 对象存储中保留的备份份数（仅 db_backup 用），<=0 时取默认值。
+	Keep int `yaml:"keep"`
+}
+
+// SchedulerConfig 定时任务配置组，每个字段对应一个具名任务。
+type SchedulerConfig struct {
+	// RentBills 月度租金账单生成：为缺少当月账单的合同生成账单。
+	RentBills JobConfig `yaml:"rent_bills"`
+	// BuildingExpiry 公寓到期检查：30天内到期建提醒，已到期下架。
+	BuildingExpiry JobConfig `yaml:"building_expiry"`
+	// ContractExpiry 到期合同检查：30天内到期建待办 + 预订超时转逾期。
+	ContractExpiry JobConfig `yaml:"contract_expiry"`
+	// SoftDeleteCleanup 软删除清理：清 90 天前软删数据与浏览记录。
+	SoftDeleteCleanup JobConfig `yaml:"soft_delete_cleanup"`
+	// TokenCleanup 吊销令牌清理：清内存中过期的吊销记录。
+	TokenCleanup JobConfig `yaml:"token_cleanup"`
+	// DBBackup 数据库全量备份到对象存储（sqlite: VACUUM INTO；mysql: mysqldump）。
+	DBBackup JobConfig `yaml:"db_backup"`
 }
 
 // StorageConfig 对象存储 + CDN 配置组。
@@ -145,6 +176,14 @@ func defaults() *Config {
 				Zone:      "z2",
 			},
 		},
+		Scheduler: SchedulerConfig{
+			RentBills:         JobConfig{Enabled: true, Time: "03:00"},
+			BuildingExpiry:    JobConfig{Enabled: true, Time: "03:00"},
+			ContractExpiry:    JobConfig{Enabled: true, Time: "03:00"},
+			SoftDeleteCleanup: JobConfig{Enabled: true, Time: "03:00"},
+			TokenCleanup:      JobConfig{Enabled: true, IntervalHours: 12},
+			DBBackup:          JobConfig{Enabled: true, Time: "04:00", Keep: 7},
+		},
 	}
 }
 
@@ -196,6 +235,58 @@ func normalize(cfg *Config) {
 	if cfg.Server.RevealFreePerDay < 0 {
 		cfg.Server.RevealFreePerDay = 5
 	}
+	normalizeJob("rent_bills", &cfg.Scheduler.RentBills, "03:00", 0)
+	normalizeJob("building_expiry", &cfg.Scheduler.BuildingExpiry, "03:00", 0)
+	normalizeJob("contract_expiry", &cfg.Scheduler.ContractExpiry, "03:00", 0)
+	normalizeJob("soft_delete_cleanup", &cfg.Scheduler.SoftDeleteCleanup, "03:00", 0)
+	normalizeJob("token_cleanup", &cfg.Scheduler.TokenCleanup, "", 12)
+	normalizeJob("db_backup", &cfg.Scheduler.DBBackup, "04:00", 0)
+	if cfg.Scheduler.DBBackup.Keep <= 0 {
+		cfg.Scheduler.DBBackup.Keep = 7
+	}
+}
+
+// normalizeJob 校验并兜底单个定时任务的调度配置：time 必须是合法 "HH:MM"，
+// 否则回退默认值；daily 任务与 interval 任务都没有有效周期时同样回退。
+// time 优先：同时配置了 interval_hours 时以 time 为准并清空间隔。
+func normalizeJob(name string, j *JobConfig, defaultTime string, defaultInterval int) {
+	if j.Time != "" {
+		h, m, err := parseHHMM(j.Time)
+		if err != nil {
+			panic(fmt.Sprintf("scheduler.%s.time 格式错误: %q（应为 HH:MM）", name, j.Time))
+		}
+		j.Time = fmt.Sprintf("%02d:%02d", h, m)
+		j.IntervalHours = 0
+		return
+	}
+	if j.IntervalHours > 0 {
+		return
+	}
+	if defaultInterval > 0 {
+		j.IntervalHours = defaultInterval
+		return
+	}
+	j.Time = defaultTime
+}
+
+// parseHHMM 解析 "HH:MM" 为小时与分钟（允许单位数，拒绝多余内容）。
+func parseHHMM(s string) (int, int, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid time: %s", s)
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid time: %s", s)
+	}
+	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid time: %s", s)
+	}
+	if h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, 0, fmt.Errorf("time out of range: %s", s)
+	}
+	return h, m, nil
 }
 
 // loadFile 从 YAML 文件读取配置并解析到 Config 结构体。

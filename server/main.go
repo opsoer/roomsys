@@ -54,83 +54,21 @@ func main() {
 
 	seedAdmin(db)
 
-	// 启动时自动创建当月租金账单
-	handlers.AutoCreateMonthlyRentBills(db)
-	// 每天凌晨3点自动检查并创建漏掉的租金账单（幂等，不会重复创建）
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("租金账单定时任务 panic，已恢复")
-			}
-		}()
-		for {
-			now := utils.Now()
-			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
-			handlers.AutoCreateMonthlyRentBills(db)
-		}
-	}()
-
-	// 每天凌晨3点检查公寓到期（启动时先执行一次，保证到期公寓尽快置为不可见并生成提醒待办）
-	scheduler.CheckExpiredBuildings(db)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("公寓到期检查定时任务 panic，已恢复")
-			}
-		}()
-		for {
-			now := utils.Now()
-			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
-			scheduler.CheckExpiredBuildings(db)
-		}
-	}()
-
-	// 每12小时清理已吊销的令牌
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("令牌清理定时任务 panic，已恢复")
-			}
-		}()
-		for {
-			time.Sleep(12 * time.Hour)
-			utils.CleanupRevokedTokens()
-		}
-	}()
-
-	// 每天凌晨3点清理超过90天的软删除数据和page_views
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("清理定时任务 panic，已恢复")
-			}
-		}()
-		for {
-			now := utils.Now()
-			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
-			scheduler.AutoCleanupData(db)
-		}
-	}()
-
-	// 启动时检查到期合同
-	scheduler.AutoCheckExpiringContracts(db)
-	// 每天凌晨3点自动检查到期合同
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Log.Error().Interface("panic", r).Msg("合同检查定时任务 panic，已恢复")
-			}
-		}()
-		for {
-			now := utils.Now()
-			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
-			scheduler.AutoCheckExpiringContracts(db)
-		}
-	}()
+	// 定时任务注册表：定义/周期来自 config.yaml scheduler 段，统一调度与手动执行共用一份注册
+	jobs := scheduler.NewRegistry()
+	jobs.Add(scheduler.NewJob("rent_bills", "月度租金账单生成", cfg.Scheduler.RentBills, true,
+		func() string { return handlers.AutoCreateMonthlyRentBills(db) }))
+	jobs.Add(scheduler.NewJob("building_expiry", "公寓到期检查", cfg.Scheduler.BuildingExpiry, true,
+		func() string { return scheduler.CheckExpiredBuildings(db) }))
+	jobs.Add(scheduler.NewJob("contract_expiry", "到期合同检查", cfg.Scheduler.ContractExpiry, true,
+		func() string { return scheduler.AutoCheckExpiringContracts(db) }))
+	jobs.Add(scheduler.NewJob("soft_delete_cleanup", "软删除清理", cfg.Scheduler.SoftDeleteCleanup, false,
+		func() string { return scheduler.AutoCleanupData(db) }))
+	jobs.Add(scheduler.NewJob("token_cleanup", "吊销令牌清理", cfg.Scheduler.TokenCleanup, false,
+		utils.CleanupRevokedTokens))
+	jobs.Add(scheduler.NewJob("db_backup", "数据库备份到对象存储", cfg.Scheduler.DBBackup, false,
+		func() string { return scheduler.BackupDatabase(db, cfg) }))
+	jobs.Start()
 
 	if err := os.MkdirAll(cfg.Server.UploadDir, 0750); err != nil {
 		logger.Log.Fatal().Err(err).Str("dir", cfg.Server.UploadDir).Msg("创建上传目录失败")
@@ -203,7 +141,7 @@ func main() {
 	// 初始化统计写入器
 	utils.InitStatsWriter(db)
 
-	routes.Setup(r, db, cfg)
+	routes.Setup(r, db, cfg, jobs)
 	logger.Log.Info().Str("port", cfg.Server.Port).Msg("服务启动")
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

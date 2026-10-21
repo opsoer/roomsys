@@ -77,3 +77,21 @@ storage:
     pfop_callback_secret: ""
     # 转码回调地址（服务器公网可访问）；留空自动用上传请求的 Host 推导
     pfop_callback_url: ""
+
+# ---------------------- 定时任务调度 ----------------------
+# 每个任务：enabled 开关；time "HH:MM"（每天执行）与 interval_hours（每隔 N 小时）
+# 二选一（time 优先）。手动触发接口不受 enabled 限制。修改后需重启生效。
+scheduler:
+  # 月度租金账单生成：为缺少当月账单的合同生成账单
+  rent_bills: { enabled: true, time: "03:00" }
+  # 公寓到期检查：30天内到期建提醒，已到期下架
+  building_expiry: { enabled: true, time: "03:00" }
+  # 到期合同检查：30天内到期建待办 + 预订超时转逾期
+  contract_expiry: { enabled: true, time: "03:00" }
+  # 软删除清理：清 90 天前软删数据与浏览记录
+  soft_delete_cleanup: { enabled: true, time: "03:00" }
+  # 吊销令牌清理：清内存中过期的吊销记录（interval_hours 模式）
+  token_cleanup: { enabled: true, interval_hours: 12 }
+  # 数据库备份到对象存储（sqlite: VACUUM INTO；mysql: mysqldump）
+  # key 形如 backups/db/rental-YYYYMMDD-HHMMSS-<随机>.gz；keep = 保留份数（按时间删旧）
+  db_backup: { enabled: true, time: "04:00", keep: 7 }

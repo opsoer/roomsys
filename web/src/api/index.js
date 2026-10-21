@@ -183,6 +183,14 @@ export function adminRunTasks() {
   return api.post('/admin/system/run-tasks')
 }
 
+export function adminListSystemJobs() {
+  return api.get('/admin/system/jobs')
+}
+
+export function adminRunSystemJob(name) {
+  return api.post(`/admin/system/jobs/${encodeURIComponent(name)}/run`)
+}
+
 export function adminUpdateUser(id, data) {
   return api.put(`/admin/auth/users/${id}`, data)
 }

@@ -40,6 +40,36 @@
       </div>
     </el-card>
 
+    <el-card shadow="never" style="margin-top: 20px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <h4 style="margin: 0">定时任务</h4>
+        <el-button size="small" :loading="jobsLoading" @click="loadJobs">刷新</el-button>
+      </div>
+      <div v-if="jobs.length === 0" style="margin-top: 12px; font-size: 13px; color: #999">
+        暂无任务数据，请点击刷新。
+      </div>
+      <div v-for="job in jobs" :key="job.name"
+        style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter)">
+        <div style="width: 150px; font-weight: 600">{{ job.title }}</div>
+        <el-tag size="small" :type="job.enabled ? 'success' : 'info'" disable-transitions>
+          {{ job.enabled ? '已启用' : '已停用' }}
+        </el-tag>
+        <el-tag size="small" type="warning" disable-transitions>{{ job.schedule }}</el-tag>
+        <div style="flex: 1; min-width: 240px; font-size: 12px; color: #666">
+          <template v-if="job.last_run_at">
+            上次：{{ job.last_run_at }}（{{ job.last_ms }}ms，{{ triggerLabel(job.trigger) }}）<br>
+            <span :style="{ color: isJobFailure(job.last_result) ? '#F56C6C' : '#666' }">{{ job.last_result }}</span>
+          </template>
+          <span v-else>尚未执行过</span>
+        </div>
+        <el-button size="small" type="primary" :loading="!!jobRunning[job.name]"
+          @click="handleRunJob(job)">执行</el-button>
+      </div>
+      <div style="margin-top: 10px; font-size: 12px; color: #999">
+        调度周期来自服务端 config.yaml 的 scheduler 段，修改后需重启生效；此处手动执行不受「已停用」限制。
+      </div>
+    </el-card>
+
     <el-card shadow="never">
       <h4>更多测试功能（预留）</h4>
       <div style="margin-top: 12px; font-size: 13px; color: #999">
@@ -50,13 +80,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminGetSystemTime, adminSetSystemTime, adminRunTasks } from '../api'
+import { adminGetSystemTime, adminSetSystemTime, adminRunTasks, adminListSystemJobs, adminRunSystemJob } from '../api'
 
 const simulatedTime = ref('')
 const timeLoading = ref(false)
 const runTasksLoading = ref(false)
+const jobs = ref([])
+const jobsLoading = ref(false)
+const jobRunning = reactive({})
 const timeMode = ref('offset')
 const offsetYears = ref(0)
 const offsetMonths = ref(0)
@@ -143,6 +176,7 @@ async function handleRunTasks() {
       '定时任务执行结果',
       { dangerouslyUseHTMLString: true, confirmButtonText: '确定' }
     )
+    await loadJobs()
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '执行失败')
   } finally {
@@ -150,7 +184,47 @@ async function handleRunTasks() {
   }
 }
 
+async function loadJobs() {
+  jobsLoading.value = true
+  try {
+    const res = await adminListSystemJobs()
+    jobs.value = res.data.jobs || []
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '加载定时任务失败')
+  } finally {
+    jobsLoading.value = false
+  }
+}
+
+async function handleRunJob(job) {
+  jobRunning[job.name] = true
+  try {
+    const res = await adminRunSystemJob(job.name)
+    await ElMessageBox.alert(res.data.result || '执行完成', `【${job.title}】执行结果`, {
+      confirmButtonText: '确定',
+    })
+    await loadJobs()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '执行失败')
+  } finally {
+    jobRunning[job.name] = false
+  }
+}
+
+function triggerLabel(trigger) {
+  if (trigger === 'manual') return '手动'
+  if (trigger === 'startup') return '启动'
+  return '调度'
+}
+
+function isJobFailure(result) {
+  if (!result) return false
+  return result.includes('失败') || result.includes('panic')
+}
+
 onMounted(() => {
   refreshTime()
+  loadJobs()
 })
+
 </script>
