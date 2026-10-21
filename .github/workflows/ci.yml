@@ -1,0 +1,116 @@
+name: CI
+
+# 触发时机：推送到主分支、提交 PR、手动触发
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+# 同一分支的新提交会取消旧的在跑任务，避免排队浪费
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端 (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: 下载依赖
+        run: go mod download
+
+      - name: 编译
+        run: go build ./...
+
+      - name: 静态检查 (go vet)
+        run: go vet ./...
+
+      - name: 单元测试（含覆盖率）
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: 上传覆盖率文件
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: server/coverage.out
+          retention-days: 7
+
+  frontend:
+    name: 前端 (Vue)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖（按 lock 文件精确安装）
+        run: npm ci
+
+      - name: 代码检查 (ESLint)
+        run: npm run lint
+
+      - name: 单元测试 (Vitest)
+        run: npm test
+
+      - name: 生产构建
+        run: npm run build
+
+  hygiene:
+    name: 仓库卫生
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 敏感配置不得入库
+        run: |
+          for f in server/config.yaml server/config.local.yaml .env; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::敏感配置文件被提交，请确认 .gitignore 是否生效"
+              exit 1
+            fi
+          done
+          echo "OK: 未发现入库的敏感配置"
+
+      - name: 文档不入库
+        run: |
+          if [ -n "$(git ls-files '*.md')" ]; then
+            echo "::error::检测到 Markdown 文档入库："
+            git ls-files '*.md'
+            exit 1
+          fi
+          echo "OK: 无 Markdown 文档入库"
+
+      - name: 数据库与日志不得入库
+        run: |
+          bad=$(git ls-files 'server/storage/*' 'server/logs/*' '*.db' '*.log')
+          if [ -n "$bad" ]; then
+            echo "::error::检测到数据库/日志入库："
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK: 无数据库与日志入库"

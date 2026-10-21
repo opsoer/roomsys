@@ -60,7 +60,7 @@
         <div class="room-card-image">
             <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
           <div v-else class="room-card-placeholder">
-            <el-icon :size="48" color="#ccc"><Picture /></el-icon>
+            <el-icon :size="48" color="#ccc"><PicIcon /></el-icon>
           </div>
           <span class="room-card-tag" :class="'tag-' + room.status">{{ statusLabel(room.status) }}</span>
         </div>

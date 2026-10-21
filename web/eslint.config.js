@@ -34,7 +34,11 @@ export default [
       'no-alert': 'warn',
       'prefer-const': 'error',
       'no-var': 'error',
-      'eqeqeq': ['error', 'always'],
+      // 允许 `x == null` / `x != null` 这一空值惯用法（等价于 null 或 undefined），
+      // 其余比较一律要求严格相等，避免隐式类型转换引发的判断偏差。
+      'eqeqeq': ['error', 'always', { null: 'ignore' }],
+      // 允许空的 catch 块：常用于「忽略该错误」的兜底分支（如刷新时间失败不阻断页面）
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'vue/multi-word-component-names': 'off',
       'vue/require-default-prop': 'off',
       'vue/no-v-html': 'warn',

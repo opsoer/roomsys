@@ -44,7 +44,7 @@
           <template v-if="form.modify_reason">
             修改原因 {{ form.modify_reason }},金额从 {{ form._old_amount.toFixed(2) }} 变为 {{ form.amount.toFixed(2) }}
           </template>
-          <template v-else style="color:#ccc">请填写修改原因</template>
+          <template v-else><span style="color:#ccc">请填写修改原因</span></template>
         </div>
       </template>
     </el-form>

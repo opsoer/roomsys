@@ -33,7 +33,9 @@ app.component('HomeFilled', HomeFilled)
 app.component('List', List)
 app.component('Loading', Loading)
 app.component('Money', Money)
-app.component('Picture', Picture)
+// Picture 与 HTML 原生 <picture> 标签同名，vue/no-reserved-component-names 规则不允许，
+// 因此全局注册名改为 PicIcon（使用处：RoomList.vue）
+app.component('PicIcon', Picture)
 app.component('Plus', Plus)
 app.component('Search', Search)
 app.component('Setting', Setting)
