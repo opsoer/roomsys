@@ -37,6 +37,10 @@ type RoomStatusParams struct {
 
 // RentRoom 出租：结束旧合同、创建/激活合同、生成账单、置房间为 rented。
 // 若房间已有预订合同，则视为「确认签约」：预订合同转 active 并按新参数更新。
+// 注意：
+//   - 被结束的旧 active 合同直接置 ended，不生成押金退还账单（押金结算走 VacateRoom）；
+//   - 预订合同若已预收（Prepaid），确认签约时不重复生成租金/押金账单；
+//   - 事务内顺带清理该房间的预订超时(reserved_overdue)待办（软删除，Task 带 DeletedAt）。
 func (s *RoomService) RentRoom(room *models.Room, p RoomStatusParams) error {
 	if p.ManagementFee <= 0 {
 		return utils.BadRequest("请填写管理费")
@@ -165,6 +169,8 @@ func (s *RoomService) ReserveRoom(room *models.Room, p RoomStatusParams) error {
 			return utils.BadRequest("该房间无活跃合同")
 		}
 		if p.StartDate != "" && currentContract.EndDate != "" && p.StartDate < currentContract.EndDate {
+			// 起租日必须不早于当前合同的到期日（字符串 YYYY-MM-DD 字典序即时间序；
+			// 任一方为空则不拦截）
 			return utils.BadRequest("未来预定的起租日期不能早于当前合同的结束日期")
 		}
 	}
@@ -210,6 +216,9 @@ func (s *RoomService) ReserveRoom(room *models.Room, p RoomStatusParams) error {
 }
 
 // CancelReservation 取消预订：按定金差额记违约收支、合同置 cancelled、房间回 vacant。
+// 前提：房间当前状态为 reserved（由 handler 保证，service 未二次校验）。
+// 不要对「已出租但存在未来预订合同」的房间调用，否则会把房间错误置回 vacant；
+// 该场景退租后清理预订请走 VacateRoom。
 func (s *RoomService) CancelReservation(room *models.Room, p RoomStatusParams) error {
 	contract, err := s.GetReservedContract(room.ID)
 	if err != nil {
@@ -291,6 +300,9 @@ func (s *RoomService) VacateRoom(room *models.Room, p RoomStatusParams) (hasFutu
 		return false, utils.Internal(err, "创建退还账单失败")
 	}
 
+	// 未来预订检查在事务外读取，与事务内"置 ended"存在极小并发窗口：
+	// 此刻若恰有新预订提交，本次置为 vacant/reserved 可能与并发侧的
+	// HasFutureReservation 结果产生偏差，最终以各事务的提交顺序为准。
 	hasFutureReservation = s.HasFutureReservation(room.ID)
 	targetStatus := "vacant"
 	if hasFutureReservation {

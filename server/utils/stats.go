@@ -52,7 +52,9 @@ func flushPVBatch(db *gorm.DB, batch []models.PageView) {
 	}
 }
 
-// RecordPageView 向管道发送一条页面访问记录
+// RecordPageView 非阻塞投递一条页面访问记录到批量写入通道。
+// 通道容量 10000；【满时静默丢弃该条记录】——避免高并发下阻塞请求，
+// 因此 PV 统计为尽力而为，不保证每条都落库，勿作为可靠事件源依赖。
 func RecordPageView(db *gorm.DB, pageType string, resourceID uint, buildingID uint, ip string) {
 	select {
 	case pvChan <- models.PageView{

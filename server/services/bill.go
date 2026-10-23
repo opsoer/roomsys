@@ -91,9 +91,11 @@ func (s *BillService) Delete(id uint) error {
 	return s.DB.Delete(&models.Bill{}, id).Error
 }
 
-// GetStats 统计指定楼栋的收入/支出汇总（按月或年）。
-// 用 SQL GROUP BY 一次成型，替代全量载入内存聚合；明细按金额降序，
+// GetStats 统计指定楼栋的收入/支出汇总：传入 month 按 "2006-01" 精确到自然月，
+// 传入 year 精确到自然年，两者均空则统计该楼全部账单。
+// 用 SQL GROUP BY 一次成型，替代全量载入内存聚合；明细按金额(total)降序，
 // 避免此前 map 遍历导致饼图每次刷新顺序、配色随机变化。
+// type 未命中 "income" 的分组一律计入支出分支。
 func (s *BillService) GetStats(buildingID uint, month, year string) (map[string]interface{}, error) {
 	type subtypeSum struct {
 		Type    string
@@ -150,6 +152,7 @@ func (s *BillService) GetStats(buildingID uint, month, year string) (map[string]
 // GetTrend 获取月度收支趋势及环比/同比数据。
 // 月份按自然月补零填充为连续序列，避免无账单月份断档导致趋势线跳月、
 // 环比跨月失真；同比需上一年同月数据，因此查询窗口向前多取 12 个月。
+// bill_date 为 'YYYY-MM-DD' 字符串，边界值用日期字符串比较（见查询处的口径说明）。
 func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface{}, error) {
 	if years <= 0 {
 		years = 12
@@ -169,7 +172,10 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	// bill_date 为 'YYYY-MM-DD' 字符串，SUBSTR 截前 7 位在 MySQL/SQLite 下语义一致
 	err := s.DB.Model(&models.Bill{}).
 		Select("SUBSTR(bill_date, 1, 7) as month, type, COALESCE(SUM(amount), 0) as amount").
-		Where("building_id = ? AND bill_date >= ? AND bill_date <= ?", buildingID, queryStart.Format("2006-01-01"), now.Format("2006-12-31")).
+		// 注意：Go 时间布局为参考时间制，"01" 恒为月 token，"2006-01-01"/"2006-12-31"
+		// 都不是合法日期布局（会输出 "YYYY-MM-MM" 之类错值导致窗口偏移），
+		// 下界必须用 "2006-01-02" 输出真实日期；上界用当天日期按字符串比较即可覆盖当日账单。
+		Where("building_id = ? AND bill_date >= ? AND bill_date <= ?", buildingID, queryStart.Format(utils.DateFormat), now.Format(utils.DateFormat)).
 		Group("month, type").
 		Scan(&sums).Error
 	if err != nil {
@@ -233,7 +239,8 @@ func (s *BillService) GetTrend(buildingID uint, years int) (map[string]interface
 	}, nil
 }
 
-// GenerateBillNo 生成唯一账单编号（按日全局递增，避免跨楼栋同日重复；统计含软删除行防止编号冲突）
+// GenerateBillNo 生成唯一账单编号：按自然日全局递增（与楼栋无关，buildingID 仅为
+// 兼容既有签名保留，未参与编号；统计含软删除行防止编号被软删记录的唯一索引占用）。
 func (s *BillService) GenerateBillNo(buildingID uint) (string, error) {
 	datePart := utils.Now().Format("20060102")
 	return NextBillNo(s.DB, datePart), nil
@@ -275,6 +282,7 @@ func nextMonth(month string) string {
 // 统计范围包含软删除记录：bill_no 唯一索引仍被软删除行占用，
 // 若按未删除行计数会生成冲突编号导致当天后续账单全部创建失败。
 // 并发冲突由 bills.bill_no 唯一索引兜底，调用方应检查错误并重试。
+// 编号后缀为 5 位零填充序号（单日超过 99999 时字典序回绕，属理论边界，未处理）。
 func NextBillNo(db *gorm.DB, datePart string) string {
 	var lastNo string
 	db.Unscoped().Model(&models.Bill{}).

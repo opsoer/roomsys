@@ -120,6 +120,8 @@ func fillTrendDays(rows []TrendItem, start, end time.Time) []TrendItem {
 }
 
 // Overview 获取全局概览统计（PV、UV、转化率、空置率、楼栋排行）
+// 注意：本函数使用裸 time.Now()（未走 utils.Now()），不跟随全局时间偏移；
+// 在启用时间偏移的环境（测试/回放）下，统计窗口与业务时间会产生偏差。
 func (s *StatsService) Overview() (*OverviewData, error) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -136,7 +138,10 @@ func (s *StatsService) Overview() (*OverviewData, error) {
 	s.DB.Model(&models.PageView{}).Where("created_at >= ? AND created_at < ?", yesterdayStart, todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.YesterdayUV)
 	s.DB.Model(&models.PageView{}).Where("page_type = ?", "landlord_view").Select("COUNT(*)").Scan(&result.TotalLandlordView)
 
-	// 获电率：房东获取数 / 总浏览量 * 100
+	// 获电率：landlord_view 事件数 / 属于本统计口径的 PV 总量 * 100（浮点百分比）。
+	// Overview 的分母是全部 page_type 的 PV（不过滤类型），BuildingDetail/MyBuildingStats
+	// 的分母是 building_detail+room_detail 两类合计 —— 三处口径不同，各自注释勿混淆；
+	// 若调整分母口径，务必同步修改三处保持含义一致。
 	if result.TotalPV > 0 {
 		result.PhoneRate = float64(result.TotalLandlordView) / float64(result.TotalPV) * 100
 	}
@@ -267,6 +272,7 @@ func (s *StatsService) PriceReference() ([]PriceRefItem, error) {
 }
 
 // BuildingDetail 获取单个楼栋的详细统计数据（含房间浏览排行）
+// 注意：使用裸 time.Now()（未走 utils.Now()），不跟随全局时间偏移（同 Overview）。
 func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, error) {
 	now := time.Now()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
@@ -290,7 +296,8 @@ func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, err
 		Where("page_type = ? AND building_id = ?", "landlord_view", buildingID).
 		Select("COUNT(*)").Scan(&result.LandlordView)
 
-	// 获电率
+	// 获电率：landlord_view 事件数 / building_detail+room_detail 两类 PV 合计 * 100。
+	// 分母口径与 Overview 全量 PV 不同，见 Overview 处注释。
 	if result.PV > 0 {
 		result.PhoneRate = float64(result.LandlordView) / float64(result.PV) * 100
 	}
@@ -323,6 +330,7 @@ func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, err
 }
 
 // MyBuildingStats 获取指定楼栋的统计概览（楼栋管理员 API，自动 scope 到自己的 building_id）
+// 注意：使用裸 time.Now()（未走 utils.Now()），不跟随全局时间偏移（同 Overview）。
 func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 	now := time.Now()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
@@ -340,7 +348,9 @@ func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 		data.PhoneRate = float64(data.LandlordView) / float64(data.PV) * 100
 	}
 
-	// 房间状态概况：单条聚合查出总数与空置数，出租率按非空置口径计算
+	// 房间状态概况：单条聚合查出总数与空置数，出租率按非空置口径计算。
+	// 注意：这里直接用 rooms.status 原始 DB 值（vacant/rented/reserved），
+	// 不做 expiring/expired 动态派生（与 building 列表的动态状态口径不同）。
 	var roomAgg struct {
 		Total  int64
 		Vacant int64

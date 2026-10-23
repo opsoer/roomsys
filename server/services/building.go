@@ -49,7 +49,10 @@ func (s *BuildingService) GetByID(id uint) (*models.Building, error) {
 	return &building, nil
 }
 
-// IsVisible 判断公寓是否公开可见（未被超级管理员设为不可见，且到期日未过）
+// IsVisible 判断公寓是否公开可见：未被超级管理员设为 hidden，且到期日未过。
+// 注意时区边界：到期日按 time.Parse 解析为 UTC 零点，与本地 Now() 比较，
+// 东八区在到期日当天本地 08:00 后即判为"已过期"；而列表过滤（expired_at >= today）
+// 是整天可见，同为过期判定，两处边界口径不一致（如需统一，应基于本地时区当日比较）。
 func (s *BuildingService) IsVisible(id uint) (bool, error) {
 	var building models.Building
 	if err := s.DB.Select("status, expired_at").First(&building, id).Error; err != nil {
@@ -68,10 +71,12 @@ func (s *BuildingService) IsVisible(id uint) (bool, error) {
 	return true, nil
 }
 
-// Renew 公寓续约：更新新的到期日期、恢复状态为 active（若已到期/不可见），并写入一条续约记录。
-// 新的到期日期不得早于今天。operator 为操作人（用户名为空表示系统）。
-// 到期类待办（房东端 + 平台端）：新到期日超过30天视为已解决全部自动完成；
-// 30天内仍属"即将到期"，完成已到期待办并保留/刷新即将到期待办。
+// Renew 公寓续约：更新到期日期并写入一条续约记录；新的到期日期不得早于今天。
+// 注意：无论原状态如何一律恢复 status=active —— 也会把被超管隐藏(hidden)的公寓重新公开。
+// operator 为操作人（用户名为空表示系统）。
+// 到期类待办（房东端 + 平台端）：新到期日严格晚于 today+30 天 → 两类到期类待办
+// 全部自动完成；≤30 天内（恰好30天整也落入此分支）→ 完成已到期待办，
+// 保留/刷新（不存在则对 building 与 platform 两个 scope 各补建一条）即将到期待办。
 func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) error {
 	if newExpiredAt == "" {
 		return fmt.Errorf("到期日期不能为空")
@@ -214,7 +219,9 @@ func (s *BuildingService) RecordInitialDeposit(buildingID uint, deposit float64,
 	}).Error
 }
 
-// AdjustDeposit 调整公寓押金（事务 + 行锁，防止并发调整互相覆盖）。
+// AdjustDeposit 调整公寓押金（事务 + SELECT ... FOR UPDATE 行锁，防止并发调整互相覆盖）。
+// 注意：默认 SQLite 后端不支持行级锁（驱动会静默剥离 FOR UPDATE 子句），
+// 并发安全由其单写者事务语义近似保证；行锁仅在 MySQL 后端实际生效。
 // amount 为变动额：正数增加、负数减少（如违规扣罚）；调整后余额不允许为负。
 // 成功时返回更新后的建筑记录。
 func (s *BuildingService) AdjustDeposit(id uint, amount float64, reason, operator string) (*models.Building, error) {

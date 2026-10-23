@@ -16,7 +16,7 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// ParsePage 从请求查询参数中解析分页参数（默认 page=1, size=20）
+// ParsePage 从请求查询参数中解析分页参数（默认 page=1, size=20；page_size 最大 100）
 func ParsePage(c *gin.Context) (page, size int) {
 	page = 1
 	size = 20

@@ -41,7 +41,9 @@ func IsTokenRevoked(tokenStr string) bool {
 	return revoked
 }
 
-// CleanupRevokedTokens 清理已过期超过 30 天的吊销记录
+// CleanupRevokedTokens 清理吊销时间距今超过 720 小时（30天）的吊销记录。
+// 注意判据是「吊销时刻」而非 token 自身有效期：保留一段时间是为拦截已吊销
+// 的 refresh token 被继续使用。
 func CleanupRevokedTokens() string {
 	logger.Log.Debug().Int("before_count", len(revokedTokens)).Msg("CleanupRevokedTokens: 开始执行")
 

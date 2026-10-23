@@ -28,7 +28,7 @@ type RentBillsParams struct {
 	StartDate string
 	// EndDate 到期日（YYYY-MM-DD）。
 	EndDate string
-	// RecordDepositBill 是否记录押金账单；nil 时按「起租日在本月内」自动判断，
+	// RecordDepositBill 是否记录押金账单；nil 时按「起租日不早于本月1日」自动判断，
 	// 避免补记历史租约时重复记押金。
 	RecordDepositBill *bool
 }
@@ -51,7 +51,10 @@ func BillPeriod(contractStart, contractEnd, monthStart, monthEnd time.Time) (bil
 	return billStart, billEnd
 }
 
-// RentAndMgmtAmounts 按统一口径计算租金与管理费金额：整月直接取整到分，非整月按天折算。
+// RentAndMgmtAmounts 按统一口径计算租金与管理费金额：
+//   - 整月：直接向零截断到分（int 转换，不四舍五入），仅做浮点残差清理；
+//   - 非整月：按天折算，走 utils.CalcProratedAmount（按分四舍五入）。
+//     注意两条路径的修约方式不同（截断 vs 四舍五入），保持现状勿混用。
 func RentAndMgmtAmounts(rentPrice, mgmtFee float64, fullMonth bool, billStart, billEnd time.Time, daysInMonth int) (rentAmount, mgmtAmount float64) {
 	if fullMonth {
 		return float64(int(rentPrice*100)) / 100, float64(int(mgmtFee*100)) / 100
@@ -62,7 +65,7 @@ func RentAndMgmtAmounts(rentPrice, mgmtFee float64, fullMonth bool, billStart, b
 
 // CreateRentedBills 生成出租相关账单（房间租金账单 + 押金账单）。
 //   - 租金账单：按账期内的租金+管理费生成，描述含「租金X元，管理费Y元（起止日）」
-//   - 押金账单：可选。RecordDepositBill 为 nil 时按「起租日在本月内」自动判断，
+//   - 押金账单：可选。RecordDepositBill 为 nil 时按「起租日不早于本月1日」自动判断，
 //     避免补记历史租约时重复记押金；押金为 0 时不记录。
 func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsParams) error {
 	now := utils.Now()
@@ -76,6 +79,14 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 		return errors.New("起止日期格式错误")
 	}
 
+	// 账期 = 租期 ∩ 当前自然月（BillPeriod 以月首/月末兜底，向内收缩——
+	//   billStart 只会晚于或等于月首，billEnd 只会早于或等于月末）：
+	//   - 起租日在本月内：billStart = 起租日，非整月按 (billEnd-billStart+1)/本月天数
+	//     折算（CalcProratedAmount 两端日均计入）；
+	//   - 补记历史租约（起租日早于本月）：billStart = 月首，与整月租约一样按月计费
+	//     （到期日不早于本月末时 fullMonth 为 true 走整月价，否则按期内天数折算）。
+	//   两种情形折算天数都不会超出"本月天数"分母，金额不超过一整月；
+	//   单次建账只按当前月口径，历史月份不逐月补账。
 	billStart, billEnd := BillPeriod(startDate, endDate, monthStart, monthEnd)
 	daysInMonth := monthEnd.Day()
 
@@ -104,7 +115,7 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 		}
 	}
 
-	recordDeposit := !startDate.Before(monthStart) // nil 默认：起租日在本月内才记押金
+	recordDeposit := !startDate.Before(monthStart) // nil 默认：起租日不早于本月1日（含未来起租）才记押金
 	if p.RecordDepositBill != nil {
 		recordDeposit = *p.RecordDepositBill
 	}
@@ -129,7 +140,7 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 }
 
 // CreateDepositRefundBill 生成押金退还账单（退租用）。
-// refunded 为 0 时不生成账单。
+// refunded <= 0 时不生成账单（负数同样跳过）。
 func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, originalDeposit, refunded float64) error {
 	if refunded <= 0 {
 		return nil

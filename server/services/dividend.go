@@ -65,9 +65,11 @@ func (s *DividendService) List(buildingID uint, page, lastID, size int, lastKey 
 	return dividends, total, err
 }
 
-// Predict 基于当前生效租约预测未来数月的应收租金：
-// 预计租金收入 = 所有生效合同的月租金+管理费合计；
-// 可分配净利润 = 预计租金收入 - 近3个月月均支出。
+// Predict 基于当前生效(active)租约预测未来数月的应收租金（按月平铺）：
+//   - 预计租金收入 = 全部生效合同的月租金+管理费合计，每个月按同一金额全额计入
+//     （不检查合同到期日：到期前未退租即整额计入每个月，预测不做到期/退租收缩）；
+//   - 可分配净利润 = 预计租金收入 - 近3个月月均支出（口径见下方注释）。
+// 预订中(reserved)/已结束(ended/cancelled)合同不参与预测。
 func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]interface{}, error) {
 	var contracts []models.RentalContract
 	if err := s.DB.Where("building_id = ? AND status = ?", buildingID, "active").Find(&contracts).Error; err != nil {
@@ -78,7 +80,10 @@ func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]int
 		monthlyRent += ct.RentPrice + ct.ManagementFee
 	}
 
-	// 近3个月月均支出（不含押金退还前先按全部支出统计，保守估计）
+	// 平均月支出口径：统计 [今天-3个月, 今天] 区间的全部支出账单（type=expense，
+	// 含押金退还、维修等，不做子类剔除），按自然月(BillDate 前 7 位)分桶求和后除以 3。
+	// 注意：区间可跨 3~4 个自然月（首尾两个月为残月却各占一个桶），恒按 3 计算均值，
+	// 对残月偏少/偏多不做修正，整体为保守估计。
 	expenseStart := utils.Now().AddDate(0, -3, 0).Format("2006-01-02")
 	var expenseBills []models.Bill
 	if err := s.DB.Where("building_id = ? AND type = ? AND bill_date >= ?", buildingID, "expense", expenseStart).

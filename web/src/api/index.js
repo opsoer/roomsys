@@ -8,6 +8,7 @@ const api = axios.create({
   timeout: 30000,
 })
 
+// 上传专用实例：大视频等媒体文件上传耗时明显长于普通请求，超时放宽到 5 分钟
 const uploadApi = axios.create({
   baseURL: '/api',
   timeout: 300000,
@@ -53,6 +54,8 @@ api.interceptors.response.use(
         router.push('/login')
       }
     } else if (data?.code === 1006) {
+      // 1006 = 业务码"名称冲突"：不弹全局提示，由调用方读取 err 里的
+      // suggested_name 自行处理（如 AdminBuildingDialogs 的重名建议弹窗）。
       return Promise.reject(err)
     } else if (msg && !err.config?.silent) {
       ElMessage.error(msg)

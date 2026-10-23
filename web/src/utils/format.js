@@ -6,8 +6,9 @@ export function mediaUrl(path) {
 
 // 复制文本到剪贴板：优先 Clipboard API；微信内置浏览器（尤其 HTTP 域名）会禁用 Clipboard API，
 // 且 textarea.select() 会唤起 iOS 系统"选中/复制"空白浮层（页面居中的空白框）。
-// 因此降级路径采用 copy 事件注入剪贴板（ClipboardJS 同款方案）：不 focus、不依赖选区、复制后立即清理，
-// 全程不产生系统选区浮层，兼容微信安卓/iOS。
+// 因此降级路径采用 copy 事件注入剪贴板（ClipboardJS 同款方案）：在屏幕外挂一个不可见
+// textarea，用「临时选区 + copy 事件」完成写入（微信安卓内核必须有选区才会广播 copy），
+// 复制后立即 removeAllRanges 清除选区，避免浮层残留，兼容微信安卓/iOS。
 export async function copyText(text) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -69,6 +70,9 @@ export function maskPhone(phone) {
   return phone.slice(0, 3) + '****' + phone.slice(-4)
 }
 
+// 房间状态文案。expiring/expired 并非录入状态，而是后端 DynamicRoomStatus
+// 按合同到期日动态计算：expiring=rented 且 30 天内到期（含今天），expired=到期日已过。
+// 与 web-wx 端 utils/format.js 的同名函数保持一致口径（勿改其一漏其二）。
 export function statusLabel(status) {
   const labels = {
     vacant: '未出租',

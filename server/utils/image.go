@@ -21,7 +21,9 @@ const (
 	JPEGQuality    = 65   // JPEG 压缩质量
 )
 
-// ProcessImageBytes 处理图片字节数据，返回处理后的图片和缩略图
+// ProcessImageBytes 处理图片字节数据，返回处理后的图片和缩略图。
+// 缩略图失败不阻断主流程：此时第二个返回值为 nil 且 err 仍为 nil（仅记 Warn 日志），
+// 调用方必须容许 thumbnail == nil；主图处理失败才整体返回 error。
 func ProcessImageBytes(data []byte, ext string) (processed, thumbnail []byte, err error) {
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -53,7 +55,8 @@ func ProcessImageNoThumb(data []byte) ([]byte, error) {
 	return encodeImage(resized, format)
 }
 
-// resizeImage 按比例缩放图片至指定最大尺寸
+// resizeImage 仅在超出限制时按比例缩小图片至 maxW × maxH 以内（只缩不放；
+// maxH 为 0 时按原图高度，不参与限制）。
 func resizeImage(img image.Image, maxW, maxH int) image.Image {
 	bounds := img.Bounds()
 	w := bounds.Dx()

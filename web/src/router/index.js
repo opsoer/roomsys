@@ -98,6 +98,10 @@ const router = createRouter({
   routes,
 })
 
+// 路由守卫规则：
+// - /landlord 允许 building_admin、历史遗留的 admin 与 super_admin（超管可进房东端）；
+// - /admin（平台端）仅 super_admin；
+// - 已登录访问 /login 时按角色回跳各自工作台；未登录或角色不符一律回登录页。
 router.beforeEach((to, _, next) => {
   const authStore = useAuthStore()
   const token = authStore.token

@@ -1,3 +1,5 @@
+import { STORAGE_KEYS } from '../store/auth'
+
 const BASE_URL = process.env.VITE_API_BASE || 'https://your-api-domain.com/api'
 
 function getToken() {
@@ -8,12 +10,11 @@ function getToken() {
   }
 }
 
+// 401 过期后的兜底清理并跳登录页。
+// 清理键复用 store/auth.js 的 STORAGE_KEYS（含 refreshToken），避免双份清单漂移。
 function clearAuthAndRedirect() {
   try {
-    uni.removeStorageSync('token')
-    uni.removeStorageSync('username')
-    uni.removeStorageSync('role')
-    uni.removeStorageSync('building_id')
+    STORAGE_KEYS.forEach(key => uni.removeStorageSync(key))
   } catch (e) {}
   uni.reLaunch({ url: '/pages/login/login' })
 }
@@ -318,8 +319,10 @@ export function adminGetBuildingStats(id) {
   return request('GET', `/admin/stats/building/${id}`)
 }
 
+// 价格参考（平台管理员视角，端点在 /admin/stats 分组下，
+// 与后台 routes.go 的 platform.GET("/stats/price-reference") 对应）
 export function adminGetPriceReference() {
-  return request('GET', '/building/stats/price-reference')
+  return request('GET', '/admin/stats/price-reference')
 }
 
 export function buildingGetMyStats() {

@@ -7,6 +7,12 @@ import { ref, nextTick, onBeforeUnmount } from 'vue'
 // - onError：请求失败提示（不传则错误向外抛出，与原「无 catch」页面行为一致）
 // - dedupe：append 时按 id 去重兜底；部分页面原实现无去重，传 false 保持行为一致
 // - initialLoading：首屏 loading 初始值（骨架屏页面为 true）
+// 约定：
+// - sentinel 需由调用方绑定为模板 ref；观察器在每次 fetch 的 finally 中自动重建
+//   （重新 observe 会立即以当前相交状态回调一次），一般无需手动调 setupInfiniteScroll
+// - total 在整页刷新（append=false）时由响应写入；触底加载期间一般不更新，
+//   唯一例外是去重后整批重复数据的兜底分支（见 fetch 内注释），会把 total 拉平为
+//   已加载数量终止分页——属可接受的边界，代价是「偶发全重复页」会提前停止分页
 export function useInfiniteList({ fetcher, pageSize, cursorKey = 'id', getId = (x) => x.id, getExtraParams, onError, dedupe = true, initialLoading = false }) {
   const items = ref([])
   const total = ref(0)
@@ -39,8 +45,10 @@ export function useInfiniteList({ fetcher, pageSize, cursorKey = 'id', getId = (
         const existingIds = new Set(items.value.map(getId))
         const fresh = list.filter(x => !existingIds.has(getId(x)))
         if (fresh.length === 0) {
-          // 没有新数据：把 total 收敛为当前已加载数量，终止触底加载，避免反复请求
-          total.value = Math.max(total.value, items.value.length)
+          // 去重后无新数据：把 total 拉平为已加载数量，使哨兵条件 length < total 变为
+          // 假而停止触底加载。必须直接赋值（不能用 Math.max）：若服务端 total 偏大且
+          // 后续页全是重复数据，Math.max 永远收敛不了，会造成无限重复请求循环。
+          total.value = items.value.length
         } else {
           items.value = [...items.value, ...fresh]
         }

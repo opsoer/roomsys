@@ -65,8 +65,12 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 		query = query.Where("layout = ?", layout)
 	}
 
-	// 状态筛选下沉到 SQL，与 DynamicRoomStatus 的动态判定保持一致，
-	// 保证 total 与分页结果一致（避免内存过滤后 total 虚高/偏小）
+	// 状态筛选下沉到 SQL，与 DynamicRoomStatus 的动态判定对齐，保证 total 与分页结果一致。
+	// 与动态判定存在两处已知偏差（有意保留）：
+	//   - "reserved" 同时命中「已出租但存在未来预订合同」的房间（这类房间动态状态
+	//     仍是 rented/expiring，未来预订也算一种可预订来源）；
+	//   - switch 无 default：传入未支持的状态值（如 "expired"）时不加任何过滤。
+	// "expiring" 边界与 DynamicRoomStatus 一致：到期日 < today+30（恰好30天整不算）。
 	if status != "" {
 		today := utils.Now().Format("2006-01-02")
 		thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
@@ -136,7 +140,9 @@ func (s *RoomService) Update(id uint, updates map[string]interface{}) error {
 	return s.DB.Model(&models.Room{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete 删除房间及关联的媒体资源、合同、租客和任务
+// Delete 删除房间及关联的媒体资源、合同、租客和任务。
+// 全部为软删除；租客仅删除未被其他房间的未删除合同引用的（子查询排除），
+// 账单按外键 OnDelete:SET NULL 保留（软删不动账单）。
 func (s *RoomService) Delete(id uint) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("room_id = ?", id).Delete(&models.RoomMedia{}).Error; err != nil {
@@ -232,7 +238,8 @@ func (s *RoomService) UpdateContract(id uint, updates map[string]interface{}) er
 	return s.DB.Model(&models.RentalContract{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// GetFutureReservation 获取房间的未来的预定合同（房间有其他 active 合同的情况下）
+// GetFutureReservation 获取房间的预订(reserved)合同（含租客信息），供「当前租客退租后
+// 与预订租客续签」等场景使用。本函数不校验房间是否有 active 合同，是否共存由调用方保证。
 func (s *RoomService) GetFutureReservation(roomID uint) (*models.RentalContract, error) {
 	var contract models.RentalContract
 	err := s.DB.Where("room_id = ? AND status = ?", roomID, "reserved").

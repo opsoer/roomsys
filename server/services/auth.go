@@ -94,7 +94,10 @@ func (s *AuthService) GetBuildingByID(id uint) (*models.Building, error) {
 	return &building, err
 }
 
-// IsBuildingExpired 检查楼栋是否已过期
+// IsBuildingExpired 检查楼栋是否已过期。
+// 边界口径：到期日按 time.Parse 解析为 UTC 零点，与本地 Now() 比较，
+// 东八区当天本地 08:00 前视为未过期、之后视为已过期（与按整天字符串比较的
+// 列表口径存在当天内的翻转窗口）；ExpiredAt 为空或解析失败均视为未过期。
 func (s *AuthService) IsBuildingExpired(building *models.Building) bool {
 	if building.ExpiredAt == "" {
 		return false

@@ -24,12 +24,14 @@ export function roomHomeUrl(buildingId, roomId, { buildingName = '', roomNumber 
   return `${window.location.origin}/building/${buildingKey(buildingId, buildingName)}/room/${roomKey(roomId, roomNumber)}`
 }
 
-// 从公寓对象提取信息行（有值才显示）
+// 从公寓对象提取信息行（字段缺失或为 null 时不显示该行）。
+// 注意用宽等号 != null 同时排除 null 与 undefined：严格等号过滤不掉 undefined，
+// 否则 b 存在但字段缺失时会渲染出「undefined间」，b 本身为空时 b.room_count 抛 TypeError。
 export function buildingInfoLines(b) {
   const lines = []
   const address = [b?.district, b?.street, b?.village, b?.building_no].filter(Boolean).join(' ')
   if (address) lines.push({ label: '位置', value: address })
-  if (b?.room_count !== null) lines.push({ label: '房源', value: `${b.room_count}间 · 可租${b.vacant_count ?? 0}间` })
+  if (b?.room_count != null) lines.push({ label: '房源', value: `${b.room_count}间 · 可租${b.vacant_count ?? 0}间` })
   return lines
 }
 
@@ -256,14 +258,15 @@ export function downloadQrImage(dataUrl, filename) {
   a.remove()
 }
 
-// 生成房间二维码卡片（楼层/房号/户型/位置/租金，有值才显示）
+// 生成房间二维码卡片（楼层/房号/户型/位置/租金，有值才显示；
+// price 需用 != null 排除 undefined，否则未传时会渲染出 ¥undefined/月）。
 export async function generateRoomQrDataUrl({ text, buildingName, address, floor, roomNumber, layout, price }) {
   const lines = []
   if (floor) lines.push({ label: '楼层', value: `${floor}层` })
   if (roomNumber) lines.push({ label: '房号', value: `${roomNumber}房` })
   if (layout) lines.push({ label: '户型', value: layout })
   if (address) lines.push({ label: '位置', value: address })
-  if (price !== null && price !== '') lines.push({ label: '租金', value: `¥${price}/月` })
+  if (price != null && price !== '') lines.push({ label: '租金', value: `¥${price}/月` })
   return generateBrandedQrDataUrl({
     text,
     title: buildingName || '房间详情',

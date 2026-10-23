@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
@@ -49,6 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
     return '/landlord/rooms'
   }
 
+  // 多标签页状态同步：storage 事件只在「其它」标签页触发，
+  // 任何标签页写入/移除 localStorage 后，其余标签页的 store 状态随之更新。
   function handleStorageChange(e) {
     if (e.key === 'token') {
       token.value = e.newValue || ''
@@ -61,15 +63,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // storage 事件只在其它标签页触发；store 是应用级单例、永不销毁，监听注册一次即
+  // 随应用生命周期存活。注意：不要在 setup store 里调 onUnmounted 注销——处于组件
+  // setup 内首次创建 store 时，钩子会挂到该组件上，组件卸载反而误删监听；
+  // 在组件外创建则只产生 Vue 警告并空操作。两种结果都不符合需求，保持不注销。
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', handleStorageChange)
   }
-
-  onUnmounted(() => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', handleStorageChange)
-    }
-  })
 
   return {
     token,

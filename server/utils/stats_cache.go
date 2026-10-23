@@ -15,7 +15,9 @@ type cacheEntry struct {
 // statsCache 统计数据缓存，使用 sync.Map 保证并发安全
 var statsCache sync.Map
 
-// CacheGetOrSet 从缓存获取数据，不存在则调用 fetch 生成并缓存
+// CacheGetOrSet 从缓存获取未过期数据，未命中（或已过期）则调用 fetch 生成并写回。
+// 注意：无并发去重（无 singleflight）——缓存过期的瞬间可能有多个请求各自执行 fetch，
+// 后写覆盖先写；fetch 出错时直接透传错误，不会回退使用已过期的旧值。
 func CacheGetOrSet(key string, ttl time.Duration, fetch func() (interface{}, error)) (interface{}, error) {
 	if val, ok := statsCache.Load(key); ok {
 		entry := val.(*cacheEntry)

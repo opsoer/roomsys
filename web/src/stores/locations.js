@@ -30,6 +30,9 @@ export const useLocationStore = defineStore('locations', () => {
   }
 
   // loadManage 超管管理端使用：读取带 id 的全量数据（新增/删除自定义条目需要 id）。
+  // 注意与 load() 共用 loaded 缓存标志：若公有端 load() 先执行过，这里不带 force 会
+  // 直接命中缓存、拿到的可能是无 id 的 options 数据，管理端入口应保证先走 loadManage
+  // （或在切换角色时调用 invalidate()）。
   async function loadManage(force = false) {
     if (loaded.value && !force) return
     const tasks = [
@@ -52,6 +55,8 @@ export const useLocationStore = defineStore('locations', () => {
 
   // 街道归一化：录入可能带或不带「街道」后缀（如「石岩」与「石岩街道」指同一地方）
   const normStreet = (s) => (s || '').replace(/街道$/, '')
+  // 村/小区归一化：去掉「社区」后缀，用于改名映射键与全树去重判等
+  // （如「沙埔头」与「沙埔头社区」视为同一）。
   const normVillage = (v) => (v || '').replace(/社区$/, '')
 
   // 改名映射：level + 上下文(区域/街道) + 旧名 → 新名

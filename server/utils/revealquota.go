@@ -19,7 +19,8 @@ var (
 	revealQuotaCounts = make(map[string]*revealQuotaEntry)
 )
 
-// todayKey 返回本地时区的自然日标识。
+// todayKey 返回本地时区的自然日标识；跟随 Now()（含全局时间偏移），
+// 在设置时间偏移的环境里与业务日期保持一致。
 func todayKey() string { return Now().Format("2006-01-02") }
 
 // RevealCount 返回 IP 当日已成功查看完整电话的次数，跨日自动归零。

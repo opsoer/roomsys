@@ -266,7 +266,8 @@ type BuildingRenewal struct {
 
 // BuildingDepositLog 公寓押金变动流水，每条记录自成链上一环：
 // create=创建公寓时的初始押金，adjust=平台调整（amount 正为增加、负为减少/扣罚）。
-// before/after 记录变动前后余额，配合 reason（必填）与 operator 可完整溯源每一次变动。
+// before/after 记录变动前后余额，配合 reason（调整时由 handler 校验必填，
+// 创建流水时可空）与 operator 可完整溯源每一次变动。
 type BuildingDepositLog struct {
 	ID         uint           `gorm:"primaryKey" json:"id"`
 	BuildingID uint           `gorm:"index;not null" json:"building_id"`
@@ -350,7 +351,9 @@ func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(AllModels()...)
 }
 
-// CleanupSoftDeleted 清理超过指定天数的软删除记录。
+// CleanupSoftDeleted 清理超过指定天数的软删除记录（Unscoped 硬删除）。
+// 注意：仅处理有 DeletedAt 字段的模型（Setting/RecruitSubmission/AuditLog/PageView 等除外）；
+// 底层 Delete() 的错误被忽略，函数恒返回 nil。数据库时间比较用 time.Now()（无偏移）。
 func CleanupSoftDeleted(db *gorm.DB, days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	tables := []interface{}{

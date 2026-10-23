@@ -52,7 +52,9 @@ func LastDayOfMonth(t time.Time) time.Time {
 	return FirstDayOfMonth(t).AddDate(0, 1, -1)
 }
 
-// CalcProratedAmount 按天计算按比例分摊的租金金额
+// CalcProratedAmount 按天折算比例金额（计费公用口径，勿擅自修改）。
+// 天数 = (end-start) 按整日取整 + 1，即起止两端日均计入（单日也要算 1 天）；
+// 分母为调用方传入的自然月天数；结果按分四舍五入（math.Round）。start > end 返回 0。
 func CalcProratedAmount(rentPrice float64, start, end time.Time, daysInMonth int) float64 {
 	if start.After(end) {
 		return 0
@@ -78,7 +80,16 @@ func NewMonthlyFinanceSummary(totalIncome, totalExpense float64) MonthlyFinanceS
 	}
 }
 
-// DynamicRoomStatus 根据数据库状态和到期日期计算房间动态状态（正常/即将到期/已过期）
+// DynamicRoomStatus 根据数据库状态和到期日期计算房间动态状态。
+//   - 非 rented 状态直接透传，不做推导；
+//   - rented 今天到期或未来 30 天内（today <= end < today+30，恰好第30天不算）→ expiring；
+//     end 已过 → expired；end 解析失败按 rented 处理；
+//   - 剩余租期超过 30 天时保持 rented。
+// 时区边界：today 截断到本地日零点，end 解析为 UTC 零点（time.Parse）。
+// 两个绝对时刻比较：东八区本地日 D 的零点（UTC 前一天 16:00）恒早于 end（D 00:00 UTC），
+// 因此到期日 D 一整天都判 expiring，直到次日本地 00:00 才翻转为 expired。
+// （与 building.go IsVisible / auth.go IsBuildingExpired 用实时 Now() 的口径不同：
+//   那两处因未截断，东八区在到期日当天本地 08:00 后就判已过期——各处边界不一致。）
 func DynamicRoomStatus(dbStatus string, endDate string) string {
 	if dbStatus != "rented" || endDate == "" {
 		return dbStatus
@@ -88,10 +99,13 @@ func DynamicRoomStatus(dbStatus string, endDate string) string {
 		return dbStatus
 	}
 	now := Now()
-	if now.After(end) {
+	// 截断到本地日期消除时分秒差异；截断后的 today 是本地日零点（绝对时刻），
+	// 东八区下到期日当天全天不会判 expired，次日本地零点才翻转（见函数头注释）
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if today.After(end) {
 		return "expired"
 	}
-	if end.Before(now.AddDate(0, 0, 30)) {
+	if end.Before(today.AddDate(0, 0, 30)) {
 		return "expiring"
 	}
 	return dbStatus
