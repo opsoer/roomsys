@@ -266,15 +266,49 @@ func TestCacheGetOrSet(t *testing.T) {
 	}
 }
 
-// 验证码配额计数。
+// 验证码配额计数与状态机。
 func TestRevealQuota(t *testing.T) {
 	ip := "10.0.0.1"
-	IncrReveal(ip)
-	IncrReveal(ip)
+	for i := 0; i < 2; i++ {
+		if _, allowed := RevealHit(ip); !allowed {
+			t.Fatalf("免费额度内第 %d 次应放行", i+1)
+		}
+	}
 	if got := RevealCount(ip); got != 2 {
 		t.Fatalf("计数应为 2，实际 %d", got)
 	}
 	if got := RevealCount("10.0.0.2"); got != 0 {
 		t.Fatalf("其他 IP 计数应为 0，实际 %d", got)
+	}
+	if RevealNeedsCaptcha(ip) {
+		t.Fatal("额度内不应要求验证码")
+	}
+}
+
+// 超过额度后进入粘性挑战；验证成功计数减半并解除挑战。
+func TestRevealQuotaChallenge(t *testing.T) {
+	ip := "10.1.0.1"
+	for i := 0; i < 5; i++ {
+		if _, allowed := RevealHit(ip); !allowed {
+			t.Fatalf("免费额度内第 %d 次应放行", i+1)
+		}
+	}
+	if _, allowed := RevealHit(ip); allowed {
+		t.Fatal("超过额度应拒绝并进入挑战")
+	}
+	if !RevealNeedsCaptcha(ip) {
+		t.Fatal("超限后应要求验证码")
+	}
+
+	if kept := MarkRevealVerified(ip); kept != 3 {
+		t.Fatalf("6 次验证成功后应减半为 3，实际 %d", kept)
+	}
+	if RevealNeedsCaptcha(ip) {
+		t.Fatal("验证成功应解除挑战")
+	}
+
+	ResetReveal(ip)
+	if got := RevealCount(ip); got != 0 {
+		t.Fatalf("Reset 后计数应为 0，实际 %d", got)
 	}
 }

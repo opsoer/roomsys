@@ -47,8 +47,8 @@ func validateExpiredAt(expiredAt, contractDate string) error {
 
 // CreateBuildingReq 创建公寓请求参数
 type CreateBuildingReq struct {
-	Name         string `json:"name" binding:"required"`
-	Package      string `json:"package"`
+	Name         string  `json:"name" binding:"required"`
+	Package      string  `json:"package"`
 	Deposit      float64 `json:"deposit"`
 	ContractDate string  `json:"contract_date"`
 	ExpiredAt    string  `json:"expired_at"`
@@ -559,8 +559,13 @@ type RevealPhoneRequest struct {
 }
 
 // RevealPhone 查看公寓房东的完整电话号码。
-// 每个IP每日前 RevealFreePerDay 次直接放行（配置 server.reveal_free_per_day），
-// 之后每次要求先通过图片验证码；不设硬性上限。
+//
+// 额度策略（免费次数来自 server.reveal_free_per_day，窗口为 1 分钟）：
+//  1. 窗口内前 N 次直接放行，正常用户一天看几次根本不会触发验证码；
+//  2. 超过 N 次后该 IP 进入「必须验证码」的粘性状态：之后的每次请求都要带
+//     正确验证码，验证码错误不解锁，窗口过期也不自动解锁；
+//  3. 验证通过后状态回到正常，但计数只减半（不清零），防止爬虫用 OCR
+//     换取「再来 N 次免费额度」，查看量越大验证码成本越高。
 func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 	buildingID, ok := utils.ParseIdKey(c.Param("id"))
 	if !ok {
@@ -574,15 +579,20 @@ func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 	}
 
 	ip := utils.GetRealIP(c)
-	if utils.RevealCount(ip) >= h.Cfg.Server.RevealFreePerDay {
+	// 先计数：超限时 Hit 会把该 IP 切到挑战状态，后续请求持续要求验证码
+	_, allowed := utils.RevealHit(ip)
+	if !allowed || utils.RevealNeedsCaptcha(ip) {
 		var req RevealPhoneRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			req = RevealPhoneRequest{}
 		}
 		if !VerifyCaptcha(req.CaptchaID, req.CaptchaCode) {
-			utils.ErrorWithCode(c, http.StatusTooManyRequests, utils.CodeCaptchaRequired, "今日查看次数已达上限，请完成图片验证后再查看")
+			// 校验失败保持挑战状态，下一次仍需验证码
+			utils.ErrorWithCode(c, http.StatusTooManyRequests, utils.CodeCaptchaRequired, "查看次数已达上限，请完成图片验证后再查看")
 			return
 		}
+		// 校验成功：解除挑战状态，计数减半
+		utils.MarkRevealVerified(ip)
 	}
 
 	var landlords []models.BuildingLandlord
@@ -590,7 +600,6 @@ func (h *BuildingHandler) RevealPhone(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.IncrReveal(ip)
 	go utils.RecordPageView(h.DB, "phone_reveal", uint(buildingID), uint(buildingID), ip)
 	utils.Success(c, gin.H{"landlords": landlords})
 }
@@ -938,4 +947,3 @@ func (h *BuildingHandler) MyStats(c *gin.Context) {
 	}
 	utils.Success(c, gin.H{"stats": stats})
 }
-
