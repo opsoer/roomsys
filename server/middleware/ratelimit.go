@@ -6,20 +6,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"rental-server/logger"
 	"rental-server/utils"
+	"rental-server/utils/ipwindow"
 
 	"github.com/gin-gonic/gin"
 )
-
-// apiRateData 存储按 IP 统计的 API 请求频率数据
-var apiRateData = make(map[string]*apiRateEntry)
-
-// apiRateMu 保护 apiRateData 的并发安全
-var apiRateMu sync.Mutex
 
 // maxAPIRequests 单个 IP 每分钟允许的最大 API 请求数（可用环境变量 RATE_LIMIT_PER_MIN 覆盖）
 var maxAPIRequests = func() int {
@@ -32,31 +26,16 @@ var maxAPIRequests = func() int {
 }()
 
 // apiRateWindow 频率统计的时间窗口（1 分钟）
-const apiRateWindow = 1 * time.Minute
+const apiRateWindow = time.Minute
 
-// apiRateEntry 单 IP 的限流记录，包含窗口起始时间和请求计数
-type apiRateEntry struct {
-	windowStart time.Time
-	count       int
-}
-
-// init 启动后台协程，定期清理过期的限流记录
-func init() {
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			apiRateMu.Lock()
-			now := time.Now()
-			for ip, entry := range apiRateData {
-				if now.Sub(entry.windowStart) > apiRateWindow*2 {
-					delete(apiRateData, ip)
-				}
-			}
-			apiRateMu.Unlock()
-		}
-	}()
-}
+// apiLimiter 全局限流计数器：按 IP 分 64 桶，桶内一把锁 + 一张计数表。
+// 相比早期「一把全局 Mutex + 一个 map」，锁竞争降到约 1/64，
+// 且后台清理每秒只清一个桶，不会长时间阻塞所有请求。
+var apiLimiter = ipwindow.New(ipwindow.Config{
+	Limit:           int64(maxAPIRequests),
+	Window:          apiRateWindow,
+	MaxSizePerShard: 4096,
+})
 
 // RateLimitMiddleware API 限流中间件，每 IP 每分钟最多 maxAPIRequests 次请求
 // /assets/ 静态资源和 /api/media/ 图片视频文件不计入限流（媒体文件请求量大且为只读资源）
@@ -67,22 +46,12 @@ func RateLimitMiddleware() gin.HandlerFunc {
 			return
 		}
 		ip := c.ClientIP()
-		apiRateMu.Lock()
-		now := time.Now()
-		entry, ok := apiRateData[ip]
-		if ok && now.Sub(entry.windowStart) < apiRateWindow {
-			if entry.count >= maxAPIRequests {
-				apiRateMu.Unlock()
-				logger.Log.Warn().Str("ip", ip).Msg("API 请求频率超限")
-				utils.Error(c, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")
-				c.Abort()
-				return
-			}
-			entry.count++
-		} else {
-			apiRateData[ip] = &apiRateEntry{windowStart: now, count: 1}
+		if _, allowed := apiLimiter.Hit(ip); !allowed {
+			logger.Log.Warn().Str("ip", ip).Msg("API 请求频率超限")
+			utils.Error(c, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")
+			c.Abort()
+			return
 		}
-		apiRateMu.Unlock()
 		c.Next()
 	}
 }
