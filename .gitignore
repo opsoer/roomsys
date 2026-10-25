@@ -40,8 +40,8 @@ server/storage/
 # 测试覆盖率
 coverage.out
 server/coverage.out
-coverage/
-server/coverage/
+coverage
+server/coverage
 web/coverage/
 web/test-results/
 *.lcov
