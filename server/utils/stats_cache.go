@@ -35,3 +35,12 @@ func CacheGetOrSet(key string, ttl time.Duration, fetch func() (interface{}, err
 	})
 	return data, nil
 }
+
+// ClearStatsCache 清空统计数据缓存。
+// 供测试或运维在数据切换后强制重新计算；生产请求路径不应调用。
+func ClearStatsCache() {
+	statsCache.Range(func(key, _ interface{}) bool {
+		statsCache.Delete(key)
+		return true
+	})
+}

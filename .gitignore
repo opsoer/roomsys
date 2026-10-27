@@ -110,3 +110,9 @@ GLM*.md
 # 合作协议等非代码文件
 *合作协议*
 ~$*
+# 文档与测试夹具整体忽略：docs/ 下全部不进仓库
+docs/
+
+# 测试执行产物
+test-evidence/
+server/tests/artifacts/
