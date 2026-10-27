@@ -121,16 +121,27 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		return
 	}
 
-	if err := tx.Model(&models.Room{}).Where("id = ? AND status != ?", *task.RoomID, "vacant").Update("status", "vacant").Error; err != nil {
-		tx.Rollback()
-		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("更新房间状态失败")
-		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
-		return
-	}
+	// 先结束合同，再决定房间去向，保证未来预订检查读到的是退租后的状态
 	if err := tx.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", *task.RoomID, "active").Update("status", "ended").Error; err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("结束合同失败")
 		utils.Error(c, http.StatusInternalServerError, "结束合同失败")
+		return
+	}
+	// 与手动退租（RoomService.VacateRoom）语义保持一致：
+	// 房间存在未开始的预订合同时应转为 reserved，而不是 vacant
+	var futureReservations int64
+	tx.Model(&models.RentalContract{}).
+		Where("room_id = ? AND status = ?", *task.RoomID, "reserved").
+		Count(&futureReservations)
+	targetStatus := "vacant"
+	if futureReservations > 0 {
+		targetStatus = "reserved"
+	}
+	if err := tx.Model(&models.Room{}).Where("id = ? AND status != ?", *task.RoomID, targetStatus).Update("status", targetStatus).Error; err != nil {
+		tx.Rollback()
+		logger.Log.Error().Err(err).Uint("room_id", *task.RoomID).Msg("更新房间状态失败")
+		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
 		return
 	}
 	if err := tx.Model(&models.Task{}).Where("id = ?", task.ID).Update("status", "completed").Error; err != nil {

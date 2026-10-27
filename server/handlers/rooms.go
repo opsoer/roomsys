@@ -179,9 +179,10 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 	type RoomDetail struct {
 		models.Room
 		CurrentContract *models.RentalContract `json:"current_contract,omitempty"`
-		EndDate         string                  `json:"end_date"`
+		EndDate         string                 `json:"end_date"`
+		Thumbnail       string                 `json:"thumbnail"`
 	}
-	detail := RoomDetail{Room: *room}
+	detail := RoomDetail{Room: *room, Thumbnail: pickThumbnail(room.Media)}
 	if contract != nil {
 		detail.EndDate = contract.EndDate
 		detail.Room.Status = utils.DynamicRoomStatus(detail.Room.Status, detail.EndDate)
@@ -242,29 +243,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 	}
 	var result []RoomWithThumbnail
 	for _, r := range rooms {
-		thumb := ""
-		for _, m := range r.Media {
-			if m.Category == "cover" && m.Type == "image" {
-				if m.ThumbnailPath != "" {
-					thumb = m.ThumbnailPath
-				} else {
-					thumb = m.FilePath
-				}
-				break
-			}
-		}
-		if thumb == "" {
-			for _, m := range r.Media {
-				if m.Type == "image" {
-					if m.ThumbnailPath != "" {
-						thumb = m.ThumbnailPath
-					} else {
-						thumb = m.FilePath
-					}
-					break
-				}
-			}
-		}
+		thumb := pickThumbnail(r.Media)
 		ct, hasContract := contractMap[r.ID]
 		var contractMgmtFee *float64
 		if hasContract {
@@ -290,6 +269,28 @@ func (h *RoomHandler) List(c *gin.Context) {
 	utils.Success(c, gin.H{"rooms": result, "total": total, "page": page, "size": size})
 }
 
+// pickThumbnail 选择房间缩略图：优先 cover 的缩略图，其次 cover 原图，
+// 最后取第一张图片。列表与详情接口共用，保证口径一致。
+func pickThumbnail(media []models.RoomMedia) string {
+	for _, m := range media {
+		if m.Category == "cover" && m.Type == "image" {
+			if m.ThumbnailPath != "" {
+				return m.ThumbnailPath
+			}
+			return m.FilePath
+		}
+	}
+	for _, m := range media {
+		if m.Type == "image" {
+			if m.ThumbnailPath != "" {
+				return m.ThumbnailPath
+			}
+			return m.FilePath
+		}
+	}
+	return ""
+}
+
 // Get 获取单个房间详情
 func (h *RoomHandler) Get(c *gin.Context) {
 	roomID := c.Param("id")
@@ -312,14 +313,15 @@ func (h *RoomHandler) Get(c *gin.Context) {
 		models.Room
 		CurrentContract   *models.RentalContract `json:"current_contract,omitempty"`
 		FutureReservation *models.RentalContract `json:"future_reservation,omitempty"`
-		EndDate           string                  `json:"end_date"`
+		EndDate           string                 `json:"end_date"`
+		Thumbnail         string                 `json:"thumbnail"`
 	}
 	var futureReservation *models.RentalContract
 	if rc, err := h.RoomService.GetFutureReservation(uint(rid)); err == nil {
 		futureReservation = rc
 	}
 
-	detail := RoomDetail{Room: *room, CurrentContract: contract, FutureReservation: futureReservation}
+	detail := RoomDetail{Room: *room, CurrentContract: contract, FutureReservation: futureReservation, Thumbnail: pickThumbnail(room.Media)}
 	if contract != nil {
 		detail.EndDate = contract.EndDate
 		detail.Room.Status = utils.DynamicRoomStatus(detail.Room.Status, detail.EndDate)
@@ -840,6 +842,12 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 	contract, err := h.RoomService.GetActiveContract(uint(rid))
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "无有效合同")
+		return
+	}
+
+	// 新结束日必须晚于合同起租日（日期为 YYYY-MM-DD，可直接字典序比较）
+	if req.EndDate <= contract.StartDate {
+		utils.Error(c, http.StatusBadRequest, "退租日期必须晚于起租日期")
 		return
 	}
 

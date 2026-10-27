@@ -321,6 +321,19 @@ func (h *BillHandler) Stats(c *gin.Context) {
 	}
 	month := c.Query("month")
 	year := c.Query("year")
+	// 非法参数显式 400，避免 service 解析失败被包成 500
+	if month != "" {
+		if _, err := time.Parse("2006-01", month); err != nil {
+			utils.Error(c, http.StatusBadRequest, "月份格式错误，请使用 YYYY-MM")
+			return
+		}
+	}
+	if year != "" {
+		if _, err := time.Parse("2006", year); err != nil {
+			utils.Error(c, http.StatusBadRequest, "年份格式错误，请使用 YYYY")
+			return
+		}
+	}
 	stats, err := h.BillService.GetStats(bid, month, year)
 	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("获取统计数据失败")

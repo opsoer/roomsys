@@ -334,15 +334,13 @@ func TestPlatform_Settings(t *testing.T) {
 	require.Equal(t, "not_exist_key", data.Key)
 	require.Empty(t, data.Value)
 
-	// 当前实现下，新建 key 后接口返回成功但读取为空。
+	// 写入后读取应返回写入的值（BUG-012 修复后）
 	upd := app.Client.Do(http.MethodPut, "/api/admin/settings/test_key", f.TokenRoot, map[string]any{"value": "hello"})
 	upd.RequireOK(t)
 	get := app.Client.Do(http.MethodGet, "/api/admin/settings/test_key", f.TokenRoot, nil)
 	get.RequireOK(t)
 	get.Decode(t, &data)
-	require.Empty(t, data.Value)
-
-	// 只断言接口调用成功与当前读取结果，不涉及具体实现方式。
+	require.Equal(t, "hello", data.Value)
 
 	bad := app.Client.DoWithHeaders(http.MethodPut, "/api/admin/settings/test_key", f.TokenRoot, nil, map[string]string{"Content-Type": "application/json"})
 	bad.RequireError(t, http.StatusBadRequest, 400)

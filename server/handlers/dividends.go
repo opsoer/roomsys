@@ -55,6 +55,10 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 	if month == "" {
 		month = utils.Now().AddDate(0, -1, 0).Format("2006-01")
 	}
+	if _, err := time.Parse("2006-01", month); err != nil {
+		utils.Error(c, http.StatusBadRequest, "月份格式错误，请使用 YYYY-MM")
+		return
+	}
 	shareholders, err := h.DividendService.GetShareholders(bid)
 	if err != nil || len(shareholders) == 0 {
 		logger.Log.Warn().Uint("building_id", bid).Msg("分红计算失败: 未配置股东")
@@ -230,6 +234,11 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
+	if req.ShareRatio <= 0 || req.ShareRatio > 100 {
+		logger.Log.Warn().Uint("building_id", bid).Float64("share_ratio", req.ShareRatio).Msg("创建股东失败: 比例超出范围")
+		utils.Error(c, http.StatusBadRequest, "股份比例必须在 0~100 之间")
+		return
+	}
 	sh := models.Shareholder{
 		BuildingID: bid,
 		Name:       req.Name,
@@ -271,6 +280,11 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if req.ShareRatio < 0 || req.ShareRatio > 100 {
+		logger.Log.Warn().Uint("building_id", bid).Float64("share_ratio", req.ShareRatio).Msg("更新股东失败: 比例超出范围")
+		utils.Error(c, http.StatusBadRequest, "股份比例必须在 0~100 之间")
 		return
 	}
 	updates := map[string]interface{}{}

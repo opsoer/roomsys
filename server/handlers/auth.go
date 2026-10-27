@@ -467,7 +467,9 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
-// Logout 处理用户登出，将当前令牌加入吊销列表
+// Logout 处理用户登出，将当前令牌加入吊销列表。
+// 同时吊销该用户当前记录的 refresh token，防止登出后仍可刷新换取新会话；
+// 客户端也可在 body 中显式上送 refresh_token（多端场景吊销指定的一枚）。
 func (h *AuthHandler) Logout(c *gin.Context) {
 	auth := c.GetHeader("Authorization")
 	if auth == "" || len(auth) < 8 || auth[:7] != "Bearer " {
@@ -475,7 +477,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 	tokenStr := auth[7:]
+	// 先解析 claims（此时令牌尚未吊销），用于定位该用户的 refresh token
+	claims, parseErr := utils.ParseToken(tokenStr, h.Cfg.Server.JWTSecret)
 	utils.RevokeToken(tokenStr)
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := c.ShouldBindJSON(&req); err == nil && req.RefreshToken != "" {
+		utils.RevokeToken(req.RefreshToken)
+	}
+	if parseErr == nil && claims.UserID > 0 {
+		utils.RevokeUserRefreshToken(claims.UserID)
+	}
 	logger.Log.Debug().Uint("user_id", c.GetUint("user_id")).Msg("用户登出")
 	audit.Log(c, audit.ActionLogout, audit.ResourceUser, audit.ID(c.GetUint("user_id")), "用户登出")
 	utils.SuccessWithMsg(c, "登出成功", nil)

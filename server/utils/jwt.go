@@ -84,7 +84,8 @@ func GenerateToken(userID uint, username, role, secret string, buildingID uint) 
 	return token.SignedString([]byte(secret))
 }
 
-// GenerateRefreshToken 生成刷新令牌，有效期 720 小时（30 天）
+// GenerateRefreshToken 生成刷新令牌，有效期 720 小时（30 天）。
+// 同时按用户记录最新 refresh token，供登出时吊销（客户端不上送也能吊销）。
 func GenerateRefreshToken(userID uint, username, role, secret string, buildingID uint) (string, error) {
 	claims := Claims{
 		UserID:     userID,
@@ -98,7 +99,30 @@ func GenerateRefreshToken(userID uint, username, role, secret string, buildingID
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	tokenStr, err := token.SignedString([]byte(secret))
+	if err != nil {
+		return "", err
+	}
+	TrackRefreshToken(userID, tokenStr)
+	return tokenStr, nil
+}
+
+// userRefreshTokens 记录每个用户最新签发的 refresh token（键为 user_id）。
+// 单用户只保留最新一枚：再次登录会覆盖；多端登录时登出仅能吊销最新签发的一枚，
+// 其余端的 refresh token 仍依赖其自身有效期——如需严格单会话应引入 jti + 持久化吊销表。
+var userRefreshTokens sync.Map
+
+// TrackRefreshToken 记录用户最新签发的 refresh token
+func TrackRefreshToken(userID uint, tokenStr string) {
+	userRefreshTokens.Store(userID, tokenStr)
+}
+
+// RevokeUserRefreshToken 吊销该用户当前记录的 refresh token（登出时调用）。
+// 若该用户无记录（如重启后内存清空或多端场景），静默返回。
+func RevokeUserRefreshToken(userID uint) {
+	if v, ok := userRefreshTokens.LoadAndDelete(userID); ok {
+		RevokeToken(v.(string))
+	}
 }
 
 // IsRefreshTokenFromClaims 根据 Claims 中的 ID 判断是否为刷新令牌

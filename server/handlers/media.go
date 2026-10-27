@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -960,8 +961,10 @@ func (h *MediaHandler) ConfirmUpload(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	cleanKey := filepath.Clean(req.Key)
-	if cleanKey == "." || strings.HasPrefix(cleanKey, "..") || strings.Contains(cleanKey, ".."+string(os.PathSeparator)) {
+	// 媒体 key 统一使用正斜杠。Windows 下 filepath.Clean 会把 / 规范成 \，
+	// 导致下面 rooms/{id}/ 前缀校验永远失败，故用 path.Clean 处理斜杠形态
+	cleanKey := path.Clean(strings.ReplaceAll(req.Key, "\\", "/"))
+	if cleanKey == "." || cleanKey == ".." || strings.HasPrefix(cleanKey, "../") || strings.Contains(cleanKey, "/../") {
 		utils.Error(c, http.StatusBadRequest, "非法的文件路径")
 		return
 	}

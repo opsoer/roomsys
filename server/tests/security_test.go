@@ -158,9 +158,9 @@ func TestSecurity_Injection(t *testing.T) {
 	pub.Decode(t, &buildings)
 	require.Zero(t, buildings.Total)
 
-	// 错误响应不泄露 SQL
+	// 非法月份显式 400（BUG-010 修复后），且不泄露 SQL
 	bad := app.Client.Do(http.MethodGet, "/api/building/bills/stats?month=2026-13", f.TokenA, nil)
-	bad.RequireStatus(t, http.StatusInternalServerError, 500)
+	bad.RequireStatus(t, http.StatusBadRequest, 400)
 	require.NotContains(t, string(bad.Raw), "SQL")
 	require.NotContains(t, string(bad.Raw), "sqlite")
 	require.NotContains(t, string(bad.Raw), "bills")

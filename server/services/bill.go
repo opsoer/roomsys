@@ -46,6 +46,9 @@ func (s *BillService) List(buildingID uint, params map[string]interface{}, page,
 	if ed, ok := params["end_date"]; ok && ed != "" {
 		query = query.Where("bill_date <= ?", ed)
 	}
+	if rid, ok := params["room_id"]; ok && rid != "" {
+		query = query.Where("room_id = ?", rid)
+	}
 	if rn, ok := params["room_number"]; ok && rn != "" {
 		if rn == "other" {
 			query = query.Where("room_id IS NULL")

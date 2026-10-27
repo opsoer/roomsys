@@ -20,7 +20,9 @@ func NewSettingsService(db *gorm.DB) *SettingsService {
 // Get 根据键获取设置值
 func (s *SettingsService) Get(key string) (*models.Setting, error) {
 	var setting models.Setting
-	err := s.DB.First(&setting, key).Error
+	// 键名是非数字字符串，必须用显式条件；直接 First(&setting, key) 会被
+	// GORM 当作内联条件/主键解析，非数字键必然查询失败
+	err := s.DB.First(&setting, "key = ?", key).Error
 	return &setting, err
 }
 

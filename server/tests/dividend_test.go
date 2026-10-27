@@ -38,11 +38,11 @@ func TestDividend_Shareholders(t *testing.T) {
 	zero := app.Client.Do(http.MethodPost, "/api/building/dividends/shareholders", f.TokenA, map[string]any{"name": "零", "share_ratio": 0})
 	zero.RequireError(t, http.StatusBadRequest, 400)
 
-	// 当前实现允许负数/超过 100 的比例
+	// 负数/超过 100 的比例显式拒绝（BUG-006 修复后）
 	negative := app.Client.Do(http.MethodPost, "/api/building/dividends/shareholders", f.TokenA, map[string]any{"name": "负", "share_ratio": -10})
-	negative.RequireOK(t)
+	negative.RequireError(t, http.StatusBadRequest, 400)
 	over := app.Client.Do(http.MethodPost, "/api/building/dividends/shareholders", f.TokenA, map[string]any{"name": "超", "share_ratio": 150})
-	over.RequireOK(t)
+	over.RequireError(t, http.StatusBadRequest, 400)
 
 	upd := app.Client.Do(http.MethodPut, fmt.Sprintf("/api/building/dividends/shareholders/%d", createdData.Shareholder.ID), f.TokenA, map[string]any{
 		"name": "改名股东", "share_ratio": 20,
@@ -112,9 +112,9 @@ func TestDividend_Calculate(t *testing.T) {
 	require.Empty(t, data.Results)
 	require.Contains(t, empty.Message, "无净利润")
 
-	// 非法月份当前返回 200 + 0
+	// 非法月份显式 400（BUG-007 修复后）
 	invalid := app.Client.Do(http.MethodGet, "/api/building/dividends/calculate?month=2026-13", f.TokenA, nil)
-	invalid.RequireOK(t)
+	invalid.RequireError(t, http.StatusBadRequest, 400)
 }
 
 func TestDividend_CalculateNoShareholders(t *testing.T) {

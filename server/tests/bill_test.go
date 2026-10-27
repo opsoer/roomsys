@@ -99,10 +99,13 @@ func TestBill_ListFilters(t *testing.T) {
 		require.Equal(t, "维修", b.Subtype)
 	}
 
-	// 当前列表实现下 room_id 参数不参与过滤，返回全量账单
-	allBills := get("")
+	// room_id 过滤生效（BUG-009 修复后）
 	byRoom := get(fmt.Sprintf("?room_id=%d", f.Rooms["A102"].ID))
-	require.Equal(t, allBills.Total, byRoom.Total)
+	require.NotEmpty(t, byRoom.Bills)
+	for _, b := range byRoom.Bills {
+		require.NotNil(t, b.RoomID)
+		require.Equal(t, f.Rooms["A102"].ID, *b.RoomID)
+	}
 
 	byNumber := get("?room_number=A102")
 	require.NotEmpty(t, byNumber.Bills)
@@ -261,9 +264,9 @@ func TestBill_Stats(t *testing.T) {
 	require.Zero(t, ed.NetProfit)
 	require.Zero(t, ed.BillCount)
 
-	// 当前实现：非法月份被 service 解析失败，handler 返回 500
+	// 非法月份显式 400（BUG-010 修复后）
 	invalid := app.Client.Do(http.MethodGet, "/api/building/bills/stats?month=2026-13", f.TokenA, nil)
-	invalid.RequireStatus(t, http.StatusInternalServerError, 500)
+	invalid.RequireStatus(t, http.StatusBadRequest, 400)
 }
 
 func TestBill_Trend(t *testing.T) {
