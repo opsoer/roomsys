@@ -217,7 +217,7 @@ func TestAuth_PackageGate(t *testing.T) {
 	t.Run("basic bills 403", func(t *testing.T) {
 		app.Client.Do(http.MethodGet, "/api/building/bills", f.TokenC, nil).
 			RequireError(t, http.StatusForbidden, 403).
-			RequireMessageContains(t, "套餐")
+			RequireMessageContains(t, "开放功能")
 	})
 	t.Run("basic dividends 403", func(t *testing.T) {
 		app.Client.Do(http.MethodGet, "/api/building/dividends", f.TokenC, nil).

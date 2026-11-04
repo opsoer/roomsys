@@ -48,10 +48,10 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="套餐" prop="package" :rules="rulesFor('package')">
+        <el-form-item label="开放功能" prop="package" :rules="rulesFor('package')">
           <el-radio-group v-model="activeForm.package">
-            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
-            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
+            <el-radio value="basic">基础（仅房间管理）</el-radio>
+            <el-radio value="full">全部功能（记账、预测、分红等）</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="!isEdit" label="押金（元）" prop="deposit" :rules="[{ validator: validateDeposit }]">
@@ -88,14 +88,14 @@
       </template>
     </el-dialog>
 
-    <!-- 修改套餐弹窗 -->
-    <el-dialog v-model="showUpgrade" title="修改套餐" width="420px">
-      <p style="margin-bottom: 16px; color: #666;">为「{{ upgradeBuildingName }}」变更套餐</p>
-      <el-form :model="upgradeForm" label-width="80px">
-        <el-form-item label="目标套餐">
+    <!-- 修改开放功能弹窗 -->
+    <el-dialog v-model="showUpgrade" title="修改开放功能" width="420px">
+      <p style="margin-bottom: 16px; color: #666;">为「{{ upgradeBuildingName }}」变更开放功能</p>
+      <el-form ref="upgradeFormRef" :model="upgradeForm" label-width="80px">
+        <el-form-item label="开放功能" prop="package" :rules="[{ required: true, message: '请选择开放功能' }]">
           <el-radio-group v-model="upgradeForm.package">
-            <el-radio value="basic">基础套餐（仅房间管理）</el-radio>
-            <el-radio value="full">全套餐（记账、预测、分红等全部功能）</el-radio>
+            <el-radio value="basic">基础（仅房间管理）</el-radio>
+            <el-radio value="full">全部功能（记账、预测、分红等）</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -267,7 +267,8 @@ const showCreateAdmin = ref(false)
 const showUpgrade = ref(false)
 const upgradeBuildingName = ref('')
 const upgradeBuildingId = ref(0)
-const upgradeForm = ref({ package: 'full' })
+const upgradeForm = ref({ package: '' })
+const upgradeFormRef = ref(null)
 const upgradeSubmitting = ref(false)
 const showRenew = ref(false)
 const renewBuildingName = ref('')
@@ -296,7 +297,7 @@ const adminSubmitting = ref(false)
 const formRef = ref(null)
 
 const createForm = ref({
-  name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
+  name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
   landlord_name: '', landlord_phones: [''],
   admin_username: '', admin_password: '',
 })
@@ -331,7 +332,7 @@ function buildLandlords(name, phones) {
 }
 
 function openCreate() {
-  createForm.value = { name: '', package: 'basic', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
+  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
   isEdit.value = false
   showForm.value = true
   clearFormValidate()
@@ -358,8 +359,10 @@ function openEdit(row) {
 function openUpgrade(row) {
   upgradeBuildingId.value = row.id
   upgradeBuildingName.value = row.name
-  upgradeForm.value = { package: row.package === 'full' ? 'basic' : 'full' }
+  // 不预选，必须手动选择目标开放功能
+  upgradeForm.value = { package: '' }
   showUpgrade.value = true
+  nextTick(() => upgradeFormRef.value?.clearValidate())
 }
 
 function disablePastDate(date) {
@@ -388,7 +391,7 @@ const createRules = {
   street: [{ required: true, message: '请选择街道' }],
   village: [{ required: true, message: '请选择村/小区' }],
   building_no: [{ required: true, message: '请输入楼牌号' }],
-  package: [{ required: true, message: '请选择套餐' }],
+  package: [{ required: true, message: '请选择开放功能' }],
   landlord_name: [{ required: true, message: '请输入房东姓名' }],
   admin_username: [{ required: true, message: '请输入管理员账号' }],
   admin_password: [{ required: true, message: '请输入管理员密码' }],
@@ -567,10 +570,12 @@ async function handleEdit() {
 }
 
 async function handleUpgrade() {
+  const valid = await upgradeFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   upgradeSubmitting.value = true
   try {
     await adminUpgradePackage(upgradeBuildingId.value, { package: upgradeForm.value.package })
-    ElMessage.success('套餐变更成功')
+    ElMessage.success('开放功能变更成功')
     showUpgrade.value = false
     emit('save-success')
   } finally {

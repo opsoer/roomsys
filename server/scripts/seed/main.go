@@ -10,7 +10,7 @@
 // 执行流程（main → seedBuildings → seedRooms）：
 //  1. root/root 登录超级管理员，拿 JWT
 //  2. 循环随机生成 100 个公寓（深圳各区/街道/小区名去重），POST /api/admin/buildings
-//     （全套餐 full，contract_date=当天，到期日由后端按一年自动算出）
+//     （全部功能 full，contract_date=当天，到期日由后端按一年自动算出）
 //  3. GET /api/admin/buildings 拉回全部公寓（不依赖自增 ID 连续）
 //  4. 每个公寓：POST /api/admin/auth/create-building-admin 建管理员（用户名=密码=公寓 id），
 //     再以该管理员身份登录
@@ -29,7 +29,7 @@
 //
 // 默认约定：
 //   - 每个公寓创建 1 个管理账号，用户名与密码均为公寓 id（如公寓 3 → 3 / 3）
-//   - 公寓一律全套餐（full），签约时间（contract_date）为跑脚本当天，到期时间自动为一年后
+//   - 公寓一律开通全部功能（full），签约时间（contract_date）为跑脚本当天，到期时间自动为一年后
 //
 // 前置条件：
 //  1. 后端服务已在 SEED_BASE_URL 运行，且数据库已清空（脚本要求公宓名单恰好为空后再建 100 个）
@@ -256,7 +256,7 @@ func main() {
 	fmt.Println("\n全部完成！楼栋管理员账号：用户名=公寓id，密码同用户名（如公寓 3 → 3 / 3）")
 }
 
-// seedBuildings 创建 100 个公寓（全套餐、含房东信息、签约时间为跑脚本当天、一年后到期）
+// seedBuildings 创建 100 个公寓（全部功能、含房东信息、签约时间为跑脚本当天、一年后到期）
 func seedBuildings(rootToken string) {
 	usedAddr := make(map[string]bool)
 	usedName := make(map[string]bool)

@@ -1,4 +1,4 @@
-// Package handlers 处理公寓楼栋相关接口，包括公寓的增删改查、套餐升级等
+// Package handlers 处理公寓楼栋相关接口，包括公寓的增删改查、开放功能变更等
 package handlers
 
 import (
@@ -26,6 +26,14 @@ type BuildingHandler struct {
 	DB              *gorm.DB
 	Cfg             *config.Config
 	BuildingService *services.BuildingService
+}
+
+// packageLabel 把开放功能存储值翻译成中文展示名（用于审计明细等文案）。
+func packageLabel(pkg string) string {
+	if pkg == "full" {
+		return "全部功能"
+	}
+	return "基础"
 }
 
 // defaultContractDurationYears 合同默认期限为 1 年
@@ -371,7 +379,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
-// UpgradePackage 升级公寓套餐（basic/full）
+// UpgradePackage 变更公寓开放功能（basic=基础 / full=全部功能）
 func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 	id := c.Param("id")
 	buildingID, err := strconv.ParseUint(id, 10, 32)
@@ -387,17 +395,17 @@ func (h *BuildingHandler) UpgradePackage(c *gin.Context) {
 		return
 	}
 	if req.Package != "basic" && req.Package != "full" {
-		utils.Error(c, http.StatusBadRequest, "无效的套餐类型")
+		utils.Error(c, http.StatusBadRequest, "无效的开放功能选项")
 		return
 	}
 	if err := h.BuildingService.UpgradePackage(uint(buildingID), req.Package); err != nil {
-		logger.Log.Error().Err(err).Str("id", id).Msg("升级套餐失败")
-		utils.Error(c, http.StatusInternalServerError, "升级失败")
+		logger.Log.Error().Err(err).Str("id", id).Msg("变更开放功能失败")
+		utils.Error(c, http.StatusInternalServerError, "变更失败")
 		return
 	}
-	logger.Log.Info().Str("id", id).Str("package", req.Package).Msg("套餐升级成功")
-	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, id, "套餐升级为 "+req.Package)
-	utils.SuccessWithMsg(c, "升级成功", nil)
+	logger.Log.Info().Str("id", id).Str("package", req.Package).Msg("开放功能变更成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, id, "开放功能变更为 "+packageLabel(req.Package))
+	utils.SuccessWithMsg(c, "变更成功", nil)
 }
 
 // List 获取公寓列表，支持状态和关键词筛选（管理端，包含不可见公寓）

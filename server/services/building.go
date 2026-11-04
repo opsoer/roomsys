@@ -631,7 +631,7 @@ func (s *BuildingService) Delete(id uint) error {
 	})
 }
 
-// UpgradePackage 升级楼栋套餐
+// UpgradePackage 变更楼栋开放功能
 func (s *BuildingService) UpgradePackage(id uint, packageType string) error {
 	return s.DB.Model(&models.Building{}).Where("id = ?", id).Update("package", packageType).Error
 }

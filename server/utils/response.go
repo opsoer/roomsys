@@ -44,7 +44,7 @@ const (
 	CodeTooManyRequests    = 429  // 请求频率超限
 	CodeInternalError      = 500  // 服务器内部错误
 	CodeMonthSettled       = 1001 // 月份已结算
-	CodeBuildingExpired    = 1002 // 楼宇套餐过期
+	CodeBuildingExpired    = 1002 // 公寓开放功能已到期
 	CodeActiveContract     = 1003 // 存在生效合同
 	CodeInvalidStatus      = 1004 // 状态无效
 	CodeMissingDescription = 1005 // 缺少描述信息

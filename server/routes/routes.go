@@ -146,6 +146,7 @@ func setupPlatformRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		platform.GET("/system/jobs", h.system.ListJobs)
 		platform.POST("/system/jobs/:name/run", h.system.RunJob)
 		platform.GET("/system/audit-logs", h.system.ListAuditLogs)
+		platform.DELETE("/system/audit-logs", h.system.DeleteAuditLogs)
 
 		platform.GET("/recruit/list", h.recruit.List)
 		platform.PUT("/recruit/process/:id", h.recruit.Process)
@@ -208,7 +209,7 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		building.POST("/auth/create-admin", h.auth.CreateRegularAdmin)
 		building.GET("/auth/users", h.auth.ListBuildingUsers)
 
-		// 待办任务（不限制套餐：到期提醒/预订超时等待办由系统对所有公寓生成，基础套餐也需可见可处理）
+		// 待办任务（不限制开放功能：到期提醒/预订超时等待办由系统对所有公寓生成，基础功能也需可见可处理）
 		building.GET("/tasks", h.task.List)
 		building.POST("/tasks/:id/process", h.task.Process)
 		building.PUT("/tasks/:id/complete", h.task.Complete)
@@ -218,7 +219,7 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		building.GET("/stats/pv", h.stats.MyBuildingStats)
 		building.GET("/stats/trend", h.stats.MyBuildingTrend)
 
-		// 财务管理（全套餐）
+		// 财务管理（需开通全部功能）
 		fullPkg := building.Group("")
 		fullPkg.Use(middleware.FullPackageMiddleware(db))
 		{

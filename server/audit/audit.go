@@ -62,6 +62,8 @@ const (
 	ResourceLocation    = "location"
 	ResourceTime        = "time"
 	ResourceJob         = "job"
+	// ResourceAudit 审计记录自身（如批量清理审计日志）。
+	ResourceAudit = "audit"
 )
 
 var (
@@ -144,11 +146,11 @@ func write(actorID uint, actorName, role, action, resource, resourceID, detail, 
 	}
 	ev.Msg("操作审计")
 
-	persist(actorID, actorName, action, resource, resourceID, detail, ip, buildingID)
+	persist(actorID, actorName, role, action, resource, resourceID, detail, ip, buildingID)
 }
 
 // persist 把审计记录写入 audit_logs 表（尽力而为）。
-func persist(actorID uint, actorName, action, resource, resourceID, detail, ip string, buildingID *uint) {
+func persist(actorID uint, actorName, role, action, resource, resourceID, detail, ip string, buildingID *uint) {
 	d := dbHandle()
 	if d == nil {
 		return
@@ -156,6 +158,7 @@ func persist(actorID uint, actorName, action, resource, resourceID, detail, ip s
 	rec := &models.AuditLog{
 		UserID:     actorID,
 		Username:   actorName,
+		Role:       role,
 		Action:     action,
 		Resource:   resource,
 		ResourceID: resourceID,

@@ -25,7 +25,7 @@
           <view class="card-top">
             <text class="card-name">{{ b.name }}</text>
             <text v-if="b.status === 'hidden'" class="hidden-tag">不可见</text>
-            <text :class="['pkg-tag', b.package === 'full' ? 'pkg-full' : 'pkg-basic']">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</text>
+            <text :class="['pkg-tag', b.package === 'full' ? 'pkg-full' : 'pkg-basic']">{{ b.package === 'full' ? '全部功能' : '基础' }}</text>
           </view>
           <view class="card-info">
             <text>📍 {{ b.district }} {{ b.street }} {{ b.village }} {{ b.building_no }}</text>
@@ -36,7 +36,7 @@
           </view>
           <view class="card-actions">
             <button class="act-btn" @click="handleEdit(b)">编辑</button>
-            <button class="act-btn" @click="handleUpgrade(b)">套餐</button>
+            <button class="act-btn" @click="handleUpgrade(b)">开放功能</button>
             <button class="act-btn" @click="handleCreateAdmin(b)">创建管理员</button>
             <button class="act-btn warn" @click="handleToggleVisibility(b)">{{ b.status === 'hidden' ? '恢复可见' : '设为不可见' }}</button>
             <button class="act-btn danger" @click="handleDelete(b.id)">删除</button>
@@ -192,12 +192,12 @@ async function handleSave() {
 
 function handleUpgrade(row) {
   uni.showActionSheet({
-    itemList: ['升级为全套餐', '降级为基础套餐'],
+    itemList: ['开通全部功能', '切换为基础功能'],
     success: async (res) => {
       try {
         const { adminUpgradePackage } = await import('../../api')
         await adminUpgradePackage(row.id, { package: res.tapIndex === 0 ? 'full' : 'basic' })
-        uni.showToast({ title: '套餐变更成功', icon: 'success' })
+        uni.showToast({ title: '开放功能变更成功', icon: 'success' })
         await fetchBuildings()
       } catch {
         uni.showToast({ title: '操作失败', icon: 'none' })

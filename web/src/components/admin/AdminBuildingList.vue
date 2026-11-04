@@ -47,7 +47,7 @@
               <el-tag v-if="b.status === 'hidden'" size="small" type="warning">不可见</el-tag>
               <el-tag v-if="b.status === 'active'" size="small" type="success">正常</el-tag>
               <el-tag v-else-if="b.status && b.status !== 'hidden'" size="small" type="danger">已到期</el-tag>
-              <el-tag :type="b.package === 'full' ? 'primary' : 'info'" size="small" effect="plain">{{ b.package === 'full' ? '全套餐' : '基础套餐' }}</el-tag>
+              <el-tag :type="b.package === 'full' ? 'primary' : 'info'" size="small" effect="plain">{{ b.package === 'full' ? '全部功能' : '基础' }}</el-tag>
             </div>
             <div style="font-size: 13px; color: #555; line-height: 1.8;">
               <div v-if="b.district">
@@ -78,7 +78,7 @@
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;">
             <el-button size="small" @click="$emit('edit', b)">编辑</el-button>
-            <el-button size="small" @click="$emit('upgrade', b)">修改套餐</el-button>
+            <el-button size="small" @click="$emit('upgrade', b)">修改开放功能</el-button>
             <el-button size="small" :type="b.status === 'hidden' || b.status === 'expired' ? 'primary' : 'default'" @click="$emit('renew', b)">续约</el-button>
             <el-button size="small" @click="$emit('history', b)">租约记录</el-button>
             <el-button size="small" type="warning" plain @click="$emit('deposit', b)">修改押金</el-button>

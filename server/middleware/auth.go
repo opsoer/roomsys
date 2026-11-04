@@ -117,7 +117,7 @@ func SuperAdminMiddleware() gin.HandlerFunc {
 	}
 }
 
-// FullPackageMiddleware 全套餐权限中间件，检查楼宇是否购买了全功能套餐
+// FullPackageMiddleware 全部功能权限中间件，检查公寓是否开通了全部功能
 func FullPackageMiddleware(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		buildingID, _ := c.Get("building_id")
@@ -136,8 +136,8 @@ func FullPackageMiddleware(db *gorm.DB) gin.HandlerFunc {
 				Uint("building_id", bid).
 				Str("package", building.Package).
 				Str("path", c.Request.URL.Path).
-				Msg("套餐不支持此功能")
-			utils.Error(c, http.StatusForbidden, "当前套餐不支持此功能，请升级为全套餐")
+				Msg("开放功能不支持此操作")
+			utils.Error(c, http.StatusForbidden, "当前开放功能为基础，此操作需开通全部功能后使用")
 			c.Abort()
 			return
 		}

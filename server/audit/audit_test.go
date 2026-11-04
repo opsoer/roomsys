@@ -51,6 +51,9 @@ func TestLogPersistsAuditRecord(t *testing.T) {
 	if rec.UserID != 7 || rec.Username != "root" {
 		t.Fatalf("操作人不符: %+v", rec)
 	}
+	if rec.Role != "super_admin" {
+		t.Fatalf("角色不符: %+v", rec)
+	}
 	if rec.BuildingID == nil || *rec.BuildingID != 3 {
 		t.Fatalf("公寓 id 不符: %+v", rec.BuildingID)
 	}

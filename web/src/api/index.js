@@ -204,6 +204,11 @@ export function adminListAuditLogs(params) {
   return api.get('/admin/system/audit-logs', { params })
 }
 
+// 批量清理审计记录：必须带 before_time，可叠加 resource/action/role/username 收窄范围
+export function adminDeleteAuditLogs(params) {
+  return api.delete('/admin/system/audit-logs', { params })
+}
+
 export function adminUpdateUser(id, data) {
   return api.put(`/admin/auth/users/${id}`, data)
 }

@@ -232,6 +232,55 @@ func TestPlatform_AuditLogs(t *testing.T) {
 		RequireError(t, http.StatusForbidden, 403)
 }
 
+func TestPlatform_AuditLogsCleanup(t *testing.T) {
+	app, f := testkit.NewAppWithFixture(t)
+
+	// 产生几条可清理的日志
+	createBill(t, app, f.TokenA, "income", "租金", 100, f.Today, "清理测试1", nil)
+	createBill(t, app, f.TokenA, "income", "租金", 200, f.Today, "清理测试2", nil)
+
+	// 必须带有效的 before_time
+	app.Client.Do(http.MethodDelete, "/api/admin/system/audit-logs", f.TokenRoot, nil).
+		RequireError(t, http.StatusBadRequest, 400)
+	app.Client.Do(http.MethodDelete, "/api/admin/system/audit-logs?before_time=不是时间", f.TokenRoot, nil).
+		RequireError(t, http.StatusBadRequest, 400)
+
+	// 非超级管理员不可清理
+	app.Client.Do(http.MethodDelete, "/api/admin/system/audit-logs?before_time=2030-01-01+00%3A00%3A00", f.TokenA, nil).
+		RequireError(t, http.StatusForbidden, 403)
+
+	// 按资源收窄：只删 bill 资源的记录
+	del := app.Client.Do(http.MethodDelete,
+		"/api/admin/system/audit-logs?before_time=2030-01-01+00%3A00%3A00&resource=bill", f.TokenRoot, nil)
+	del.RequireOK(t)
+	var delData struct {
+		Deleted int64 `json:"deleted"`
+	}
+	del.Decode(t, &delData)
+	require.GreaterOrEqual(t, delData.Deleted, int64(2))
+
+	// 清理后 bill 资源记录应为 0
+	r := app.Client.Do(http.MethodGet, "/api/admin/system/audit-logs?resource=bill", f.TokenRoot, nil)
+	r.RequireOK(t)
+	var data struct {
+		Total int64 `json:"total"`
+	}
+	r.Decode(t, &data)
+	require.Equal(t, int64(0), data.Total)
+
+	// 清理操作本身留痕（resource=audit）
+	auditLog := app.Client.Do(http.MethodGet, "/api/admin/system/audit-logs?resource=audit", f.TokenRoot, nil)
+	auditLog.RequireOK(t)
+	auditLog.Decode(t, &data)
+	require.GreaterOrEqual(t, data.Total, int64(1))
+
+	// before_time 早于所有记录时删除 0 条也成功
+	none := app.Client.Do(http.MethodDelete, "/api/admin/system/audit-logs?before_time=2000-01-01+00%3A00%3A00", f.TokenRoot, nil)
+	none.RequireOK(t)
+	none.Decode(t, &delData)
+	require.Equal(t, int64(0), delData.Deleted)
+}
+
 func TestPlatform_Locations(t *testing.T) {
 	app, f := testkit.NewAppWithFixture(t)
 

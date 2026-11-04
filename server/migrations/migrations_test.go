@@ -30,15 +30,16 @@ func TestApplyOnEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
-	if len(executed) != 1 || executed[0] != 1 {
-		t.Fatalf("应执行 1 个版本，实际 %v", executed)
+	if len(executed) != 2 || executed[0] != 1 || executed[1] != 2 {
+		t.Fatalf("应执行 2 个版本，实际 %v", executed)
 	}
 
 	var records []models.SchemaMigration
-	if err := db.Find(&records).Error; err != nil {
+	if err := db.Order("version").Find(&records).Error; err != nil {
 		t.Fatalf("读取台账失败: %v", err)
 	}
-	if len(records) != 1 || records[0].Version != 1 || records[0].Name != "init_schema" {
+	if len(records) != 2 || records[0].Version != 1 || records[0].Name != "init_schema" ||
+		records[1].Version != 2 || records[1].Name != "audit_log_role" {
 		t.Fatalf("台账记录不符: %+v", records)
 	}
 }
@@ -59,8 +60,8 @@ func TestApplyIsIdempotent(t *testing.T) {
 	}
 	var count int64
 	db.Model(&models.SchemaMigration{}).Count(&count)
-	if count != 1 {
-		t.Fatalf("台账应只有 1 条记录，实际 %d 条", count)
+	if count != 2 {
+		t.Fatalf("台账应有 2 条记录，实际 %d 条", count)
 	}
 }
 
@@ -72,7 +73,7 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("查询状态失败: %v", err)
 	}
-	if len(applied) != 0 || len(pending) != 1 {
+	if len(applied) != 0 || len(pending) != 2 {
 		t.Fatalf("初始状态不符: applied=%v pending=%d", applied, len(pending))
 	}
 
@@ -83,7 +84,7 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("查询状态失败: %v", err)
 	}
-	if len(applied) != 1 || len(pending) != 0 {
+	if len(applied) != 2 || len(pending) != 0 {
 		t.Fatalf("迁移后状态不符: applied=%v pending=%d", applied, len(pending))
 	}
 }

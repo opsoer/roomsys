@@ -25,7 +25,7 @@ type User struct {
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// Building 表示公寓楼栋，包含基本信息、套餐、地址等。
+// Building 表示公寓楼栋，包含基本信息、开放功能、地址等。
 type Building struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Name         string         `gorm:"size:100;not null" json:"name"`
@@ -230,6 +230,7 @@ type AuditLog struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	UserID     uint      `gorm:"index;not null" json:"user_id"`
 	Username   string    `gorm:"size:50" json:"username"`
+	Role       string    `gorm:"size:20" json:"role"`
 	BuildingID *uint     `gorm:"index" json:"building_id"`
 	Action     string    `gorm:"size:50;not null" json:"action"`
 	Resource   string    `gorm:"size:50" json:"resource"`
