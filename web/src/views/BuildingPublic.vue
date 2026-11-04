@@ -1,7 +1,8 @@
 <template>
   <div class="page-building">
     <template v-if="loadError && !building">
-      <van-nav-bar title="加载失败" left-arrow @click-left="$router.push('/')" />
+      <van-nav-bar v-if="showHomeEntry" title="加载失败" left-arrow @click-left="$router.push('/')" />
+      <van-nav-bar v-else title="加载失败" />
       <div style="text-align:center;padding:80px 20px;">
         <van-icon name="warning-o" size="48" color="#999" />
         <p style="color:#999;margin:16px 0;">数据加载失败，请检查网络后重试</p>
@@ -11,7 +12,7 @@
     <template v-else-if="building">
     <van-nav-bar
       :title="building.name"
-      left-arrow
+      :left-arrow="showHomeEntry"
       @click-left="$router.push('/')"
     >
       <template #right>
@@ -49,7 +50,7 @@
           <span class="stat-lbl">将到期</span>
         </div>
       </div>
-      <button class="hero-home-btn" @click="$router.push('/')">
+      <button v-if="showHomeEntry" class="hero-home-btn" @click="$router.push('/')">
         <van-icon name="home-o" size="14" />
         查看全部公寓
         <van-icon name="arrow" size="12" />
@@ -173,6 +174,7 @@ import { mediaUrl, statusLabel, statusTagType, maskPhone, copyText } from '../ut
 import { buildingHomeUrl, generateBrandedQrDataUrl, downloadQrImage, buildingInfoLines } from '../utils/qr'
 import { buildingKey, roomKey, parseIdKey } from '../utils/buildingKey'
 import { useAuthStore } from '../stores/auth'
+import { useSiteStore } from '../stores/site'
 import { useInfiniteList } from '../composables/useInfiniteList'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 import CaptchaDialog from '../components/common/CaptchaDialog.vue'
@@ -181,6 +183,9 @@ import { revealedLandlords, revealLandlords } from '../utils/reveal'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const siteStore = useSiteStore()
+// 私享模式下普通访客不展示返回首页/查看全部公寓等平台入口（超管不受限）
+const showHomeEntry = computed(() => !siteStore.isPrivate || authStore.isSuperAdmin)
 // URL 形如 /building/ygxy_1，取下划线后的数字 id 调接口；缩写仅装饰
 const id = computed(() => parseIdKey(route.params.id))
 const building = ref(null)

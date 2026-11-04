@@ -16,6 +16,17 @@ const (
 	DriverSQLite = "sqlite"
 )
 
+// 部署模式选项，server.mode 配置二选一（启动时确定，切换需重启）。
+const (
+	// ModePlatform 平台模式（默认）：公寓列表首页对所有人开放，各公寓前端互链，
+	// 面向多房东招商入驻，即现状行为。
+	ModePlatform = "platform"
+	// ModePrivate 私享模式：给个别房东/朋友试用或独立部署。公寓列表首页与公开
+	// 列表类接口仅超级管理员可见，普通访客只能通过公寓链接/二维码直达单个公寓页，
+	// 公寓之间前端不互链，申请入驻关闭；超级管理员始终看到平台视图。
+	ModePrivate = "private"
+)
+
 // Config 存储所有应用程序配置项，按 server / database / storage / scheduler 四组划分。
 type Config struct {
 	// Server 服务自身配置：监听端口、鉴权密钥、目录与日志等。
@@ -34,6 +45,8 @@ type ServerConfig struct {
 	Port string `yaml:"port"`
 	// JWTSecret JWT 签名密钥（必填）：生成/校验登录令牌，更换后所有登录态失效。
 	JWTSecret string `yaml:"jwt_secret"`
+	// Mode 部署模式（platform=平台模式，private=私享模式），语义见 Mode* 常量说明。
+	Mode string `yaml:"mode"`
 	// UploadDir 上传文件本地存储目录。
 	UploadDir string `yaml:"upload_dir"`
 	// LogLevel 日志级别：debug / info / warn / error。
@@ -150,6 +163,7 @@ func defaults() *Config {
 		Server: ServerConfig{
 			Port:             "8080",
 			JWTSecret:        "",
+			Mode:             ModePlatform,
 			UploadDir:        "./storage/media",
 			LogLevel:         "info",
 			LogDir:           "./logs",
@@ -234,6 +248,13 @@ func normalize(cfg *Config) {
 	}
 	if cfg.Server.RevealFreePerDay < 0 {
 		cfg.Server.RevealFreePerDay = 5
+	}
+	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
+	if cfg.Server.Mode == "" {
+		cfg.Server.Mode = ModePlatform
+	}
+	if cfg.Server.Mode != ModePlatform && cfg.Server.Mode != ModePrivate {
+		panic(fmt.Sprintf("不支持的 server.mode: %q（可选 platform=平台模式 / private=私享模式）", cfg.Server.Mode))
 	}
 	normalizeJob("rent_bills", &cfg.Scheduler.RentBills, "03:00", 0)
 	normalizeJob("building_expiry", &cfg.Scheduler.BuildingExpiry, "03:00", 0)
@@ -325,6 +346,9 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		cfg.Server.JWTSecret = v
+	}
+	if v := os.Getenv("APP_MODE"); v != "" {
+		cfg.Server.Mode = v
 	}
 	if v := os.Getenv("SERVER_PORT"); v != "" {
 		cfg.Server.Port = v

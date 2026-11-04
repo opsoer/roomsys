@@ -209,6 +209,11 @@ export function adminDeleteAuditLogs(params) {
   return api.delete('/admin/system/audit-logs', { params })
 }
 
+// 站点公开配置：部署模式（platform=平台 / private=私享）与 CDN 信息
+export function getSiteConfig() {
+  return api.get('/config')
+}
+
 export function adminUpdateUser(id, data) {
   return api.put(`/admin/auth/users/${id}`, data)
 }

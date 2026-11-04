@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"rental-server/config"
 	"rental-server/models"
 	"rental-server/utils"
 )
@@ -264,8 +265,13 @@ func roomID(f *Fixture, key string) *uint {
 
 // NewAppWithFixture 一步创建 app 与基线 fixture。
 func NewAppWithFixture(t *testing.T) (*App, *Fixture) {
+	return NewAppWithFixtureOptions(t, nil)
+}
+
+// NewAppWithFixtureOptions 同 NewAppWithFixture，但允许在路由注册前修改配置（如私享模式）。
+func NewAppWithFixtureOptions(t *testing.T, mutate func(cfg *config.Config)) (*App, *Fixture) {
 	t.Helper()
-	app := NewApp(t)
+	app := NewAppWithOptions(t, mutate)
 	return app, app.SeedBase(t)
 }
 

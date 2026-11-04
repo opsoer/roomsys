@@ -7,6 +7,7 @@ import (
 	"rental-server/config"
 	"rental-server/handlers"
 	"rental-server/middleware"
+	"rental-server/models"
 	"rental-server/scheduler"
 	"rental-server/services"
 
@@ -63,7 +64,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, jobs *scheduler.Regis
 		dividend:     &handlers.DividendHandler{DB: db, DividendService: dividendSvc},
 	}
 
-	setupPublicRoutes(r, cfg, h)
+	setupPublicRoutes(r, db, cfg, h)
 	setupPlatformRoutes(r, db, cfg, h)
 	setupBuildingRoutes(r, db, cfg, h)
 }
@@ -80,16 +81,19 @@ func setupStatic(r *gin.Engine, cfg *config.Config) {
 }
 
 // setupPublicRoutes 注册公开接口（无需登录）。
-func setupPublicRoutes(r *gin.Engine, cfg *config.Config, h *routeHandlers) {
+// 私享模式（private）下，平台级接口（公寓列表/位置聚合/申请入驻）由
+// PrivateGuard 保护为仅超级管理员可用；其余接口保持公开，访客可直达单个公寓页。
+func setupPublicRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *routeHandlers) {
+	guard := middleware.PrivateGuard(cfg.Server.Mode, cfg.Server.JWTSecret)
 	public := r.Group("/api")
 	{
 		public.POST("/auth/login", h.auth.Login)
 		public.POST("/auth/refresh", h.auth.RefreshToken)
 		public.POST("/auth/logout", h.auth.Logout)
 
-		public.GET("/buildings", h.building.ListPublic)
-		public.GET("/buildings/locations", h.building.ListLocations)
-		public.GET("/locations/options", h.location.ListOptions)
+		public.GET("/buildings", guard, h.building.ListPublic)
+		public.GET("/buildings/locations", guard, h.building.ListLocations)
+		public.GET("/locations/options", guard, h.location.ListOptions)
 		public.GET("/buildings/:id", h.building.GetPublic)
 		public.GET("/buildings/:id/rooms", h.building.GetRooms)
 
@@ -97,7 +101,7 @@ func setupPublicRoutes(r *gin.Engine, cfg *config.Config, h *routeHandlers) {
 		public.GET("/captcha", handlers.GetCaptcha)
 		public.POST("/buildings/:id/reveal-phone", h.building.RevealPhone)
 
-		public.POST("/recruit/submit", h.recruit.Submit)
+		public.POST("/recruit/submit", guard, h.recruit.Submit)
 
 		public.GET("/media/*filepath", h.media.Serve)
 		public.POST("/qiniu/pfop-callback", h.media.PfopCallback)
@@ -113,7 +117,18 @@ func setupPublicRoutes(r *gin.Engine, cfg *config.Config, h *routeHandlers) {
 			if cfg.Storage.Qiniu.Domain != "" {
 				domain = cfg.Storage.Qiniu.Domain
 			}
-			c.JSON(200, gin.H{"cdn_domain": domain, "cdn_scheme": scheme})
+			resp := gin.H{"cdn_domain": domain, "cdn_scheme": scheme, "mode": cfg.Server.Mode}
+			// 私享模式下，若可见公寓恰好只有 1 个，下发它作为默认直达目标（前端据此把 / 重定向到公寓页）
+			if cfg.Server.Mode == config.ModePrivate {
+				var total int64
+				if err := db.Model(&models.Building{}).Where("status = ?", "active").Count(&total).Error; err == nil && total == 1 {
+					var b models.Building
+					if err := db.Where("status = ?", "active").First(&b).Error; err == nil {
+						resp["default_building"] = gin.H{"id": b.ID, "name": b.Name}
+					}
+				}
+			}
+			c.JSON(200, resp)
 		})
 	}
 }

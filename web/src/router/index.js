@@ -1,11 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useSiteStore } from '../stores/site'
+import { buildingKey } from '../utils/buildingKey'
 
 const routes = [
   {
     path: '/',
     name: 'Home',
     component: () => import('../views/BuildingList.vue'),
+  },
+  {
+    // 私享模式提示页：无默认公寓可直达时告知访客通过链接访问
+    path: '/private',
+    name: 'PrivateHome',
+    component: () => import('../views/PrivateHome.vue'),
   },
   {
     path: '/building/:id',
@@ -99,13 +107,28 @@ const router = createRouter({
 })
 
 // 路由守卫规则：
+// - 私享模式（private）下，/（公寓列表首页）与 /apply（申请入驻）仅超级管理员可见；
+//   普通访客访问 / 时若有唯一可见公寓则直接跳入，否则去 /private 提示页；
 // - /landlord 允许 building_admin、历史遗留的 admin 与 super_admin（超管可进房东端）；
 // - /admin（平台端）仅 super_admin；
 // - 已登录访问 /login 时按角色回跳各自工作台；未登录或角色不符一律回登录页。
-router.beforeEach((to, _, next) => {
+router.beforeEach(async (to, _, next) => {
   const authStore = useAuthStore()
+  const siteStore = useSiteStore()
   const token = authStore.token
   const role = authStore.role
+
+  // 站点模式只需首跳真正请求一次，后续导航走缓存
+  await siteStore.load()
+  const privateLocked = siteStore.isPrivate && role !== 'super_admin'
+  if (privateLocked && (to.path === '/' || to.path === '/apply')) {
+    if (to.path === '/' && siteStore.defaultBuilding?.id) {
+      next(`/building/${buildingKey(siteStore.defaultBuilding.id, siteStore.defaultBuilding.name)}`)
+      return
+    }
+    next('/private')
+    return
+  }
 
   if (to.name === 'Login' && token) {
     next(role === 'super_admin' ? '/admin/buildings' : '/landlord/rooms')

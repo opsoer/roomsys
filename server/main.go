@@ -169,7 +169,11 @@ func main() {
 		startPprof(pprofAddr)
 	}
 
-	logger.Log.Info().Str("port", cfg.Server.Port).Str("version", Version).Msg("服务启动")
+	logger.Log.Info().
+		Str("port", cfg.Server.Port).
+		Str("version", Version).
+		Str("mode", cfg.Server.Mode).
+		Msg("服务启动")
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,

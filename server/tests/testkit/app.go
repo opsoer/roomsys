@@ -64,6 +64,12 @@ func HashFor(password string) string {
 
 // NewApp 建立独立测试应用。调用方无需关闭，t.Cleanup 会处理。
 func NewApp(t *testing.T) *App {
+	return NewAppWithOptions(t, nil)
+}
+
+// NewAppWithOptions 建立测试应用并允许用例在路由注册前修改配置，
+// 例如设置 cfg.Server.Mode = config.ModePrivate 来验证私享模式的接口行为。
+func NewAppWithOptions(t *testing.T, mutate func(cfg *config.Config)) *App {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -74,6 +80,9 @@ func NewApp(t *testing.T) *App {
 
 	dir := t.TempDir()
 	cfg := testConfig(dir)
+	if mutate != nil {
+		mutate(cfg)
+	}
 	db, err := database.Open(cfg)
 	require.NoError(t, err, "打开测试数据库失败")
 	_, err = migrations.Apply(db)
@@ -131,6 +140,7 @@ func testConfig(dir string) *config.Config {
 		Server: config.ServerConfig{
 			Port:             "0",
 			JWTSecret:        "roomsys-test-secret",
+			Mode:             config.ModePlatform,
 			UploadDir:        filepath.Join(dir, "media"),
 			LogLevel:         "error",
 			LogDir:           filepath.Join(dir, "logs"),

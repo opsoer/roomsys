@@ -7,7 +7,7 @@
     >
 <template #right>
         <div class="nav-right">
-          <span class="nav-home" @click="$router.push('/')">首页</span>
+          <span v-if="showHomeEntry" class="nav-home" @click="$router.push('/')">首页</span>
           <span class="nav-share" @click="openQrShare">分享</span>
           <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
         </div>
@@ -182,6 +182,7 @@ import { mediaUrl, statusLabel, statusTagType, copyText } from '../utils/format'
 import { roomHomeUrl, generateRoomQrDataUrl, downloadQrImage } from '../utils/qr'
 import { buildingKey, parseIdKey } from '../utils/buildingKey'
 import { useAuthStore } from '../stores/auth'
+import { useSiteStore } from '../stores/site'
 import QrSharePopup from '../components/common/QrSharePopup.vue'
 import CaptchaDialog from '../components/common/CaptchaDialog.vue'
 import { revealedLandlords, revealLandlords } from '../utils/reveal'
@@ -189,6 +190,9 @@ import { revealedLandlords, revealLandlords } from '../utils/reveal'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const siteStore = useSiteStore()
+// 私享模式下普通访客不展示「首页」等跨公寓入口（超管不受限）
+const showHomeEntry = computed(() => !siteStore.isPrivate || authStore.isSuperAdmin)
 // URL 形如 /building/ygxy_1/room/205_8，取下划线后的数字 id 调接口；缩写仅装饰
 const buildingId = computed(() => parseIdKey(route.params.bid))
 const roomId = computed(() => parseIdKey(route.params.id))

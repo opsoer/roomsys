@@ -72,7 +72,6 @@ export function maskPhone(phone) {
 
 // 房间状态文案。expiring/expired 并非录入状态，而是后端 DynamicRoomStatus
 // 按合同到期日动态计算：expiring=rented 且 30 天内到期（含今天），expired=到期日已过。
-// 与 web-wx 端 utils/format.js 的同名函数保持一致口径（勿改其一漏其二）。
 export function statusLabel(status) {
   const labels = {
     vacant: '未出租',
