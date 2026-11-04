@@ -58,6 +58,17 @@ type ServerConfig struct {
 	// RevealFreePerDay 每个IP每日可直接查看房东完整电话的次数（自然日重置）。
 	// 超过该次数后，每次查看都要求通过图片验证码；0 表示每次查看都要验证码。
 	RevealFreePerDay int `yaml:"reveal_free_per_day"`
+	// RateLimitPerMin 全局 API 限流：单个 IP 每分钟最大请求数（/assets/ 与 /api/media/ 不计）。
+	RateLimitPerMin int `yaml:"rate_limit_per_min"`
+	// LoginRateLimitPerMin 登录限流：单个 IP 每分钟最大登录失败次数（成功不计）。
+	LoginRateLimitPerMin int `yaml:"login_rate_limit_per_min"`
+	// CORSOrigins 允许跨域的请求来源列表；为空时使用内置的本机开发端口默认值。
+	CORSOrigins []string `yaml:"cors_origins"`
+	// PprofAddr 性能分析服务监听地址（如 "127.0.0.1:6060"）；留空关闭。
+	// 无鉴权，仅允许绑定回环地址；确需外部绑定需同时开启 PprofAllowRemote 并自担风险。
+	PprofAddr string `yaml:"pprof_addr"`
+	// PprofAllowRemote 是否允许 pprof 绑定非回环地址（默认禁止，无鉴权接口不应暴露公网）。
+	PprofAllowRemote bool `yaml:"pprof_allow_remote"`
 }
 
 // DatabaseConfig 数据库配置组。
@@ -161,14 +172,24 @@ type QiniuConfig struct {
 func defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:             "8080",
-			JWTSecret:        "",
-			Mode:             ModePlatform,
-			UploadDir:        "./storage/media",
-			LogLevel:         "info",
-			LogDir:           "./logs",
-			WebDistDir:       "../web/dist",
-			RevealFreePerDay: 5,
+			Port:                 "8080",
+			JWTSecret:            "",
+			Mode:                 ModePlatform,
+			UploadDir:            "./storage/media",
+			LogLevel:             "info",
+			LogDir:               "./logs",
+			WebDistDir:           "../web/dist",
+			RevealFreePerDay:     5,
+			RateLimitPerMin:      240,
+			LoginRateLimitPerMin: 10,
+			CORSOrigins: []string{
+				"http://localhost:5173",
+				"http://localhost:3000",
+				"http://localhost:8080",
+				"http://127.0.0.1:5173",
+				"http://127.0.0.1:3000",
+				"http://127.0.0.1:8080",
+			},
 		},
 		Database: DatabaseConfig{
 			Driver: DriverSQLite,
@@ -248,6 +269,12 @@ func normalize(cfg *Config) {
 	}
 	if cfg.Server.RevealFreePerDay < 0 {
 		cfg.Server.RevealFreePerDay = 5
+	}
+	if cfg.Server.RateLimitPerMin <= 0 {
+		cfg.Server.RateLimitPerMin = 240
+	}
+	if cfg.Server.LoginRateLimitPerMin <= 0 {
+		cfg.Server.LoginRateLimitPerMin = 10
 	}
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
@@ -349,6 +376,29 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("APP_MODE"); v != "" {
 		cfg.Server.Mode = v
+	}
+	if v := os.Getenv("RATE_LIMIT_PER_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Server.RateLimitPerMin = n
+		}
+	}
+	if v := os.Getenv("LOGIN_RATE_LIMIT_PER_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Server.LoginRateLimitPerMin = n
+		}
+	}
+	if v := os.Getenv("CORS_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				cfg.Server.CORSOrigins = append(cfg.Server.CORSOrigins, o)
+			}
+		}
+	}
+	if v := os.Getenv("PPROF_ADDR"); v != "" {
+		cfg.Server.PprofAddr = v
+	}
+	if v := os.Getenv("PPROF_ALLOW_REMOTE"); v != "" {
+		cfg.Server.PprofAllowRemote = v == "true"
 	}
 	if v := os.Getenv("SERVER_PORT"); v != "" {
 		cfg.Server.Port = v

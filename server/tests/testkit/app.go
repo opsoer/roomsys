@@ -100,7 +100,7 @@ func NewAppWithOptions(t *testing.T, mutate func(cfg *config.Config)) *App {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	require.NoError(t, engine.SetTrustedProxies([]string{"0.0.0.0/0", "::/0"}))
-	engine.Use(middleware.RateLimitMiddleware())
+	engine.Use(middleware.RateLimitMiddleware(cfg.Server.RateLimitPerMin))
 
 	jobs := newJobs(db, cfg)
 	routes.Setup(engine, db, cfg, jobs)

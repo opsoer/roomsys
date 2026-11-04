@@ -3,7 +3,6 @@ package handlers
 
 import (
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,15 +26,10 @@ var rateLimitMu sync.Mutex
 // rateLimitData 存储按 IP 统计的登录尝试数据
 var rateLimitData = make(map[string]*rateLimitEntry)
 
-// maxLoginAttempts 单个 IP 在时间窗口内允许的最大登录尝试次数（可用环境变量 LOGIN_RATE_LIMIT_PER_MIN 覆盖）
-var maxLoginAttempts = func() int {
-	if v := os.Getenv("LOGIN_RATE_LIMIT_PER_MIN"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return 10
-}()
+// defaultLoginAttempts 单个 IP 在时间窗口内允许的最大登录尝试次数默认值
+// （可在 config.yaml 的 server.login_rate_limit_per_min 配置，
+// 历史环境变量 LOGIN_RATE_LIMIT_PER_MIN 在 config 层仍兼容）。
+const defaultLoginAttempts = 10
 
 // rateLimitWindow 登录频率统计的时间窗口（1 分钟）
 const rateLimitWindow = 1 * time.Minute
@@ -64,13 +58,16 @@ func cleanupLoginAttempts() {
 	}
 }
 
-// isLoginRateLimited 检查指定 IP 的登录失败次数是否已超限
-func isLoginRateLimited(ip string) bool {
+// isLoginRateLimited 检查指定 IP 的登录失败次数是否已超限；limitPerMin <= 0 时用默认值
+func isLoginRateLimited(ip string, limitPerMin int) bool {
+	if limitPerMin <= 0 {
+		limitPerMin = defaultLoginAttempts
+	}
 	rateLimitMu.Lock()
 	defer rateLimitMu.Unlock()
 	now := time.Now()
 	if entry, ok := rateLimitData[ip]; ok {
-		if now.Sub(entry.windowStart) < rateLimitWindow && entry.count >= maxLoginAttempts {
+		if now.Sub(entry.windowStart) < rateLimitWindow && entry.count >= limitPerMin {
 			return true
 		}
 	}
@@ -113,7 +110,7 @@ type LoginReq struct {
 // Login 处理用户登录，验证用户名密码并返回令牌
 func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
-	if isLoginRateLimited(ip) {
+	if isLoginRateLimited(ip, h.Cfg.Server.LoginRateLimitPerMin) {
 		logger.Log.Warn().Str("ip", ip).Msg("登录失败: 频率超限")
 		utils.Error(c, http.StatusTooManyRequests, "登录过于频繁，请稍后再试")
 		return

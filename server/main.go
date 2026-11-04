@@ -107,21 +107,10 @@ func main() {
 
 	r.Use(func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		allowedOrigins := []string{
-			"http://localhost:5173",
-			"http://localhost:3000",
-			"http://localhost:8080",
-			"http://127.0.0.1:5173",
-			"http://127.0.0.1:3000",
-			"http://127.0.0.1:8080",
-		}
-		if extraOrigins := os.Getenv("CORS_ORIGINS"); extraOrigins != "" {
-			for _, o := range splitStr(extraOrigins, ",") {
-				allowedOrigins = append(allowedOrigins, o)
-			}
-		}
+		// 允许的跨域来源：config.yaml 的 server.cors_origins（默认含本机开发端口），
+		// 历史环境变量 CORS_ORIGINS 在 config 层作为追加项仍兼容
 		allowed := false
-		for _, o := range allowedOrigins {
+		for _, o := range cfg.Server.CORSOrigins {
 			if origin == o {
 				allowed = true
 				break
@@ -156,7 +145,7 @@ func main() {
 	r.Use(gzipMiddleware())
 	r.Use(cacheControlMiddleware())
 
-	r.Use(middleware.RateLimitMiddleware())
+	r.Use(middleware.RateLimitMiddleware(cfg.Server.RateLimitPerMin))
 
 	// 初始化统计写入器
 	utils.InitStatsWriter(db)
@@ -164,9 +153,9 @@ func main() {
 	routes.Setup(r, db, cfg, jobs)
 
 	// 按需启动 pprof 调试端口（默认关闭）：性能火焰图与内存/goroutine 分析入口，
-	// 开启方式与安全约束见《性能火焰图使用指南.md》
-	if pprofAddr := os.Getenv("PPROF_ADDR"); pprofAddr != "" {
-		startPprof(pprofAddr)
+	// 地址由 server.pprof_addr 配置（历史环境变量 PPROF_ADDR 仍兼容），安全约束见函数注释
+	if pprofAddr := cfg.Server.PprofAddr; pprofAddr != "" {
+		startPprof(pprofAddr, cfg.Server.PprofAllowRemote)
 	}
 
 	logger.Log.Info().
@@ -188,14 +177,15 @@ func main() {
 
 // startPprof 按需启动 pprof 调试端口（性能火焰图与内存/goroutine 分析，默认不启动）。
 //
-// 开启方式：设置环境变量 PPROF_ADDR，例如 PPROF_ADDR=127.0.0.1:6060。
+// 开启方式：config.yaml 配置 server.pprof_addr，例如 "127.0.0.1:6060"。
 // 安全约束：pprof 端点无鉴权（可读取堆内存画像、可触发全局 GC 停顿），因此只允许
 // 绑定回环地址，供本机直连或 SSH 隧道访问；确需绑定外部地址（如容器网络）时，
-// 必须再显式设置 PPROF_ALLOW_REMOTE=true，且只应在受控内网中使用。
-func startPprof(addr string) {
+// 必须再显式开启 server.pprof_allow_remote（历史环境变量 PPROF_ALLOW_REMOTE 兼容），
+// 且只应在受控内网中使用。
+func startPprof(addr string, allowRemote bool) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		logger.Log.Warn().Str("addr", addr).Err(err).Msg("PPROF_ADDR 格式非法（应为 host:port，如 127.0.0.1:6060），pprof 未启动")
+		logger.Log.Warn().Str("addr", addr).Err(err).Msg("pprof_addr 格式非法（应为 host:port，如 127.0.0.1:6060），pprof 未启动")
 		return
 	}
 	// host 为空（如 ":6060"）意味着监听所有网卡，与绑定外部地址同等对待，不放行。
@@ -204,8 +194,8 @@ func startPprof(addr string) {
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		loopback = true
 	}
-	if !loopback && os.Getenv("PPROF_ALLOW_REMOTE") != "true" {
-		logger.Log.Warn().Str("addr", addr).Msg("PPROF_ADDR 拒绝非回环地址：pprof 无鉴权，只能绑定 127.0.0.1/localhost（远程访问走 SSH 隧道）；确需外部绑定时设置 PPROF_ALLOW_REMOTE=true 自担风险")
+	if !loopback && !allowRemote {
+		logger.Log.Warn().Str("addr", addr).Msg("pprof_addr 拒绝非回环地址：pprof 无鉴权，只能绑定 127.0.0.1/localhost（远程访问走 SSH 隧道）；确需外部绑定时开启 pprof_allow_remote 自担风险")
 		return
 	}
 	go func() {
@@ -508,15 +498,4 @@ func cacheControlMiddleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
-}
-
-// splitStr 按分隔符分割字符串，并去除空白项。
-func splitStr(s, sep string) []string {
-	var result []string
-	for _, part := range strings.Split(s, sep) {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
 }
