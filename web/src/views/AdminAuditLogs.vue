@@ -336,7 +336,7 @@ async function handleCleanup() {
       role: cleanupForm.role || undefined,
       username: cleanupForm.username.trim() || undefined,
     })
-    ElMessage.success(`已删除 ${res.data?.deleted ?? count} 条审计记录`)
+    ElMessage.success(`已删除 ${res.data?.deleted ?? count} 条审计记录；本次清理操作已留痕，其后新产生的记录会正常显示`)
     showCleanup.value = false
     page.value = 1
     loadLogs()

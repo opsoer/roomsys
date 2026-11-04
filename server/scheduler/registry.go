@@ -4,6 +4,8 @@ package scheduler
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -155,11 +157,33 @@ func (r *Registry) run(name, trigger string) (string, error) {
 
 	result, ms := execJob(job)
 	r.finish(name, trigger, result, ms)
-	// 手动触发由 HTTP 层记录审计（带操作人）；调度/启动触发的由这里记录
-	if trigger != triggerManual {
+	// 手动触发由 HTTP 层记录审计（带操作人）；调度/启动触发的由这里记录。
+	// 空跑（结果里所有数量都是 0，如"创建 0 条"）不落库：否则每次启动/每天调度
+	// 都会产生一批无意义的审计记录，冲淡操作审计的价值，也让「清理记录」刚清完又显示一堆。
+	// 文件日志仍完整保留执行结果，排查不受影响。
+	if trigger != triggerManual && !jobResultNoOp(result) {
 		audit.LogSystem(trigger, audit.ResourceJob, name, result)
 	}
 	return result, nil
+}
+
+// jobResultNoOp 判断任务结果是否为「无任何实际变更」：
+// 空结果，或结果中全部非负整数均为 0（如"创建 0 条"/"0 栋已到期"）即视为空跑。
+// 结果不含数字（如 panic 信息、备份文件名）时保守视为有变更，照常审计，避免漏记。
+func jobResultNoOp(result string) bool {
+	if strings.TrimSpace(result) == "" {
+		return true
+	}
+	nums := regexp.MustCompile(`\d+`).FindAllString(result, -1)
+	if len(nums) == 0 {
+		return false
+	}
+	for _, n := range nums {
+		if n != "0" {
+			return false
+		}
+	}
+	return true
 }
 
 // begin 把任务标记为执行中；已在执行则返回 false（供调度循环避免与手动执行并发）。
@@ -261,7 +285,10 @@ func (r *Registry) loop(j *Job) {
 		}
 		result, ms := execJob(j)
 		r.finish(j.Name, triggerScheduler, result, ms)
-		audit.LogSystem(triggerScheduler, audit.ResourceJob, j.Name, result)
+		// 与 Run 的口径一致：空跑不落库（文件日志已有完整结果）
+		if !jobResultNoOp(result) {
+			audit.LogSystem(triggerScheduler, audit.ResourceJob, j.Name, result)
+		}
 	}
 }
 

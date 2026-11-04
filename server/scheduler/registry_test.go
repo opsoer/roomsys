@@ -117,3 +117,26 @@ func TestStartupTrigger(t *testing.T) {
 		t.Fatalf("触发来源不符: %q", got)
 	}
 }
+
+// 空跑结果（全部数量为 0）不应写审计库，有变更或无数字的结果应照常写。
+func TestJobResultNoOp(t *testing.T) {
+	cases := []struct {
+		result string
+		want   bool
+	}{
+		{"租金账单: 创建 0 条", true},
+		{"合同检查: 创建 0 条退租待办，预订超时: 创建 0 条待办", true},
+		{"公寓到期: 0 栋已到期, 0 栋即将到期", true},
+		{"清理 0 条", true},
+		{"", true}, // 空结果视为空跑
+		{"租金账单: 创建 3 条", false},
+		{"公寓到期: 0 栋已到期, 2 栋即将到期", false},
+		{"任务 panic: boom", false},  // 无数字，保守视为有变更
+		{"备份完成 rental-20261105.db (12 MB)", false},
+	}
+	for _, c := range cases {
+		if got := jobResultNoOp(c.result); got != c.want {
+			t.Errorf("jobResultNoOp(%q) = %v, want %v", c.result, got, c.want)
+		}
+	}
+}
