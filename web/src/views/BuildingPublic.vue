@@ -10,165 +10,167 @@
       </div>
     </template>
     <template v-else-if="building">
-    <van-nav-bar
-      :title="building.name"
-      :left-arrow="showHomeEntry"
-      @click-left="$router.push('/')"
-    >
-      <template #right>
-        <div class="nav-right">
-          <span class="nav-share" @click="openQrShare">分享</span>
-          <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
-        </div>
-      </template>
-    </van-nav-bar>
-
-    <div class="hero-section">
-      <h1 class="hero-title">{{ building.name }}</h1>
-      <p class="hero-addr">
-        <van-icon name="location-o" />
-        {{ building.district }} {{ building.street }} {{ building.village }} {{ building.building_no }}
-      </p>
-      <div class="hero-stats">
-        <div class="stat-item">
-          <span class="stat-num">{{ building.room_count }}</span>
-          <span class="stat-lbl">房源</span>
-        </div>
-        <div class="stat-divider"></div>
-        <div class="stat-item">
-          <span class="stat-num success">{{ building.vacant_count }}</span>
-          <span class="stat-lbl">可租</span>
-        </div>
-        <div class="stat-divider"></div>
-        <div class="stat-item">
-          <span class="stat-num">{{ building.rented_count }}</span>
-          <span class="stat-lbl">已租</span>
-        </div>
-        <div class="stat-divider"></div>
-        <div class="stat-item">
-          <span class="stat-num warning">{{ building.expiring_count }}</span>
-          <span class="stat-lbl">将到期</span>
-        </div>
-      </div>
-      <button v-if="showHomeEntry" class="hero-home-btn" @click="$router.push('/')">
-        <van-icon name="home-o" size="14" />
-        查看全部公寓
-        <van-icon name="arrow" size="12" />
-      </button>
-    </div>
-
-    <div v-if="building.landlords && building.landlords.length" class="landlord-bar">
-      <van-icon name="phone-o" size="14" color="#e6a23c" />
-      <span v-for="(l, i) in building.landlords" :key="l.id">
-        <template v-if="i > 0">、</template>
-        {{ l.name }} {{ displayPhone(l) }}
-      </span>
-      <span v-if="!revealed" class="landlord-reveal-btn" @click="reveal">
-        <van-icon name="eye-o" size="12" />
-        查看号码
-      </span>
-    </div>
-
-    <div v-if="building.description || directionsLines.length" class="desc-section">
-      <template v-if="building.description">
-        <div class="desc-title">公寓简介</div>
-        <p class="desc-text">{{ building.description }}</p>
-      </template>
-      <template v-if="directionsLines.length">
-        <div class="desc-title directions-title">
-          <van-icon name="location-o" size="12" /> 怎么找到这里
-        </div>
-        <p v-for="(line, i) in directionsLines" :key="'dir-' + i" class="desc-text directions-line">• {{ line }}</p>
-      </template>
-    </div>
-
-    <div class="filter-bar">
-      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'status' }" @click="openSheet('status')">
-        <span>{{ statusText }}</span>
-        <van-icon name="arrow-down" size="12" />
-      </div>
-      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'floor' }" @click="openSheet('floor')">
-        <span>{{ floorText }}</span>
-        <van-icon name="arrow-down" size="12" />
-      </div>
-      <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'layout' }" @click="openSheet('layout')">
-        <span>{{ layoutText }}</span>
-        <van-icon name="arrow-down" size="12" />
-      </div>
-    </div>
-
-    <van-action-sheet v-model:show="sheetOpen" :actions="sheetActions" @select="onSheetSelect" close-on-click-action cancel-text="取消" />
-
-    <div v-if="loading" class="loading-wrap">
-      <van-loading size="30" vertical>加载中...</van-loading>
-    </div>
-
-    <template v-else-if="displayRooms.length === 0">
-      <van-empty description="暂无符合条件的房间" />
-    </template>
-
-    <div v-else class="room-grid">
-      <div
-        v-for="room in displayRooms"
-        :key="room.id"
-        class="room-card"
-        @click="$router.push(`/building/${buildingKey(id, building?.name)}/room/${roomKey(room.id, room.room_number)}`)"
+      <van-nav-bar
+        :title="building.name"
+        :left-arrow="showHomeEntry"
+        @click-left="$router.push('/')"
       >
-        <div class="room-card-img">
-          <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }" />
-          <div v-else class="room-card-img-placeholder">
-            <van-icon name="photo-o" size="36" color="#ccc" />
+        <template #right>
+          <div class="nav-right">
+            <span class="nav-share" @click="openQrShare">分享</span>
+            <span class="login-btn" @click="goToDashboard">{{ authStore.isLoggedIn ? '管理' : '登录' }}</span>
           </div>
-          <van-tag
-            :type="statusTagType(room.status)"
-            class="room-card-tag"
-          >
-            {{ statusLabel(room.status) }}
-          </van-tag>
+        </template>
+      </van-nav-bar>
+
+      <div class="hero-section">
+        <h1 class="hero-title">{{ building.name }}</h1>
+        <p class="hero-addr">
+          <van-icon name="location-o" />
+          {{ building.district }} {{ building.street }} {{ building.village }} {{ building.building_no }}
+        </p>
+        <div class="hero-stats">
+          <div class="stat-item">
+            <span class="stat-num">{{ building.room_count }}</span>
+            <span class="stat-lbl">房源</span>
+          </div>
+          <div class="stat-divider" />
+          <div class="stat-item">
+            <span class="stat-num success">{{ building.vacant_count }}</span>
+            <span class="stat-lbl">可租</span>
+          </div>
+          <div class="stat-divider" />
+          <div class="stat-item">
+            <span class="stat-num">{{ building.rented_count }}</span>
+            <span class="stat-lbl">已租</span>
+          </div>
+          <div class="stat-divider" />
+          <div class="stat-item">
+            <span class="stat-num warning">{{ building.expiring_count }}</span>
+            <span class="stat-lbl">将到期</span>
+          </div>
         </div>
-        <div class="room-card-body">
-          <h3 class="room-card-number">{{ room.room_number }}</h3>
-          <p class="room-card-info">
-            <template v-if="room.floor">{{ room.floor }}层</template>
-            <template v-if="room.floor && room.layout"> · </template>
-            <template v-if="room.layout">{{ room.layout }}</template>
-          </p>
-          <div v-if="room.rent_price || room.deposit_months != null" class="room-card-price-row">
-            <span v-if="room.rent_price" class="room-card-price">¥{{ room.rent_price }}/月</span>
-            <span v-if="room.deposit_months != null" class="room-card-deposit">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
+        <button v-if="showHomeEntry" class="hero-home-btn" @click="$router.push('/')">
+          <van-icon name="home-o" size="14" />
+          查看全部公寓
+          <van-icon name="arrow" size="12" />
+        </button>
+      </div>
+
+      <div v-if="building.landlords && building.landlords.length" class="landlord-bar">
+        <van-icon name="phone-o" size="14" color="#e6a23c" />
+        <span v-for="(l, i) in building.landlords" :key="l.id">
+          <template v-if="i > 0">、</template>
+          {{ l.name }} {{ displayPhone(l) }}
+        </span>
+        <span v-if="!revealed" class="landlord-reveal-btn" @click="reveal">
+          <van-icon name="eye-o" size="12" />
+          查看号码
+        </span>
+      </div>
+
+      <div v-if="building.description || directionsLines.length" class="desc-section">
+        <template v-if="building.description">
+          <div class="desc-title">公寓简介</div>
+          <p class="desc-text">{{ building.description }}</p>
+        </template>
+        <template v-if="directionsLines.length">
+          <div class="desc-title directions-title">
+            <van-icon name="location-o" size="12" /> 怎么找到这里
           </div>
-          <p v-if="room.management_fee != null || room.electricity_unit_price || room.water_unit_price" class="room-card-utilities">
-            <span v-if="room.management_fee != null">管理费:{{ room.management_fee ? '¥' + room.management_fee : '无' }}</span>
-            <template v-if="room.management_fee != null && (room.electricity_unit_price || room.water_unit_price)"> · </template>
-            <template v-if="room.electricity_unit_price">电¥{{ room.electricity_unit_price }}/度</template>
-            <template v-if="room.electricity_unit_price && room.water_unit_price"> · </template>
-            <template v-if="room.water_unit_price">水¥{{ room.water_unit_price }}/吨</template>
-          </p>
-          <p v-if="room.end_date && room.status !== 'vacant'" class="room-card-enddate">
-            <van-icon name="clock-o" size="11" />
-            退租：{{ room.end_date }}
-          </p>
+          <p v-for="(line, i) in directionsLines" :key="'dir-' + i" class="desc-text directions-line">• {{ line }}</p>
+        </template>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'status' }" @click="openSheet('status')">
+          <span>{{ statusText }}</span>
+          <van-icon name="arrow-down" size="12" />
+        </div>
+        <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'floor' }" @click="openSheet('floor')">
+          <span>{{ floorText }}</span>
+          <van-icon name="arrow-down" size="12" />
+        </div>
+        <div class="filter-tab" :class="{ active: sheetOpen && sheetType === 'layout' }" @click="openSheet('layout')">
+          <span>{{ layoutText }}</span>
+          <van-icon name="arrow-down" size="12" />
         </div>
       </div>
-    </div>
 
-    <div v-if="loadingMore" class="load-more-wrap">
-      <van-loading size="18" color="#1989fa">加载中...</van-loading>
-    </div>
-    <div v-else-if="totalRooms > 0 && rooms.length >= totalRooms" class="load-more-count">
-      已全部加载（共 {{ totalRooms }} 间）
-    </div>
-    <div v-else-if="totalRooms > 0" class="load-more-count">
-      共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间
-    </div>
-    <div ref="sentinel" class="load-more-sentinel"></div>
-    <div class="page-footer">
-      <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
-    </div>
+      <van-action-sheet v-model:show="sheetOpen" :actions="sheetActions" close-on-click-action cancel-text="取消" @select="onSheetSelect" />
 
-    <QrSharePopup v-model:show="qrVisible" title="分享公寓" :link="qrLink" :data-url="qrDataUrl"
-      @copy="copyQrLink" @download="downloadQrCard" />
-    <CaptchaDialog v-model:show="captchaVisible" :handler="handleCaptcha" />
+      <div v-if="loading" class="loading-wrap">
+        <van-loading size="30" vertical>加载中...</van-loading>
+      </div>
+
+      <template v-else-if="displayRooms.length === 0">
+        <van-empty description="暂无符合条件的房间" />
+      </template>
+
+      <div v-else class="room-grid">
+        <div
+          v-for="room in displayRooms"
+          :key="room.id"
+          class="room-card"
+          @click="$router.push(`/building/${buildingKey(id, building?.name)}/room/${roomKey(room.id, room.room_number)}`)"
+        >
+          <div class="room-card-img">
+            <img v-if="room.thumbnail" :src="mediaUrl(room.thumbnail)" :alt="room.room_number" loading="lazy" @error="e => { e.target.onerror = null; e.target.src = '/default-image.svg' }">
+            <div v-else class="room-card-img-placeholder">
+              <van-icon name="photo-o" size="36" color="#ccc" />
+            </div>
+            <van-tag
+              :type="statusTagType(room.status)"
+              class="room-card-tag"
+            >
+              {{ statusLabel(room.status) }}
+            </van-tag>
+          </div>
+          <div class="room-card-body">
+            <h3 class="room-card-number">{{ room.room_number }}</h3>
+            <p class="room-card-info">
+              <template v-if="room.floor">{{ room.floor }}层</template>
+              <template v-if="room.floor && room.layout"> · </template>
+              <template v-if="room.layout">{{ room.layout }}</template>
+            </p>
+            <div v-if="room.rent_price || room.deposit_months != null" class="room-card-price-row">
+              <span v-if="room.rent_price" class="room-card-price">¥{{ room.rent_price }}/月</span>
+              <span v-if="room.deposit_months != null" class="room-card-deposit">{{ ['无押金', '押一', '押二', '押三'][room.deposit_months] }}</span>
+            </div>
+            <p v-if="room.management_fee != null || room.electricity_unit_price || room.water_unit_price" class="room-card-utilities">
+              <span v-if="room.management_fee != null">管理费:{{ room.management_fee ? '¥' + room.management_fee : '无' }}</span>
+              <template v-if="room.management_fee != null && (room.electricity_unit_price || room.water_unit_price)"> · </template>
+              <template v-if="room.electricity_unit_price">电¥{{ room.electricity_unit_price }}/度</template>
+              <template v-if="room.electricity_unit_price && room.water_unit_price"> · </template>
+              <template v-if="room.water_unit_price">水¥{{ room.water_unit_price }}/吨</template>
+            </p>
+            <p v-if="room.end_date && room.status !== 'vacant'" class="room-card-enddate">
+              <van-icon name="clock-o" size="11" />
+              退租：{{ room.end_date }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="loadingMore" class="load-more-wrap">
+        <van-loading size="18" color="#1989fa">加载中...</van-loading>
+      </div>
+      <div v-else-if="totalRooms > 0 && rooms.length >= totalRooms" class="load-more-count">
+        已全部加载（共 {{ totalRooms }} 间）
+      </div>
+      <div v-else-if="totalRooms > 0" class="load-more-count">
+        共 {{ totalRooms }} 间，已显示 {{ rooms.length }} 间
+      </div>
+      <div ref="sentinel" class="load-more-sentinel" />
+      <div class="page-footer">
+        <p>© 2026 圳好租 · 深圳公寓租赁管理平台</p>
+      </div>
+
+      <QrSharePopup
+        v-model:show="qrVisible" title="分享公寓" :link="qrLink" :data-url="qrDataUrl"
+        @copy="copyQrLink" @download="downloadQrCard"
+      />
+      <CaptchaDialog v-model:show="captchaVisible" :handler="handleCaptcha" />
     </template>
   </div>
 </template>
