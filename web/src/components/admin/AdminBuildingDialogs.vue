@@ -81,7 +81,7 @@
           <el-form-item label="管理员密码" prop="admin_password" :rules="rulesFor('admin_password')">
             <el-input v-model="activeForm.admin_password" type="password" placeholder="公寓管理员的登录密码" />
           </el-form-item>
-          <el-form-item label="确认密码" prop="admin_password_confirm" :rules="[{ validator: validatePasswordConfirm, trigger: 'blur' }]">
+          <el-form-item label="确认密码" prop="admin_password_confirm" :rules="[{ required: true, message: '请再次输入密码' }, { validator: validatePasswordConfirm, trigger: 'blur' }]">
             <el-input v-model="activeForm.admin_password_confirm" type="password" placeholder="再次输入密码" />
           </el-form-item>
         </template>
@@ -241,10 +241,10 @@
         <el-form-item label="账号">
           <el-input v-model="adminForm.username" maxlength="30" />
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item label="密码" required>
           <el-input v-model="adminForm.password" type="password" />
         </el-form-item>
-        <el-form-item label="确认密码">
+        <el-form-item label="确认密码" required>
           <el-input v-model="adminForm.confirmPassword" type="password" placeholder="再次输入密码" />
         </el-form-item>
       </el-form>
@@ -668,6 +668,10 @@ async function handleCreateAdmin() {
   const username = adminForm.value.username.trim()
   if (!username || !adminForm.value.password) {
     ElMessage.warning('请填写完整')
+    return
+  }
+  if (!adminForm.value.confirmPassword) {
+    ElMessage.warning('请再次输入密码')
     return
   }
   if (!/^[A-Za-z0-9_]{2,30}$/.test(username)) {

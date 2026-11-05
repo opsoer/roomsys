@@ -77,7 +77,7 @@
         <el-form-item label="密码" prop="password" :rules="editingId ? [] : [{ required: true, message: '请输入密码' }]">
           <el-input v-model="form.password" type="password" show-password :placeholder="editingId ? '留空则不修改' : '请输入密码'" />
         </el-form-item>
-        <el-form-item label="确认密码" prop="confirmPassword" :rules="[{ validator: validatePasswordConfirm, trigger: 'blur' }]">
+        <el-form-item label="确认密码" prop="confirmPassword" :rules="[{ required: !editingId, message: '请再次输入密码' }, { validator: validatePasswordConfirm, trigger: 'blur' }]">
           <el-input v-model="form.confirmPassword" type="password" show-password :placeholder="editingId ? '修改密码时需再次输入' : '再次输入密码'" />
         </el-form-item>
         <el-form-item label="角色" prop="role">
