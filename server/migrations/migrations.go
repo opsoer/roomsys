@@ -46,6 +46,7 @@ func Steps() []Step {
 	steps := []Step{
 		{Version: 1, Name: "init_schema", Up: upInitSchema},
 		{Version: 2, Name: "audit_log_role", Up: upAuditLogRole, Down: downAuditLogRole},
+		{Version: 3, Name: "building_directions", Up: upBuildingDirections, Down: downBuildingDirections},
 	}
 	// 后续变更在此追加：{Version: 2, Name: "xxx", Up: upXxx, Down: downXxx}
 	sort.Slice(steps, func(i, j int) bool { return steps[i].Version < steps[j].Version })

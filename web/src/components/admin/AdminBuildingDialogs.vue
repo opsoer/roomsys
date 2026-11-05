@@ -61,6 +61,9 @@
         <el-form-item label="简介" prop="description">
           <el-input v-model="activeForm.description" type="textarea" :rows="3" maxlength="200" show-word-limit />
         </el-form-item>
+        <el-form-item label="详细地址" prop="directions">
+          <el-input v-model="activeForm.directions" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="选填，路引每行一条，如：地铁3号线横岗站C口，步行300米" />
+        </el-form-item>
         <el-divider>{{ isEdit ? '房东信息' : '房东信息（必填）' }}</el-divider>
         <el-form-item label="房东姓名" prop="landlord_name" :rules="rulesFor('landlord_name')">
           <el-input v-model="activeForm.landlord_name" placeholder="房东姓名" />
@@ -303,11 +306,11 @@ const adminSubmitting = ref(false)
 const formRef = ref(null)
 
 const createForm = ref({
-  name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
+  name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '',
   landlord_name: '', landlord_phones: [''],
   admin_username: '', admin_password: '', admin_password_confirm: '',
 })
-const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
+const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', landlord_name: '', landlord_phones: [''], status: 'active' })
 const adminForm = ref({ username: '', password: '', confirmPassword: '' })
 
 // 建/编合一弹窗的当前绑定对象：创建用 createForm、编辑用 editForm（两者提交接口不同，保持独立）
@@ -338,7 +341,7 @@ function buildLandlords(name, phones) {
 }
 
 function openCreate() {
-  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '', admin_password_confirm: '' }
+  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '', admin_password_confirm: '' }
   isEdit.value = false
   showForm.value = true
   clearFormValidate()
@@ -352,7 +355,7 @@ function openEdit(row) {
     id: row.id, name: row.name, package: row.package || 'basic', contract_date: row.contract_date || '',
     expired_at: row.expired_at || '',
     district: row.district, street: row.street,
-    village: row.village, building_no: row.building_no, description: row.description,
+    village: row.village, building_no: row.building_no, description: row.description, directions: row.directions || '',
     status: row.status,
     landlord_name: name,
     landlord_phones: phones.length > 0 ? phones : [''],

@@ -56,6 +56,9 @@
         <el-form-item label="简介" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="200" show-word-limit />
         </el-form-item>
+        <el-form-item label="详细地址" prop="directions">
+          <el-input v-model="form.directions" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="选填，路引每行一条，如：地铁3号线横岗站C口，步行300米" />
+        </el-form-item>
         <el-divider>公寓到期</el-divider>
         <el-form-item label="当前状态">
           <el-tag :type="statusTagType">{{ statusText }}</el-tag>
@@ -106,7 +109,7 @@ const saving = ref(false)
 const formRef = ref(null)
 const form = ref({
   name: '', district: '', street: '', village: '', building_no: '',
-  description: '', landlord_name: '', landlord_phones: [''],
+  description: '', directions: '', landlord_name: '', landlord_phones: [''],
   cover_image: '', expired_at: '', status: 'active',
 })
 
@@ -220,6 +223,7 @@ async function fetchInfo() {
       name: b.name || '', district: b.district || '', street: b.street || '',
       village: b.village || '', building_no: b.building_no || '',
       description: b.description || '',
+      directions: b.directions || '',
       cover_image: b.cover_image || '',
       expired_at: b.expired_at || '',
       status: b.status || 'active',

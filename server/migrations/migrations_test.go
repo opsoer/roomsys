@@ -26,21 +26,31 @@ func newTestDB(t *testing.T) *gorm.DB {
 func TestApplyOnEmptyDatabase(t *testing.T) {
 	db := newTestDB(t)
 
+	steps := Steps()
 	executed, err := Apply(db)
 	if err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
-	if len(executed) != 2 || executed[0] != 1 || executed[1] != 2 {
-		t.Fatalf("应执行 2 个版本，实际 %v", executed)
+	if len(executed) != len(steps) {
+		t.Fatalf("应执行 %d 个版本，实际 %v", len(steps), executed)
+	}
+	for i, s := range steps {
+		if executed[i] != s.Version {
+			t.Fatalf("第 %d 个执行版本应为 %d，实际 %v", i, s.Version, executed)
+		}
 	}
 
 	var records []models.SchemaMigration
 	if err := db.Order("version").Find(&records).Error; err != nil {
 		t.Fatalf("读取台账失败: %v", err)
 	}
-	if len(records) != 2 || records[0].Version != 1 || records[0].Name != "init_schema" ||
-		records[1].Version != 2 || records[1].Name != "audit_log_role" {
-		t.Fatalf("台账记录不符: %+v", records)
+	if len(records) != len(steps) {
+		t.Fatalf("台账应有 %d 条记录，实际 %d 条", len(steps), len(records))
+	}
+	for i, s := range steps {
+		if records[i].Version != s.Version || records[i].Name != s.Name {
+			t.Fatalf("台账记录不符（期望 %s）: %+v", s.Label(), records)
+		}
 	}
 }
 
@@ -60,8 +70,8 @@ func TestApplyIsIdempotent(t *testing.T) {
 	}
 	var count int64
 	db.Model(&models.SchemaMigration{}).Count(&count)
-	if count != 2 {
-		t.Fatalf("台账应有 2 条记录，实际 %d 条", count)
+	if count != int64(len(Steps())) {
+		t.Fatalf("台账应有 %d 条记录，实际 %d 条", len(Steps()), count)
 	}
 }
 
@@ -73,7 +83,7 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("查询状态失败: %v", err)
 	}
-	if len(applied) != 0 || len(pending) != 2 {
+	if len(applied) != 0 || len(pending) != len(Steps()) {
 		t.Fatalf("初始状态不符: applied=%v pending=%d", applied, len(pending))
 	}
 
@@ -84,7 +94,7 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("查询状态失败: %v", err)
 	}
-	if len(applied) != 2 || len(pending) != 0 {
+	if len(applied) != len(Steps()) || len(pending) != 0 {
 		t.Fatalf("迁移后状态不符: applied=%v pending=%d", applied, len(pending))
 	}
 }

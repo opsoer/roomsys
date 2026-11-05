@@ -134,6 +134,14 @@
       <p class="desc-text">{{ room.description }}</p>
     </div>
 
+    <!-- 路引（公寓级信息） -->
+    <div v-if="directionsLines.length" class="room-section">
+      <div class="section-title">
+        <van-icon name="location-o" /> 怎么找到这里
+      </div>
+      <p v-for="(line, i) in directionsLines" :key="'dir-' + i" class="desc-text directions-line">• {{ line }}</p>
+    </div>
+
     <!-- 视频 -->
     <div v-if="videos.length" class="room-section">
       <div class="section-title">
@@ -200,6 +208,9 @@ const buildingPath = computed(() => `/building/${buildingKey(buildingId.value, b
 const room = ref(null)
 const contract = ref(null)
 const building = ref(null)
+
+// 路引按行展示：trim 后过滤空行
+const directionsLines = computed(() => (building.value?.directions || '').split('\n').map(s => s.trim()).filter(Boolean))
 const allImages = ref([])
 const videos = ref([])
 
@@ -445,6 +456,9 @@ onMounted(async () => {
   font-size: 14px;
   color: #555;
   line-height: 1.8;
+}
+.directions-line {
+  margin-bottom: 4px;
 }
 .room-price-card {
   background: linear-gradient(135deg, #1a1a2e, #16213e);

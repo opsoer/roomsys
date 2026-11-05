@@ -65,6 +65,7 @@ type CreateBuildingReq struct {
 	Village      string  `json:"village"`
 	BuildingNo   string  `json:"building_no"`
 	Description  string  `json:"description"`
+	Directions   string  `json:"directions"`
 	Landlords    []struct {
 		Name  string `json:"name"`
 		Phone string `json:"phone"`
@@ -83,6 +84,7 @@ type UpdateBuildingReq struct {
 	BuildingNo   string `json:"building_no"`
 	CoverImage   string `json:"cover_image"`
 	Description  string `json:"description"`
+	Directions   string `json:"directions"`
 	Status       string `json:"status"`
 	Landlords    []struct {
 		Name  string `json:"name"`
@@ -128,6 +130,7 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		Village:      req.Village,
 		BuildingNo:   req.BuildingNo,
 		Description:  req.Description,
+		Directions:   req.Directions,
 		Status:       "active",
 		CreatedBy:    uid,
 	}
@@ -248,6 +251,9 @@ func (h *BuildingHandler) buildBuildingUpdates(req *UpdateBuildingReq, building 
 	}
 	if req.Description != "" {
 		updates["description"] = req.Description
+	}
+	if req.Directions != "" {
+		updates["directions"] = req.Directions
 	}
 	if req.Status != "" {
 		updates["status"] = req.Status
@@ -795,6 +801,7 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Directions  string `json:"directions"`
 		CoverImage  string `json:"cover_image"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -807,6 +814,9 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	}
 	if req.Description != "" {
 		updates["description"] = req.Description
+	}
+	if req.Directions != "" {
+		updates["directions"] = req.Directions
 	}
 	if req.CoverImage != "" {
 		updates["cover_image"] = req.CoverImage

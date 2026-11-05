@@ -69,9 +69,17 @@
       </span>
     </div>
 
-    <div v-if="building.description" class="desc-section">
-      <div class="desc-title">公寓简介</div>
-      <p class="desc-text">{{ building.description }}</p>
+    <div v-if="building.description || directionsLines.length" class="desc-section">
+      <template v-if="building.description">
+        <div class="desc-title">公寓简介</div>
+        <p class="desc-text">{{ building.description }}</p>
+      </template>
+      <template v-if="directionsLines.length">
+        <div class="desc-title directions-title">
+          <van-icon name="location-o" size="12" /> 怎么找到这里
+        </div>
+        <p v-for="(line, i) in directionsLines" :key="'dir-' + i" class="desc-text directions-line">• {{ line }}</p>
+      </template>
     </div>
 
     <div class="filter-bar">
@@ -194,6 +202,9 @@ const statusFilter = ref('')
 const floorFilter = ref('')
 const layoutFilter = ref('')
 const pageSize = 20
+
+// 路引按行展示：trim 后过滤空行
+const directionsLines = computed(() => (building.value?.directions || '').split('\n').map(s => s.trim()).filter(Boolean))
 
 // 无限滚动 + 游标分页（last_id）
 const { items: rooms, total: totalRooms, loading, loadingMore, sentinel, fetch: fetchRooms } = useInfiniteList({
@@ -503,6 +514,15 @@ onMounted(async () => {
   font-size: 13px;
   color: #666;
   line-height: 1.7;
+}
+.directions-title {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.directions-line {
+  margin-bottom: 4px;
 }
 .filter-bar {
   display: flex;

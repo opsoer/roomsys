@@ -41,6 +41,7 @@ type Building struct {
 	BankAccount  string         `gorm:"size:50" json:"bank_account"`
 	CoverImage   string         `gorm:"size:500" json:"cover_image"`
 	Description  string         `gorm:"type:text" json:"description"`
+	Directions   string         `gorm:"type:text" json:"directions"`
 	Status       string         `gorm:"size:20;not null;default:'active'" json:"status"`
 	CreatedBy    uint           `json:"created_by"`
 	CreatedAt    time.Time      `json:"created_at"`
