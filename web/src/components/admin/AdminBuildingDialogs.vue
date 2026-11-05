@@ -59,24 +59,27 @@
           <div style="font-size:12px;color:#999;line-height:1.6;">公寓入驻时缴纳的押金；后续可在卡片「修改押金」中增减（每次需填写原因并留痕）</div>
         </el-form-item>
         <el-form-item label="简介" prop="description">
-          <el-input v-model="activeForm.description" type="textarea" :rows="3" />
+          <el-input v-model="activeForm.description" type="textarea" :rows="3" maxlength="200" show-word-limit />
         </el-form-item>
         <el-divider>{{ isEdit ? '房东信息' : '房东信息（必填）' }}</el-divider>
         <el-form-item label="房东姓名" prop="landlord_name" :rules="rulesFor('landlord_name')">
           <el-input v-model="activeForm.landlord_name" placeholder="房东姓名" />
         </el-form-item>
         <div v-for="(p, i) in activeForm.landlord_phones" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px; margin-left:100px;">
-          <el-input v-model="activeForm.landlord_phones[i]" placeholder="房东电话" style="flex:1" @input="onPhoneInput" />
+          <el-input v-model="activeForm.landlord_phones[i]" placeholder="房东电话" maxlength="11" style="flex:1" @input="onPhoneInput" />
           <el-button v-if="activeForm.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="activeForm.landlord_phones.splice(i,1)" />
         </div>
         <el-button size="small" style="margin-left:100px" @click="activeForm.landlord_phones.push('')">+ 添加电话</el-button>
         <template v-if="!isEdit">
           <el-divider />
           <el-form-item label="管理员账号" prop="admin_username" :rules="rulesFor('admin_username')">
-            <el-input v-model="activeForm.admin_username" placeholder="默认使用房东电话" />
+            <el-input v-model="activeForm.admin_username" maxlength="30" placeholder="默认使用房东电话" />
           </el-form-item>
           <el-form-item label="管理员密码" prop="admin_password" :rules="rulesFor('admin_password')">
             <el-input v-model="activeForm.admin_password" type="password" placeholder="公寓管理员的登录密码" />
+          </el-form-item>
+          <el-form-item label="确认密码" prop="admin_password_confirm" :rules="[{ validator: validatePasswordConfirm, trigger: 'blur' }]">
+            <el-input v-model="activeForm.admin_password_confirm" type="password" placeholder="再次输入密码" />
           </el-form-item>
         </template>
       </el-form>
@@ -233,10 +236,13 @@
       <p style="margin-bottom: 16px; color: #666;">为「{{ selectedBuildingName }}」创建管理员账号</p>
       <el-form :model="adminForm" label-width="80px">
         <el-form-item label="账号">
-          <el-input v-model="adminForm.username" />
+          <el-input v-model="adminForm.username" maxlength="30" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input v-model="adminForm.password" type="password" />
+        </el-form-item>
+        <el-form-item label="确认密码">
+          <el-input v-model="adminForm.confirmPassword" type="password" placeholder="再次输入密码" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -299,10 +305,10 @@ const formRef = ref(null)
 const createForm = ref({
   name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '',
   landlord_name: '', landlord_phones: [''],
-  admin_username: '', admin_password: '',
+  admin_username: '', admin_password: '', admin_password_confirm: '',
 })
 const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], status: 'active' })
-const adminForm = ref({ username: '', password: '' })
+const adminForm = ref({ username: '', password: '', confirmPassword: '' })
 
 // 建/编合一弹窗的当前绑定对象：创建用 createForm、编辑用 editForm（两者提交接口不同，保持独立）
 const activeForm = computed(() => isEdit.value ? editForm.value : createForm.value)
@@ -332,7 +338,7 @@ function buildLandlords(name, phones) {
 }
 
 function openCreate() {
-  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '' }
+  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '', admin_password_confirm: '' }
   isEdit.value = false
   showForm.value = true
   clearFormValidate()
@@ -383,7 +389,7 @@ function expiredAtValidator(getContractDate) {
 const validateCreateExpiredAt = expiredAtValidator(() => createForm.value.contract_date)
 const validateEditExpiredAt = expiredAtValidator(() => editForm.value.contract_date)
 
-// 创建模式的必填校验；编辑模式不校验（与原创建/编辑两个弹窗行为一致）
+// 创建/编辑共用必填校验（管理员账号/密码字段仅创建模式渲染，规则不会在编辑时触发）
 const createRules = {
   name: [{ required: true, message: '请输入' }],
   contract_date: [{ required: true, message: '请选择签约日期' }],
@@ -392,12 +398,36 @@ const createRules = {
   village: [{ required: true, message: '请选择村/小区' }],
   building_no: [{ required: true, message: '请输入楼牌号' }],
   package: [{ required: true, message: '请选择开放功能' }],
-  landlord_name: [{ required: true, message: '请输入房东姓名' }],
-  admin_username: [{ required: true, message: '请输入管理员账号' }],
+  landlord_name: [{ required: true, message: '请输入房东姓名', whitespace: true }],
+  admin_username: [
+    { required: true, message: '请输入管理员账号' },
+    { pattern: /^[A-Za-z0-9_]{2,30}$/, message: '账号为2-30位字母、数字或下划线' },
+  ],
   admin_password: [{ required: true, message: '请输入管理员密码' }],
 }
 function rulesFor(prop) {
-  return isEdit.value ? undefined : createRules[prop]
+  return createRules[prop]
+}
+
+// 确认密码仅需与密码一致，不做强度/长度限制
+function validatePasswordConfirm(rule, value, callback) {
+  if (value !== activeForm.value.admin_password) return callback(new Error('两次输入的密码不一致'))
+  callback()
+}
+
+// 房东电话：选填但填写须为 11 位手机号，最多 5 个
+function validatePhones(phones) {
+  const filled = phones.map(p => p.trim()).filter(Boolean)
+  if (filled.length > 5) {
+    ElMessage.warning('房东电话最多填写 5 个')
+    return false
+  }
+  const bad = filled.filter(p => !/^1[3-9]\d{9}$/.test(p))
+  if (bad.length > 0) {
+    ElMessage.warning(`房东电话格式不正确（11位手机号）：${bad.join('、')}`)
+    return false
+  }
+  return true
 }
 
 // 建/编弹窗已合一：打开时清除上一次（含另一种模式）残留的校验提示
@@ -430,10 +460,11 @@ const depositAfter = computed(() => {
   return Math.round((depositCurrent.value + depositForm.value.amount) * 100) / 100
 })
 
-// 变动金额校验：必填且不为 0
+// 变动金额校验：必填、不为 0、单次不超过 999 万
 function validateDepositAmount(rule, value, callback) {
   if (value == null || value === '') return callback(new Error('请输入变动金额'))
   if (value === 0) return callback(new Error('变动金额不能为0'))
+  if (value > 9999999.99 || value < -9999999.99) return callback(new Error('单次变动金额不能超过999万'))
   callback()
 }
 
@@ -496,13 +527,14 @@ function openRenew(row) {
 function openCreateAdmin(row) {
   selectedBuildingId.value = row.id
   selectedBuildingName.value = row.name
-  adminForm.value = { username: '', password: '' }
+  adminForm.value = { username: '', password: '', confirmPassword: '' }
   showCreateAdmin.value = true
 }
 
 async function handleCreate() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+  if (!validatePhones(createForm.value.landlord_phones)) return
   submitting.value = true
   try {
     const data = { ...createForm.value }
@@ -553,6 +585,9 @@ async function handleCreate() {
 }
 
 async function handleEdit() {
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  if (!validatePhones(editForm.value.landlord_phones)) return
   submitting.value = true
   try {
     const data = { ...editForm.value }
@@ -627,14 +662,23 @@ function formatTime(t) {
 }
 
 async function handleCreateAdmin() {
-  if (!adminForm.value.username || !adminForm.value.password) {
+  const username = adminForm.value.username.trim()
+  if (!username || !adminForm.value.password) {
     ElMessage.warning('请填写完整')
+    return
+  }
+  if (!/^[A-Za-z0-9_]{2,30}$/.test(username)) {
+    ElMessage.warning('账号为2-30位字母、数字或下划线')
+    return
+  }
+  if (adminForm.value.confirmPassword !== adminForm.value.password) {
+    ElMessage.warning('两次输入的密码不一致')
     return
   }
   adminSubmitting.value = true
   try {
     await adminCreateBuildingAdmin({
-      username: adminForm.value.username,
+      username,
       password: adminForm.value.password,
       building_id: selectedBuildingId.value,
     })

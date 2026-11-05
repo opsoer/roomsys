@@ -121,12 +121,12 @@
         <el-form-item v-if="addMode === 'copy'" label="批量创建">
           <el-switch v-model="batchCreate" active-text="以相同信息一次创建多个房间" />
         </el-form-item>
-        <el-form-item v-if="!(addMode === 'copy' && batchCreate)" label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }]">
-          <el-input v-model="addForm.room_number" />
+        <el-form-item v-if="!(addMode === 'copy' && batchCreate)" label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }, { max: 5, message: '房间号不能超过5个字符' }]">
+          <el-input v-model="addForm.room_number" maxlength="5" />
         </el-form-item>
         <el-form-item v-else label="房间号" required>
           <div style="width:100%">
-            <el-input v-model="batchRoomNumbersText" type="textarea" :rows="4" placeholder="每行一个房间号，也可用逗号、空格分隔，自动去重" />
+            <el-input v-model="batchRoomNumbersText" type="textarea" :rows="4" maxlength="2000" placeholder="每行一个房间号（最多5个字符），也可用逗号、空格分隔，自动去重" />
             <div v-if="batchRoomNumbers.length" class="batch-hint">将创建 {{ batchRoomNumbers.length }} 个房间，均使用上方表单信息</div>
           </div>
         </el-form-item>
@@ -177,7 +177,7 @@
           <el-input :model-value="addForm.water_unit_price" @update:model-value="v => addForm.water_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/吨" clearable />
         </el-form-item>
         <el-form-item label="描述" prop="description">
-          <el-input v-model="addForm.description" type="textarea" :rows="3" />
+          <el-input v-model="addForm.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
         <el-form-item label="复用媒体">
           <el-checkbox v-if="addMode === 'copy'" v-model="copyCreateCopyMedia">
@@ -380,26 +380,26 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="房间描述" prop="description">
-              <el-input v-model="importBaseForm.description" placeholder="选填，应用到本次导入的全部房间" clearable />
+              <el-input v-model="importBaseForm.description" maxlength="500" placeholder="选填，应用到本次导入的全部房间" clearable />
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
       <el-divider>租约明细（每个房间的租客与租期可不同）</el-divider>
       <div class="import-add-row">
-        <el-input v-model="importNumbersText" placeholder="输入房间号，可批量粘贴：逗号/空格/换行分隔，回车或点击添加" clearable @keyup.enter="addImportRows" />
+        <el-input v-model="importNumbersText" maxlength="2000" placeholder="输入房间号（每个最多5个字符），可批量粘贴：逗号/空格/换行分隔，回车或点击添加" clearable @keyup.enter="addImportRows" />
         <el-button type="primary" plain @click="addImportRows">添加</el-button>
       </div>
       <el-table :data="importRows" size="small" class="import-table" empty-text="先在上方添加房间号，再在此填写各房间的租约信息">
         <el-table-column prop="room_number" label="房间号" min-width="80" />
         <el-table-column label="租客姓名" min-width="110">
           <template #default="{ row }">
-            <el-input v-model="row.tenant_name" placeholder="必填" />
+            <el-input v-model="row.tenant_name" maxlength="50" placeholder="必填" />
           </template>
         </el-table-column>
         <el-table-column label="联系电话" min-width="120">
           <template #default="{ row }">
-            <el-input v-model="row.tenant_phone" />
+            <el-input v-model="row.tenant_phone" maxlength="11" />
           </template>
         </el-table-column>
         <el-table-column label="月租金" min-width="100">
@@ -862,9 +862,9 @@ async function handleBatchAdd() {
     ElMessage.warning('请输入至少一个房间号')
     return
   }
-  const tooLong = numbers.filter(n => n.length > 20)
+  const tooLong = numbers.filter(n => n.length > 5)
   if (tooLong.length > 0) {
-    ElMessage.warning(`房间号不能超过20个字符：${tooLong.join('、')}`)
+    ElMessage.warning(`房间号不能超过5个字符：${tooLong.join('、')}`)
     return
   }
   submitting.value = true
@@ -922,7 +922,7 @@ function addImportRows() {
   let added = 0
   let duplicated = 0
   for (const num of parts) {
-    if (num.length > 20) {
+    if (num.length > 5) {
       tooLong.push(num)
       continue
     }
@@ -935,7 +935,7 @@ function addImportRows() {
     added++
   }
   const tips = []
-  if (tooLong.length) tips.push(`房间号不能超过20个字符：${tooLong.join('、')}`)
+  if (tooLong.length) tips.push(`房间号不能超过5个字符：${tooLong.join('、')}`)
   if (duplicated > 0) tips.push(`已跳过 ${duplicated} 个重复的房间号`)
   if (tips.length) ElMessage.warning(tips.join('；'))
   if (added > 0) importNumbersText.value = ''
@@ -959,6 +959,10 @@ async function handleImportRented() {
   for (const row of importRows.value) {
     if (!row.tenant_name?.trim()) {
       ElMessage.error(`房间 ${row.room_number}：请填写租客姓名`)
+      return
+    }
+    if (row.tenant_phone?.trim() && !/^1[3-9]\d{9}$/.test(row.tenant_phone.trim())) {
+      ElMessage.error(`房间 ${row.room_number}：联系电话格式不正确（11位手机号，选填）`)
       return
     }
     if (!row.start_date || !row.end_date) {

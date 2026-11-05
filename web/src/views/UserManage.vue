@@ -71,11 +71,14 @@
 
     <el-dialog v-model="showDialog" :title="editingId ? '编辑管理员' : '添加管理员'" width="400px">
       <el-form ref="formRef" :model="form" label-width="90px">
-        <el-form-item v-if="!editingId" label="用户名" prop="username" :rules="[{ required: true, message: '请输入用户名' }]">
-          <el-input v-model="form.username" />
+        <el-form-item v-if="!editingId" label="用户名" prop="username" :rules="[{ required: true, message: '请输入用户名' }, { pattern: /^[A-Za-z0-9_]{2,30}$/, message: '用户名为2-30位字母、数字或下划线' }]">
+          <el-input v-model="form.username" maxlength="30" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item label="密码" prop="password" :rules="editingId ? [] : [{ required: true, message: '请输入密码' }]">
           <el-input v-model="form.password" type="password" show-password :placeholder="editingId ? '留空则不修改' : '请输入密码'" />
+        </el-form-item>
+        <el-form-item label="确认密码" prop="confirmPassword" :rules="[{ validator: validatePasswordConfirm, trigger: 'blur' }]">
+          <el-input v-model="form.confirmPassword" type="password" show-password :placeholder="editingId ? '修改密码时需再次输入' : '再次输入密码'" />
         </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-radio-group v-model="form.role">
@@ -117,7 +120,7 @@ const loading = ref(false)
 const showDialog = ref(false)
 const submitting = ref(false)
 const editingId = ref(null)
-const form = ref({ username: '', password: '', role: 'admin' })
+const form = ref({ username: '', password: '', confirmPassword: '', role: 'admin' })
 const formRef = ref(null)
 const currentUserRole = localStorage.getItem('role')
 
@@ -133,14 +136,21 @@ async function fetchUsers() {
 
 function openAddDialog() {
   editingId.value = null
-  form.value = { username: '', password: '', role: 'admin' }
+  form.value = { username: '', password: '', confirmPassword: '', role: 'admin' }
   showDialog.value = true
 }
 
 function openEditDialog(row) {
   editingId.value = row.id
-  form.value = { username: row.username, password: '', role: row.role }
+  form.value = { username: row.username, password: '', confirmPassword: '', role: row.role }
   showDialog.value = true
+}
+
+// 确认密码仅需与密码一致，不做强度/长度限制；编辑时留空密码表示不修改
+function validatePasswordConfirm(rule, value, callback) {
+  if (!form.value.password) return callback()
+  if (value !== form.value.password) return callback(new Error('两次输入的密码不一致'))
+  callback()
 }
 
 async function handleSubmit() {

@@ -3,7 +3,7 @@
     <template v-for="f in fields" :key="f.prop || f.divider">
       <el-divider v-if="f.divider">{{ f.divider }}</el-divider>
       <el-form-item v-else :label="f.label" :prop="f.prop" :rules="rules[f.prop]">
-        <el-input v-if="f.type === 'text'" v-model="form[f.prop]" />
+        <el-input v-if="f.type === 'text'" v-model="form[f.prop]" :maxlength="f.maxlength" />
         <el-input v-else-if="f.type === 'number'" :model-value="form[f.prop]" type="number" step="0.01" min="0" :placeholder="f.label" style="width:100%" @update:model-value="v => form[f.prop] = toNumber(v)" />
         <el-date-picker v-else v-model="form[f.prop]" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
       </el-form-item>
@@ -31,24 +31,27 @@ const form = defineModel({ type: Object, required: true })
 
 const formRef = ref(null)
 
-// 三种流转共用的字段校验规则（文案与原三个弹窗保持一致）
-const required = (message) => [{ required: true, message }]
+// 三种流转共用的字段校验规则（文案与原三个弹窗保持一致；whitespace 拒绝纯空格）
+const required = (message) => [{ required: true, message, whitespace: true }]
 const rules = {
   tenant_name: required('请输入租客姓名'),
-  rent_price: required('请输入租金'),
-  management_fee: required('请输入管理费'),
-  deposit: required('请输入押金金额'),
+  // 金额三项只拦负数（0 合法，如免租/无押金/无管理费）
+  rent_price: [...required('请输入租金'), { validator: (_, v) => v >= 0, message: '租金不能为负数' }],
+  management_fee: [...required('请输入管理费'), { validator: (_, v) => v >= 0, message: '管理费不能为负数' }],
+  deposit: [...required('请输入押金金额'), { validator: (_, v) => v >= 0, message: '押金不能为负数' }],
   start_date: required('请选择起租日期'),
   end_date: required('请选择结束日期'),
   earnest_money: [...required('请输入定金金额'), { validator: (_, v) => v > 0, message: '定金必须大于0' }],
+  // 联系电话选填，但填写时须为 11 位手机号
+  tenant_phone: [{ validator: (_, v) => !String(v || '').trim() || /^1[3-9]\d{9}$/.test(String(v).trim()), message: '联系电话格式不正确（11位手机号）', trigger: 'blur' }],
 }
 
 // 字段配置：reserve 模式多「定金金额」+ 分隔线，起租/结束为「预计」文案
 const fields = computed(() => {
   const isReserve = props.mode === 'reserve'
   const list = [
-    { prop: 'tenant_name', label: '租客姓名', type: 'text' },
-    { prop: 'tenant_phone', label: '联系电话', type: 'text' },
+    { prop: 'tenant_name', label: '租客姓名', type: 'text', maxlength: 50 },
+    { prop: 'tenant_phone', label: '联系电话', type: 'text', maxlength: 11 },
   ]
   if (isReserve) {
     list.push({ prop: 'earnest_money', label: '定金金额', type: 'number' })

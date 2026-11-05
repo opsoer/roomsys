@@ -76,7 +76,7 @@
         </div>
         <el-form ref="vacateFormRef" :model="vacateForm" label-width="100px">
           <el-form-item label="退还押金" prop="refunded_deposit"
-            :rules="[{ required: true, message: '请填写退还给租客的押金金额（不退还填0）' }]">
+            :rules="[{ validator: validateRefundedDeposit }]">
             <el-input :model-value="vacateForm.refunded_deposit" @update:model-value="v => vacateForm.refunded_deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退还押金" style="width:100%" />
           </el-form-item>
         </el-form>
@@ -92,8 +92,8 @@
 
     <el-dialog v-model="showEditDialog" title="编辑房间" width="500px">
       <el-form ref="editFormRef" :model="editForm" label-width="90px">
-        <el-form-item label="房间号" prop="room_number">
-          <el-input v-model="editForm.room_number" />
+        <el-form-item label="房间号" prop="room_number" :rules="[{ required: true, message: '请输入房间号' }, { max: 5, message: '房间号不能超过5个字符' }]">
+          <el-input v-model="editForm.room_number" maxlength="5" />
         </el-form-item>
         <el-form-item label="楼层" prop="floor">
           <el-select v-model="editForm.floor" placeholder="选择楼层" style="width:100%">
@@ -132,7 +132,7 @@
           <el-input :model-value="editForm.water_unit_price" @update:model-value="v => editForm.water_unit_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="元/吨" clearable />
         </el-form-item>
         <el-form-item label="描述" prop="description">
-          <el-input v-model="editForm.description" type="textarea" :rows="3" />
+          <el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -203,6 +203,15 @@ const showVacateDialog = ref(false)
 const vacateSubmitting = ref(false)
 const vacateForm = ref({ refunded_deposit: null })
 const vacateFormRef = ref(null)
+
+// 退还押金：0 ≤ 金额 ≤ 原押金（参照 Tasks 页退还押金的做法）
+function validateRefundedDeposit(rule, value, callback) {
+  if (value == null) return callback(new Error('请填写退还给租客的押金金额（不退还填0）'))
+  if (value < 0) return callback(new Error('退还押金不能为负数'))
+  const deposit = props.currentContract?.deposit
+  if (deposit != null && value > deposit) return callback(new Error(`退还押金不能超过原押金 ${Number(deposit).toFixed(2)} 元`))
+  callback()
+}
 
 const showEditDialog = ref(false)
 const editSubmitting = ref(false)

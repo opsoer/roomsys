@@ -2,7 +2,7 @@
   <div class="settings-container">
     <h2 class="settings-title">公寓设置</h2>
     <el-card v-loading="loading">
-      <el-form :model="form" label-width="100px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="封面图片">
           <div class="cover-section">
             <img v-if="coverUrl" :src="coverUrl" class="cover-image" />
@@ -20,19 +20,19 @@
             </div>
           </div>
         </el-form-item>
-        <el-form-item label="公寓名称">
-          <el-input v-model="form.name" />
+        <el-form-item label="公寓名称" prop="name">
+          <el-input v-model="form.name" maxlength="50" />
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="区域">
+            <el-form-item label="区域" prop="district">
               <el-select v-model="form.district" placeholder="选择区域" filterable allow-create class="full-width" @change="form.street='';form.village=''">
                 <el-option v-for="d in districts" :key="d.value" :label="d.label" :value="d.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="街道">
+            <el-form-item label="街道" prop="street">
               <el-select v-model="form.street" placeholder="选择街道" filterable allow-create class="full-width" @change="form.village=''">
                 <el-option v-for="s in currentStreets" :key="s.value" :label="s.label" :value="s.value" />
               </el-select>
@@ -41,20 +41,20 @@
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="村/小区">
+            <el-form-item label="村/小区" prop="village">
               <el-select v-model="form.village" placeholder="选择或输入" filterable allow-create class="full-width">
                 <el-option v-for="v in currentVillages" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="楼牌号">
-              <el-input v-model="form.building_no" />
+            <el-form-item label="楼牌号" prop="building_no">
+              <el-input v-model="form.building_no" maxlength="20" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="简介">
-          <el-input v-model="form.description" type="textarea" :rows="4" />
+        <el-form-item label="简介" prop="description">
+          <el-input v-model="form.description" type="textarea" :rows="4" maxlength="200" show-word-limit />
         </el-form-item>
         <el-divider>公寓到期</el-divider>
         <el-form-item label="当前状态">
@@ -65,11 +65,11 @@
           <div class="renew-tip">公寓已到期，如需续约请联系平台管理员。</div>
         </el-form-item>
         <el-divider>房东信息</el-divider>
-        <el-form-item label="房东姓名">
-          <el-input v-model="form.landlord_name" placeholder="房东姓名" />
+        <el-form-item label="房东姓名" prop="landlord_name">
+          <el-input v-model="form.landlord_name" placeholder="房东姓名" maxlength="20" />
         </el-form-item>
         <div v-for="(p, i) in form.landlord_phones" :key="i" class="phone-row">
-          <el-input v-model="form.landlord_phones[i]" placeholder="房东电话" class="phone-input" />
+          <el-input v-model="form.landlord_phones[i]" placeholder="房东电话" maxlength="11" class="phone-input" />
           <el-button v-if="form.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="form.landlord_phones.splice(i,1)" />
         </div>
         <el-button size="small" class="add-phone-btn" @click="form.landlord_phones.push('')">+ 添加电话</el-button>
@@ -103,11 +103,23 @@ const currentVillages = computed(() => {
 
 const loading = ref(true)
 const saving = ref(false)
+const formRef = ref(null)
 const form = ref({
   name: '', district: '', street: '', village: '', building_no: '',
   description: '', landlord_name: '', landlord_phones: [''],
   cover_image: '', expired_at: '', status: 'active',
 })
+
+// 公寓信息必填校验（区域/街道/村支持手动输入，仅要求非空；whitespace 拒绝纯空格）
+const required = (message) => [{ required: true, message, whitespace: true }]
+const rules = {
+  name: required('请输入公寓名称'),
+  district: required('请选择或输入区域'),
+  street: required('请选择或输入街道'),
+  village: required('请选择或输入村/小区'),
+  building_no: required('请输入楼牌号'),
+  landlord_name: required('请输入房东姓名'),
+}
 
 const isExpiredOrHidden = computed(() => form.value.status === 'hidden' || form.value.status === 'expired')
 
@@ -221,10 +233,27 @@ async function fetchInfo() {
 }
 
 async function handleSave() {
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  // 房东电话：至少 1 个、最多 5 个，且须为 11 位手机号
+  const phones = form.value.landlord_phones.map(p => p.trim()).filter(Boolean)
+  if (phones.length === 0) {
+    ElMessage.warning('请至少填写一个房东电话')
+    return
+  }
+  if (phones.length > 5) {
+    ElMessage.warning('房东电话最多填写 5 个')
+    return
+  }
+  const badPhones = phones.filter(p => !/^1[3-9]\d{9}$/.test(p))
+  if (badPhones.length > 0) {
+    ElMessage.warning(`房东电话格式不正确（11位手机号）：${badPhones.join('、')}`)
+    return
+  }
   saving.value = true
   try {
     const data = { ...form.value }
-    data.landlords =     data.landlord_phones.filter(p => p.trim()).map(p => ({ name: (data.landlord_name || '').trim() || '未知', phone: p.trim() }))
+    data.landlords = data.landlord_phones.filter(p => p.trim()).map(p => ({ name: (data.landlord_name || '').trim() || '未知', phone: p.trim() }))
     delete data.landlord_name
     delete data.landlord_phones
     await updateBuildingInfo(data)

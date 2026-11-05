@@ -17,7 +17,7 @@
           <el-input-number v-model="form.amount" :min="0.01" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="账单日期" prop="bill_date" :rules="[{ required: true, message: '请选择日期' }]">
-          <el-date-picker v-model="form.bill_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker v-model="form.bill_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" :disabled-date="disableFutureDate" style="width: 100%" />
         </el-form-item>
         <el-form-item label="关联房间" prop="room_id">
           <el-select v-model="form.room_id" placeholder="不选则不关联" clearable style="width: 100%">
@@ -25,7 +25,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="备注" prop="description" :rules="form.subtype === '其他' ? [{ required: true, message: '子类型为其他时，备注不能为空' }] : []">
-          <el-input v-model="form.description" type="textarea" :rows="2" />
+          <el-input v-model="form.description" type="textarea" :rows="2" maxlength="200" show-word-limit />
         </el-form-item>
       </template>
       <template v-else>
@@ -37,7 +37,7 @@
         </el-form-item>
         <el-form-item label="修改原因" prop="modify_reason"
           :rules="[{ required: true, message: '请填写修改原因' }]">
-          <el-input v-model="form.modify_reason" type="textarea" :rows="3" placeholder="请填写修改原因" />
+          <el-input v-model="form.modify_reason" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="请填写修改原因" />
         </el-form-item>
         <div style="background:#f5f7fa;padding:10px 14px;border-radius:6px;font-size:13px;color:#666">
           修改后将在备注追加：<br>
@@ -80,6 +80,11 @@ const subtypeOptions = computed(() => {
     ? ['租金', '定金', '押金', '水电费', '其他']
     : ['物业费', '维修费', '清洁费', '税费', '其他']
 })
+
+// 账单日期不允许选未来（记账以实际发生为准；如需预记账再放开）
+function disableFutureDate(date) {
+  return date > Date.now()
+}
 
 function open() {
   editingId.value = null

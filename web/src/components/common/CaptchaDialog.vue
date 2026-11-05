@@ -18,6 +18,7 @@
 // 通用图片验证码弹窗：弹窗打开时自动取图；确认后调用外部 handler(payload)，
 // 返回 true 视为通过并关闭弹窗，false 刷新验证码等待重输（错误提示由全局拦截器 toast）。
 import { ref, watch } from 'vue'
+import { showToast } from 'vant'
 import { getCaptcha } from '../../api'
 
 const props = defineProps({
@@ -50,7 +51,15 @@ async function load() {
 }
 
 async function submit() {
-  if (!code.value || code.value.length < 4 || submitting.value) return
+  if (submitting.value) return
+  if (!code.value) {
+    showToast({ message: '请输入验证码', position: 'top' })
+    return
+  }
+  if (code.value.length < 4) {
+    showToast({ message: '请输入完整的4位数字', position: 'top' })
+    return
+  }
   submitting.value = true
   try {
     const ok = await props.handler({ captcha_id: captchaId.value, captcha_code: code.value })

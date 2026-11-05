@@ -116,8 +116,8 @@
 
     <el-dialog v-model="showShareholderDialog" :title="editingSHId ? '编辑股东' : '添加股东'" width="400px">
       <el-form ref="shFormRef" :model="shForm" label-width="90px">
-        <el-form-item label="姓名" prop="name" :rules="[{ required: true, message: '请输入姓名' }]">
-          <el-input v-model="shForm.name" />
+        <el-form-item label="姓名" prop="name" :rules="[{ required: true, message: '请输入姓名', whitespace: true }]">
+          <el-input v-model="shForm.name" maxlength="20" />
         </el-form-item>
         <el-form-item label="持股比例(%)" prop="share_ratio" :rules="[{ required: true, message: '请输入比例' }]">
           <el-input-number v-model="shForm.share_ratio" :min="0" :max="100" :precision="2" style="width: 100%" />
@@ -186,6 +186,14 @@ async function handleAddSH() {
   if (!valid) return
   if (!shForm.value.share_ratio || shForm.value.share_ratio <= 0) {
     ElMessage.warning('持股比例必须大于0')
+    return
+  }
+  // 全部股东持股比例合计不得超过100%（编辑时排除自身）
+  const othersTotal = shareholders.value
+    .filter(s => s.id !== editingSHId.value)
+    .reduce((sum, s) => sum + (Number(s.share_ratio) || 0), 0)
+  if (Math.round((othersTotal + Number(shForm.value.share_ratio)) * 100) / 100 > 100) {
+    ElMessage.warning(`持股比例合计不能超过100%：其他股东已占 ${othersTotal.toFixed(2)}%，本次最多可填 ${(100 - othersTotal).toFixed(2)}%`)
     return
   }
   shSubmitting.value = true

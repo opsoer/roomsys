@@ -5,6 +5,7 @@
       <el-input
         v-model="keyword"
         placeholder="搜索租客姓名 / 电话 / 房间号"
+        maxlength="50"
         clearable
         style="width: 260px"
         @keyup.enter="search"

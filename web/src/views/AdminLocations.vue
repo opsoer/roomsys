@@ -132,9 +132,22 @@ async function reload() {
   await locationStore.loadManage(true)
 }
 
+// 位置名称校验：非空白且限长（区域/街道 ≤20 字符，村/小区 ≤30 字符）
+function locationInputProps(level) {
+  const max = level === 3 ? 30 : 20
+  return {
+    inputValidator: (v) => {
+      const s = (v || '').trim()
+      if (!s) return '名称不能为空'
+      if (s.length > max) return `名称不能超过${max}个字符`
+      return true
+    },
+  }
+}
+
 async function openAdd(level) {
   const tips = { 1: '新增区域名称', 2: `在「${selDistrict.value}」下新增街道`, 3: `在「${selDistrict.value} / ${selStreet.value}」下新增村/小区` }
-  const { value } = await ElMessageBox.prompt(tips[level], '新增位置', { inputValue: '', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
+  const { value } = await ElMessageBox.prompt(tips[level], '新增位置', { inputValue: '', ...locationInputProps(level) })
   const payload = { level, district: selDistrict.value, street: level === 3 ? selStreet.value : '', name: value.trim() }
   if (level === 1) { payload.district = payload.name }
   await adminAddLocationCustom(payload)
@@ -144,7 +157,7 @@ async function openAdd(level) {
 
 async function openRename(level, { displayName }) {
   const { value } = await ElMessageBox.prompt(`将「${displayName}」改名为：`, '位置改名', {
-    inputValue: displayName, inputPattern: /\S+/, inputErrorMessage: '名称不能为空',
+    inputValue: displayName, ...locationInputProps(level),
   })
   const newName = value.trim()
   if (newName === displayName) return

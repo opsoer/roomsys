@@ -20,6 +20,7 @@
       <el-input
         v-model="filters.username"
         placeholder="按操作人搜索"
+        maxlength="30"
         size="small"
         clearable
         style="width: 160px"
@@ -87,6 +88,7 @@
             type="datetime"
             placeholder="选择时间点"
             value-format="YYYY-MM-DD HH:mm:ss"
+            :disabled-date="disableFutureDate"
             style="width: 100%"
             @change="onCleanupFormChange"
           />
@@ -107,7 +109,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="操作人">
-          <el-input v-model="cleanupForm.username" placeholder="留空则不限" clearable @keyup.enter="onCleanupFormChange" @clear="onCleanupFormChange" />
+          <el-input v-model="cleanupForm.username" placeholder="留空则不限" maxlength="30" clearable @keyup.enter="onCleanupFormChange" @clear="onCleanupFormChange" />
         </el-form-item>
       </el-form>
       <div style="margin-bottom: 4px; font-size: 14px;">
@@ -276,6 +278,11 @@ const cleanupCounting = ref(false)
 const cleanupSubmitting = ref(false)
 // 默认把当前列表筛选条件带进来，方便「按当前看到的范围」清理
 const cleanupForm = reactive({ before_time: '', resource: '', action: '', role: '', username: '' })
+
+// 清理时间点不允许选未来日期（避免误选未来时间导致什么都没删）
+function disableFutureDate(date) {
+  return date > Date.now()
+}
 
 function openCleanup() {
   cleanupForm.before_time = dayjs().subtract(3, 'month').startOf('day').format('YYYY-MM-DD HH:mm:ss')

@@ -7,7 +7,7 @@
           <el-option label="即将到期" value="expiring" />
           <el-option label="已到期" value="expired" />
         </el-select>
-        <el-input v-model="keyword" placeholder="搜索公寓名或房东电话" clearable style="width:260px" @keyup.enter="$emit('search')" @clear="$emit('search')">
+        <el-input v-model="keyword" placeholder="搜索公寓名或房东电话" maxlength="50" clearable style="width:260px" @keyup.enter="$emit('search')" @clear="$emit('search')">
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
