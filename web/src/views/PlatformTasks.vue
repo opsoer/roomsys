@@ -248,7 +248,7 @@ async function handleProcess(id) {
 
 async function handleRenewSubmit() {
   const valid = await renewFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   renewSubmitting.value = true
   try {
     await adminRenewBuilding(renewTask.value.building_id, { expired_at: renewForm.value.expired_at })

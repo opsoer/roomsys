@@ -36,5 +36,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
+    // 组件测试挂载真实 Element Plus 表单；内联转译以消化其样式导入
+    server: { deps: { inline: ['element-plus'] } },
   },
 })

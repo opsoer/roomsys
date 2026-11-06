@@ -155,7 +155,7 @@ function validatePasswordConfirm(rule, value, callback) {
 
 async function handleSubmit() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   submitting.value = true
   try {
     if (editingId.value) {

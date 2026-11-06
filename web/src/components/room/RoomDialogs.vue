@@ -264,7 +264,7 @@ function openCancelReserve() {
 
 async function handleReserve() {
   const valid = await reserveFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (reserveForm.value.start_date && reserveForm.value.end_date && reserveForm.value.end_date <= reserveForm.value.start_date) {
     ElMessage.error('结束日期必须大于起租日期')
     return
@@ -282,7 +282,7 @@ async function handleReserve() {
 
 async function handleConfirmSign() {
   const valid = await signFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (signForm.value.start_date && signForm.value.end_date && signForm.value.end_date <= signForm.value.start_date) {
     ElMessage.error('结束日期必须大于起租日期')
     return
@@ -301,7 +301,7 @@ async function handleConfirmSign() {
 
 async function handleCancelReserve() {
   const valid = await cancelFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   cancelSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
@@ -316,7 +316,7 @@ async function handleCancelReserve() {
 
 async function handleRent() {
   const valid = await rentFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (rentForm.value.start_date && rentForm.value.end_date && rentForm.value.end_date <= rentForm.value.start_date) {
     ElMessage.error('退租日期必须大于起租日期')
     return
@@ -339,7 +339,7 @@ async function handleRent() {
 
 async function handleUpdateEndDate() {
   const valid = await endDateFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   endDateSubmitting.value = true
   try {
     await buildingRenewContract(props.roomId, { end_date: endDateForm.value.end_date, rent_price: endDateForm.value.rent_price })
@@ -355,7 +355,7 @@ async function handleUpdateEndDate() {
 
 async function confirmVacate() {
   const valid = await vacateFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   vacateSubmitting.value = true
   try {
     await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit })
@@ -370,7 +370,7 @@ async function confirmVacate() {
 
 async function handleEdit() {
   const valid = await editFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   editSubmitting.value = true
   try {
     await buildingUpdateRoom(props.roomId, editForm.value)

@@ -238,7 +238,7 @@ async function fetchInfo() {
 
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   // 房东电话：至少 1 个、最多 5 个，且须为 11 位手机号
   const phones = form.value.landlord_phones.map(p => p.trim()).filter(Boolean)
   if (phones.length === 0) {

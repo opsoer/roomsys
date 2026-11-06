@@ -137,7 +137,7 @@ function openProcessDialog(task) {
 
 async function handleProcessSubmit() {
   const valid = await processFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   processSubmitting.value = true
   try {
     await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit })

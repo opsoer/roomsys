@@ -831,7 +831,7 @@ async function handleAdd() {
     return
   }
   const valid = await addFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   submitting.value = true
   try {
     const payload = { ...addForm.value }
@@ -856,7 +856,7 @@ async function handleAdd() {
 // 有失败时弹窗列出失败房间号和原因；全部失败时保留创建弹窗便于修改后重试
 async function handleBatchAdd() {
   const valid = await addFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   const numbers = batchRoomNumbers.value
   if (numbers.length === 0) {
     ElMessage.warning('请输入至少一个房间号')
@@ -944,7 +944,7 @@ function addImportRows() {
 // 提交导入：共用信息 + 逐间租约一次性发给后端，后端每间房独立事务，允许部分成功
 async function handleImportRented() {
   const valid = await importBaseFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (importRows.value.length === 0) {
     ElMessage.warning('请先添加房间号')
     return

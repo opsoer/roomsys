@@ -183,7 +183,7 @@ async function fetchShareholders() {
 
 async function handleAddSH() {
   const valid = await shFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (!shForm.value.share_ratio || shForm.value.share_ratio <= 0) {
     ElMessage.warning('持股比例必须大于0')
     return

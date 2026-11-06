@@ -32,16 +32,19 @@ const form = defineModel({ type: Object, required: true })
 const formRef = ref(null)
 
 // 三种流转共用的字段校验规则（文案与原三个弹窗保持一致；whitespace 拒绝纯空格）
+// 注意：金额字段存的是 Number，required 必须显式 type:'number'——
+// 默认的字符串分支（尤其叠加 whitespace 时）会把数字值误判为必填未填，导致提交被静默拦下
 const required = (message) => [{ required: true, message, whitespace: true }]
+const requiredNumber = (message) => [{ required: true, type: 'number', message }]
 const rules = {
   tenant_name: required('请输入租客姓名'),
   // 金额三项只拦负数（0 合法，如免租/无押金/无管理费）
-  rent_price: [...required('请输入租金'), { validator: (_, v) => v >= 0, message: '租金不能为负数' }],
-  management_fee: [...required('请输入管理费'), { validator: (_, v) => v >= 0, message: '管理费不能为负数' }],
-  deposit: [...required('请输入押金金额'), { validator: (_, v) => v >= 0, message: '押金不能为负数' }],
+  rent_price: [...requiredNumber('请输入租金'), { validator: (_, v) => v >= 0, message: '租金不能为负数' }],
+  management_fee: [...requiredNumber('请输入管理费'), { validator: (_, v) => v >= 0, message: '管理费不能为负数' }],
+  deposit: [...requiredNumber('请输入押金金额'), { validator: (_, v) => v >= 0, message: '押金不能为负数' }],
   start_date: required('请选择起租日期'),
   end_date: required('请选择结束日期'),
-  earnest_money: [...required('请输入定金金额'), { validator: (_, v) => v > 0, message: '定金必须大于0' }],
+  earnest_money: [...requiredNumber('请输入定金金额'), { validator: (_, v) => v > 0, message: '定金必须大于0' }],
   // 联系电话选填，但填写时须为 11 位手机号
   tenant_phone: [{ validator: (_, v) => !String(v || '').trim() || /^1[3-9]\d{9}$/.test(String(v).trim()), message: '联系电话格式不正确（11位手机号）', trigger: 'blur' }],
 }

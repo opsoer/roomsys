@@ -495,7 +495,7 @@ async function loadDepositLogs(buildingId) {
 
 async function handleDepositAdjust() {
   const valid = await depositFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (depositAfter.value < 0) {
     ElMessage.warning('调整后余额不能为负数')
     return
@@ -536,7 +536,7 @@ function openCreateAdmin(row) {
 
 async function handleCreate() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (!validatePhones(createForm.value.landlord_phones)) return
   submitting.value = true
   try {
@@ -589,7 +589,7 @@ async function handleCreate() {
 
 async function handleEdit() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   if (!validatePhones(editForm.value.landlord_phones)) return
   submitting.value = true
   try {
@@ -609,7 +609,7 @@ async function handleEdit() {
 
 async function handleUpgrade() {
   const valid = await upgradeFormRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   upgradeSubmitting.value = true
   try {
     await adminUpgradePackage(upgradeBuildingId.value, { package: upgradeForm.value.package })
