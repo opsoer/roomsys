@@ -11,19 +11,28 @@
       <!-- 区域 -->
       <div class="loc-col">
         <div class="loc-col-head">
-          <span>区域</span>
+          <span class="loc-head-title">区域</span>
           <el-button size="small" text type="primary" @click="openAdd(1)">+ 新增</el-button>
         </div>
         <div class="loc-col-list">
           <div
             v-for="d in tree" :key="d.label"
-            :class="['loc-item', { active: selDistrict === d.label }]"
+            :class="['loc-item', { active: selDistrict === d.label, 'is-custom': customId(1, d.label) }]"
             @click="selDistrict = d.label; selStreet = ''"
           >
-            <span class="loc-name">{{ d.label }}</span>
-            <span class="loc-actions">
-              <el-button size="small" text type="primary" @click.stop="openRename(1, { displayName: d.label })">改名</el-button>
-              <el-button v-if="customId(1, d.label)" size="small" text type="danger" @click.stop="removeCustom(1, d.label)">删除</el-button>
+            <!-- 自定义条目：第一行 名字+删除，第二行 改名（与删除上下右对齐） -->
+            <div v-if="customId(1, d.label)" class="loc-stack">
+              <div class="loc-row-top">
+                <span class="loc-text">{{ d.label }}</span>
+                <el-button size="small" text type="danger" class="loc-del" @click.stop="removeCustom(1, d.label)">删除</el-button>
+              </div>
+              <div class="loc-row-sub">
+                <el-button size="small" text type="primary" @click.stop="openRename(1, { displayName: d.label })">改名</el-button>
+              </div>
+            </div>
+            <span v-else class="loc-name">
+              <span class="loc-text">{{ d.label }}</span>
+              <el-button size="small" text type="primary" class="loc-rename" @click.stop="openRename(1, { displayName: d.label })">改名</el-button>
             </span>
           </div>
         </div>
@@ -32,21 +41,28 @@
       <!-- 街道 -->
       <div class="loc-col">
         <div class="loc-col-head">
-          <span>街道{{ selDistrict ? ` · ${selDistrict}` : '' }}</span>
+          <span class="loc-head-title">街道{{ selDistrict ? ` · ${selDistrict}` : '' }}</span>
           <el-button size="small" text type="primary" :disabled="!selDistrict" @click="openAdd(2)">+ 新增</el-button>
         </div>
         <div class="loc-col-list">
           <div
             v-for="s in currentStreets" :key="s.label"
-            :class="['loc-item', { active: selStreet === s.label }]"
+            :class="['loc-item', { active: selStreet === s.label, 'is-custom': customId(2, s.label) }]"
             @click="selStreet = s.label"
           >
-            <span class="loc-name">
-              {{ s.label }}
-              <el-tag v-if="isCustom(2, s.label)" size="small" type="warning" effect="plain">自定义</el-tag>
+            <div v-if="customId(2, s.label)" class="loc-stack">
+              <div class="loc-row-top">
+                <span class="loc-text">{{ s.label }}</span>
+                <el-button size="small" text type="danger" class="loc-del" @click.stop="removeCustom(2, s.label)">删除</el-button>
+              </div>
+              <div class="loc-row-sub">
+                <el-button size="small" text type="primary" @click.stop="openRename(2, { displayName: s.label })">改名</el-button>
+              </div>
+            </div>
+            <span v-else class="loc-name">
+              <span class="loc-text">{{ s.label }}</span>
+              <el-button size="small" text type="primary" class="loc-rename" @click.stop="openRename(2, { displayName: s.label })">改名</el-button>
             </span>
-            <el-button size="small" text type="primary" @click.stop="openRename(2, { displayName: s.label })">改名</el-button>
-            <el-button v-if="customId(2, s.label)" size="small" text type="danger" @click.stop="removeCustom(2, s.label)">删除</el-button>
           </div>
           <div v-if="!selDistrict" class="loc-empty">请先选择区域</div>
         </div>
@@ -55,19 +71,24 @@
       <!-- 村/小区 -->
       <div class="loc-col">
         <div class="loc-col-head">
-          <span>村/小区{{ selStreet ? ` · ${selStreet}` : '' }}</span>
+          <span class="loc-head-title">村/小区{{ selStreet ? ` · ${selStreet}` : '' }}</span>
           <el-button size="small" text type="primary" :disabled="!selStreet" @click="openAdd(3)">+ 新增</el-button>
         </div>
         <div class="loc-col-list">
-          <div v-for="v in currentVillages" :key="v" class="loc-item">
-            <span class="loc-name">
-              {{ v }}
-              <el-tag v-if="isCustom(3, v)" size="small" type="warning" effect="plain">自定义</el-tag>
-              <el-tag v-else-if="inUse(3, v) > 0" size="small" type="success" effect="plain">{{ inUse(3, v) }}栋</el-tag>
-            </span>
-            <span class="loc-actions">
-              <el-button size="small" text type="primary" @click.stop="openRename(3, { displayName: v })">改名</el-button>
-              <el-button v-if="customId(3, v)" size="small" text type="danger" @click.stop="removeCustom(3, v)">删除</el-button>
+          <div v-for="v in currentVillages" :key="v" :class="['loc-item', { 'is-custom': customId(3, v) }]">
+            <div v-if="customId(3, v)" class="loc-stack">
+              <div class="loc-row-top">
+                <span class="loc-text">{{ v }}</span>
+                <el-button size="small" text type="danger" class="loc-del" @click.stop="removeCustom(3, v)">删除</el-button>
+              </div>
+              <div class="loc-row-sub">
+                <el-button size="small" text type="primary" @click.stop="openRename(3, { displayName: v })">改名</el-button>
+              </div>
+            </div>
+            <span v-else class="loc-name">
+              <span class="loc-text">{{ v }}</span>
+              <el-tag v-if="inUse(3, v) > 0" size="small" type="success" effect="plain">{{ inUse(3, v) }}栋</el-tag>
+              <el-button size="small" text type="primary" class="loc-rename" @click.stop="openRename(3, { displayName: v })">改名</el-button>
             </span>
           </div>
           <div v-if="!selStreet" class="loc-empty">请先选择街道</div>
@@ -109,7 +130,6 @@ function customEntry(level, name) {
     return c.district === selDistrict.value && normStreet(c.street) === normStreet(selStreet.value)
   })
 }
-function isCustom(level, name) { return !!customEntry(level, name) }
 function customId(level, name) { return customEntry(level, name)?.id || 0 }
 
 // 该位置下的公寓数（来自 store 的 dbLocations 聚合，仅提示用，以后端 dry_run 为准）
@@ -207,7 +227,7 @@ async function removeCustom(level, name) {
 .loc-col-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 10px 12px;
   font-size: 14px;
   font-weight: 600;
@@ -215,20 +235,51 @@ async function removeCustom(level, name) {
   border-bottom: 1px solid #ebeef5;
   background: #fafbfc;
 }
+.loc-head-title {
+  flex: 1;
+  min-width: 0; /* 列标题（如「村/小区 · 坪山街道」）超长时省略，三列标题保持单行对齐 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loc-col-head .el-button { flex-shrink: 0; }
 .loc-col-list { max-height: 60vh; overflow-y: auto; }
 .loc-item {
-  display: flex;
+  display: flex; /* 普通条目单行；自定义条目用 loc-stack 两行堆叠 */
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   font-size: 13px;
+  line-height: 1.5;
   color: #303133;
   cursor: pointer;
   border-bottom: 1px solid #f5f7fa;
 }
 .loc-item:hover { background: #f5f7fa; }
 .loc-item.active { background: #ecf5ff; color: #409eff; font-weight: 600; }
-.loc-name { display: flex; align-items: center; gap: 6px; word-break: break-all; }
-.loc-actions { display: flex; flex-shrink: 0; }
+.loc-name {
+  flex: 1;
+  min-width: 0; /* 名字区域可被压缩（这是之前横向溢出的根因），长名自动换行，按钮永不出界 */
+  display: flex;
+  align-items: center;
+  gap: 4px 6px;
+}
+.loc-text { min-width: 0; word-break: break-all; } /* 名字过长时自动换行，不强制单行 */
+.loc-name .el-tag { flex-shrink: 0; }
+.loc-rename { margin-left: auto; flex-shrink: 0; } /* 普通条目：改名推到行最右 */
+/* 自定义条目两行堆叠：第一行 名字+标签+删除，第二行 改名与删除上下右对齐成列 */
+.loc-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.loc-row-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.loc-row-top .loc-text { flex: 1; } /* 名字占满剩余空间，删除固定行尾 */
+.loc-row-top .el-tag { flex-shrink: 0; }
+.loc-del { flex-shrink: 0; }
+.loc-row-sub { display: flex; justify-content: flex-end; } /* 改名右对齐，与删除上下对齐 */
+.loc-rename { margin-left: auto; flex-shrink: 0; } /* 改名推到名字行最右 */
 .loc-empty { padding: 24px 0; text-align: center; color: #999; font-size: 13px; }
 </style>
