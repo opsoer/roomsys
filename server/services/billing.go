@@ -8,6 +8,8 @@ package services
 import (
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"rental-server/models"
@@ -15,6 +17,74 @@ import (
 
 	"gorm.io/gorm"
 )
+
+// MaxEvidencesPerBill 单笔账单凭证上限。
+const MaxEvidencesPerBill = 9
+
+// EvidenceInput 账单凭证输入：file_key 必须来自本公寓的凭证上传接口
+// （media.UploadBillEvidence 生成的 buildings/{bid}_…/bills/… key），防止跨公寓引用。
+type EvidenceInput struct {
+	// FileKey 对象存储 key。
+	FileKey string `json:"file_key"`
+	// FileName 原始文件名（仅展示用）。
+	FileName string `json:"file_name"`
+	// FileSize 字节数（仅展示用）。
+	FileSize int64 `json:"file_size"`
+}
+
+// NormalizeEvidences 校验并归一化凭证输入：去重、限数量、校验 key 归属本公寓的 bills 目录。
+// 供账单创建/编辑、房间流转、平台代办等所有可携带凭证的入口共用同一套口径。
+func NormalizeEvidences(bid uint, inputs []EvidenceInput) ([]models.BillEvidence, error) {
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+	if len(inputs) > MaxEvidencesPerBill {
+		return nil, utils.BadRequest("每笔账单最多上传 %d 张凭证", MaxEvidencesPerBill)
+	}
+	prefix := fmt.Sprintf("buildings/%d_", bid)
+	seen := make(map[string]bool, len(inputs))
+	out := make([]models.BillEvidence, 0, len(inputs))
+	for _, in := range inputs {
+		key := strings.TrimSpace(in.FileKey)
+		if key == "" || seen[key] {
+			continue
+		}
+		if !strings.HasPrefix(key, prefix) || !strings.Contains("/"+key+"/", "/bills/") {
+			return nil, utils.BadRequest("凭证文件无效或不属于本公寓")
+		}
+		seen[key] = true
+		name := strings.TrimSpace(in.FileName)
+		if name == "" {
+			name = path.Base(key)
+		}
+		if runes := []rune(name); len(runes) > 255 {
+			name = string(runes[:255])
+		}
+		size := in.FileSize
+		if size < 0 {
+			size = 0
+		}
+		out = append(out, models.BillEvidence{
+			BuildingID: bid,
+			FileKey:    key,
+			FileName:   name,
+			FileSize:   size,
+		})
+	}
+	return out, nil
+}
+
+// CreateEvidences 在事务内将已归一化的凭证行挂到指定账单上（CreatedBy 由调用方补充）。
+func CreateEvidences(tx *gorm.DB, billID, uid uint, evidences []models.BillEvidence) error {
+	if len(evidences) == 0 {
+		return nil
+	}
+	for i := range evidences {
+		evidences[i].BillID = billID
+		evidences[i].CreatedBy = uid
+	}
+	return tx.Create(&evidences).Error
+}
 
 // RentBillsParams 出租建账参数。
 type RentBillsParams struct {
@@ -31,6 +101,8 @@ type RentBillsParams struct {
 	// RecordDepositBill 是否记录押金账单；nil 时按「起租日不早于本月1日」自动判断，
 	// 避免补记历史租约时重复记押金。
 	RecordDepositBill *bool
+	// Evidences 随单凭证（可选），仅挂到本次生成的租金账单上。
+	Evidences []EvidenceInput
 }
 
 // CalcMonthDays 计算给定月份的天数。
@@ -72,6 +144,10 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 	datePart := now.Format("20060102")
 	monthStart := utils.FirstDayOfMonth(now)
 	monthEnd := utils.LastDayOfMonth(now)
+	evidences, err := NormalizeEvidences(buildingID, p.Evidences)
+	if err != nil {
+		return err
+	}
 
 	startDate, err1 := time.Parse("2006-01-02", p.StartDate)
 	endDate, err2 := time.Parse("2006-01-02", p.EndDate)
@@ -112,6 +188,9 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 			if err := tx.Create(&rentBill).Error; err != nil {
 				return err
 			}
+			if err := CreateEvidences(tx, rentBill.ID, uid, evidences); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -141,9 +220,13 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 
 // CreateDepositRefundBill 生成押金退还账单（退租用）。
 // refunded <= 0 时不生成账单（负数同样跳过）。
-func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, originalDeposit, refunded float64) error {
+func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, originalDeposit, refunded float64, evidences []EvidenceInput) error {
 	if refunded <= 0 {
 		return nil
+	}
+	evRows, err := NormalizeEvidences(buildingID, evidences)
+	if err != nil {
+		return err
 	}
 	now := utils.Now()
 	deducted := originalDeposit - refunded
@@ -163,12 +246,15 @@ func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, original
 		PaidStatus:  "paid",
 		CreatedBy:   uid,
 	}
-	return tx.Create(&bill).Error
+	if err := tx.Create(&bill).Error; err != nil {
+		return err
+	}
+	return CreateEvidences(tx, bill.ID, uid, evRows)
 }
 
 // CreateEarnestBreachBill 生成定金违约账单（取消预订用）。
 // diff = 原收定金 - 实际退还：正数表示扣留定金（收入），负数表示房东多退（支出）。
-func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest, refunded float64) error {
+func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest, refunded float64, evidences []EvidenceInput) error {
 	diff := float64(int((earnest-refunded)*100)) / 100
 	if diff == 0 {
 		return nil
@@ -193,5 +279,12 @@ func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest,
 		bill.Amount = -diff
 		bill.Description += fmt.Sprintf("，房东违约/主动多退，额外赔付%.2f元", -diff)
 	}
-	return tx.Create(&bill).Error
+	if err := tx.Create(&bill).Error; err != nil {
+		return err
+	}
+	evRows, err := NormalizeEvidences(buildingID, evidences)
+	if err != nil {
+		return err
+	}
+	return CreateEvidences(tx, bill.ID, uid, evRows)
 }

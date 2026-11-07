@@ -54,15 +54,15 @@
             <el-radio value="full">全部功能（记账、预测、分红等）</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="!isEdit" label="押金（元）" prop="deposit" :rules="[{ validator: validateDeposit }]">
+        <el-form-item v-if="!isEdit" label="押金（元）" prop="deposit" required :rules="[{ validator: validateDeposit }]">
           <el-input-number v-model="activeForm.deposit" :min="0" :precision="2" :step="1000" :controls="false" placeholder="公寓入驻平台缴纳的押金" style="width:100%" />
           <div style="font-size:12px;color:#999;line-height:1.6;">公寓入驻时缴纳的押金；后续可在卡片「修改押金」中增减（每次需填写原因并留痕）</div>
         </el-form-item>
         <el-form-item label="简介" prop="description">
           <el-input v-model="activeForm.description" type="textarea" :rows="3" maxlength="200" show-word-limit />
         </el-form-item>
-        <el-form-item label="详细地址" prop="directions">
-          <el-input v-model="activeForm.directions" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="选填，路引每行一条，如：地铁3号线横岗站C口，步行300米" />
+        <el-form-item label="详细地址" prop="directions" required :rules="[{ required: true, message: '请填写详细地址（路引），每行一条', whitespace: true }]">
+          <el-input v-model="activeForm.directions" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="路引每行一条，如：地铁3号线横岗站C口，步行300米" />
         </el-form-item>
         <el-divider>{{ isEdit ? '房东信息' : '房东信息（必填）' }}</el-divider>
         <el-form-item label="房东姓名" prop="landlord_name" :rules="rulesFor('landlord_name')">
@@ -446,9 +446,10 @@ function onCreateContractDateChange(val) {
   }
 }
 
-// 押金校验：未填写按 0 处理，不允许为负
+// 押金校验：必填（el-input-number 清空后是 null），必须是数字，0 合法（无押金）
 function validateDeposit(rule, value, callback) {
-  if (value == null || value === '') return callback()
+  if (value == null || value === '') return callback(new Error('请输入押金金额（无押金填 0）'))
+  if (typeof value !== 'number' || Number.isNaN(value)) return callback(new Error('押金必须是数字'))
   if (value < 0) return callback(new Error('押金不能为负数'))
   callback()
 }

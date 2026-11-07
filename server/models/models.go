@@ -151,9 +151,24 @@ type Bill struct {
 	BillDate      string         `gorm:"size:10;not null" json:"bill_date"`
 	CreatedBy     uint           `json:"created_by"`
 	Room          Room           `gorm:"foreignKey:RoomID" json:"room,omitempty"`
+	Evidences     []BillEvidence `gorm:"foreignKey:BillID" json:"evidences,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// BillEvidence 账单凭证截图：file_key 为对象存储 key（七牛 bucket 或本地 UploadDir 相对路径）。
+// 删除语义：凭证行只随「管理员移除 / 更新账单时整单替换 / 账单被彻底删除」而删；
+// 存储里的物理文件不即时删除，由定时 GC 统一清理「未被任何凭证行引用且超过宽限期」的孤儿文件。
+type BillEvidence struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	BillID     uint      `gorm:"index;not null;constraint:OnDelete:CASCADE" json:"bill_id"`
+	BuildingID uint      `gorm:"index;not null" json:"building_id"`
+	FileKey    string    `gorm:"size:500;not null" json:"file_key"`
+	FileName   string    `gorm:"size:255" json:"file_name"`
+	FileSize   int64     `json:"file_size"`
+	CreatedBy  uint      `json:"created_by"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Shareholder 表示楼栋股东及其持股比例。
@@ -328,6 +343,7 @@ func AllModels() []interface{} {
 		&Tenant{},
 		&RentalContract{},
 		&Bill{},
+		&BillEvidence{},
 		&Shareholder{},
 		&Dividend{},
 		&Task{},

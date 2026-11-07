@@ -245,6 +245,12 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 			fullPkg.GET("/bills/stats", h.bill.Stats)
 			fullPkg.GET("/bills/trend", h.bill.Trend)
 			fullPkg.GET("/bills/export", h.bill.ExportCSV)
+			// 账单凭证截图：上传（中转对象存储）+ 事后补充/删除。
+			// 注意 gin 路由树按方法独立：POST 树上不能同时有 /bills/:id 与 /bills/evidences，
+			// 故补充用 PUT、删除用 DELETE，均挂在 :id 子路径下，与上传接口不冲突。
+			fullPkg.POST("/bills/evidences/upload", h.media.UploadBillEvidence)
+			fullPkg.PUT("/bills/:id/evidences", h.bill.AddEvidences)
+			fullPkg.DELETE("/bills/:id/evidences/:evidenceId", h.bill.DeleteEvidence)
 
 			// 分红管理
 			fullPkg.GET("/dividends", h.dividend.List)

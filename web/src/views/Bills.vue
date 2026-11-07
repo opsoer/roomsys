@@ -5,7 +5,8 @@
       <el-tab-pane label="账单列表" name="list">
         <BillList ref="billListRef" :bills="bills" :loading="billLoading"
           :rooms="allRooms"
-          @search="fetchBills" @add="openAddDialog" @edit="handleEdit" @export="handleExport" />
+          @search="fetchBills" @add="openAddDialog" @edit="handleEdit" @export="handleExport"
+          @evidence="handleEvidence" />
       </el-tab-pane>
 
       <el-tab-pane label="月度统计" name="monthly">
@@ -36,6 +37,7 @@
     </div>
     <div ref="sentinel" style="height: 10px"></div>
     <BillDialog ref="billDialogRef" :all-rooms="allRooms" @save-success="handleSaveSuccess" />
+    <BillEvidenceDrawer v-model:bill="evidenceBill" @changed="fetchBills" />
   </div>
 </template>
 
@@ -49,6 +51,7 @@ import BillStats from '../components/bill/BillStats.vue'
 import BillTrend from '../components/bill/BillTrend.vue'
 import BillPredict from '../components/bill/BillPredict.vue'
 import BillDialog from '../components/bill/BillDialog.vue'
+import BillEvidenceDrawer from '../components/bill/BillEvidenceDrawer.vue'
 
 const activeTab = ref('list')
 const allRooms = ref([])
@@ -92,6 +95,12 @@ async function handleExport() {
 
 function handleEdit(row) {
   billDialogRef.value?.openEdit(row)
+}
+
+// 凭证查看/补充抽屉
+const evidenceBill = ref(null)
+function handleEvidence(row) {
+  evidenceBill.value = row
 }
 
 async function handleSaveSuccess() {

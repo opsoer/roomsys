@@ -83,6 +83,9 @@
             :rules="[{ required: true, message: '请填写退还押金金额' }]">
             <el-input-number v-model="processForm.refunded_deposit" :min="0" :max="originalDeposit" :precision="2" style="width: 100%" />
           </el-form-item>
+          <el-form-item label="凭证截图">
+            <EvidenceUploader v-model="processEvidences" />
+          </el-form-item>
         </el-form>
         <div v-if="processForm.refunded_deposit > 0" style="background: #fef0f0; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #f56c6c">
           将自动创建 <strong>{{ Number(processForm.refunded_deposit).toFixed(2) }}</strong> 元的押金支出账单
@@ -105,6 +108,7 @@ import { ref, onMounted } from 'vue'
 import { buildingGetTasks, buildingProcessTask } from '../api'
 import { ElMessage } from 'element-plus'
 import { useInfiniteList } from '../composables/useInfiniteList'
+import EvidenceUploader from '../components/bill/EvidenceUploader.vue'
 
 const filterStatus = ref('pending')
 const pageSize = 20
@@ -126,12 +130,14 @@ const processingTask = ref(null)
 const processSubmitting = ref(false)
 const processFormRef = ref(null)
 const processForm = ref({ refunded_deposit: 0 })
+const processEvidences = ref([])
 const originalDeposit = ref(0)
 
 function openProcessDialog(task) {
   processingTask.value = task
   originalDeposit.value = task.deposit || 0
   processForm.value = { refunded_deposit: originalDeposit.value }
+  processEvidences.value = []
   showProcessDialog.value = true
 }
 
@@ -140,7 +146,7 @@ async function handleProcessSubmit() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   processSubmitting.value = true
   try {
-    await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit })
+    await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit, evidences: processEvidences.value })
     ElMessage.success('退租处理完成')
     showProcessDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))

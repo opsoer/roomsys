@@ -61,8 +61,11 @@
           <template #default="{ row }">{{ row.room?.room_number || '其他' }}</template>
         </el-table-column>
         <el-table-column prop="description" label="备注" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
+            <el-button size="small" @click="$emit('evidence', row)">
+              凭证{{ row.evidences?.length ? `(${row.evidences.length})` : '' }}
+            </el-button>
             <el-button size="small" @click="$emit('edit', row)">修改</el-button>
           </template>
         </el-table-column>
@@ -85,7 +88,12 @@
           <span :class="['bc-amount', row.type]">
             {{ row.type === 'income' ? '+' : '-' }}{{ row.amount.toFixed(2) }}
           </span>
-          <el-button size="small" text @click="$emit('edit', row)">修改</el-button>
+          <span>
+            <el-button size="small" text @click="$emit('evidence', row)">
+              凭证{{ row.evidences?.length ? `(${row.evidences.length})` : '' }}
+            </el-button>
+            <el-button size="small" text @click="$emit('edit', row)">修改</el-button>
+          </span>
         </div>
         <div v-if="row.description" class="bc-desc">{{ row.description }}</div>
       </div>
@@ -103,7 +111,7 @@ const props = defineProps({
   rooms: { type: Array, default: () => [] },
 })
 
-defineEmits(['search', 'add', 'edit', 'export'])
+defineEmits(['search', 'add', 'edit', 'export', 'evidence'])
 
 const filter = reactive({ type: '', subtype: '', room_number: '' })
 const now = dayjs()

@@ -33,6 +33,9 @@ type RoomStatusParams struct {
 	RefundedDeposit *float64
 	// RecordDepositBill 是否记录押金账单（nil 表示按起租日自动判断）。
 	RecordDepositBill *bool
+	// Evidences 随单凭证截图（可选）：出租挂到租金账单，退租挂到押金退还账单，
+	// 取消预订挂到定金违约账单；预订无账单，忽略。
+	Evidences []EvidenceInput
 }
 
 // RentRoom 出租：结束旧合同、创建/激活合同、生成账单、置房间为 rented。
@@ -122,6 +125,7 @@ func (s *RoomService) RentRoom(room *models.Room, p RoomStatusParams) error {
 			StartDate:         p.StartDate,
 			EndDate:           p.EndDate,
 			RecordDepositBill: p.RecordDepositBill,
+			Evidences:         p.Evidences,
 		}); err != nil {
 			tx.Rollback()
 			return utils.Internal(err, "创建出租账单失败")
@@ -237,7 +241,7 @@ func (s *RoomService) CancelReservation(room *models.Room, p RoomStatusParams) e
 		return utils.Internal(tx.Error, "服务器错误")
 	}
 
-	if err := CreateEarnestBreachBill(tx, room.BuildingID, room.ID, p.UserID, contract.EarnestMoney, refunded); err != nil {
+	if err := CreateEarnestBreachBill(tx, room.BuildingID, room.ID, p.UserID, contract.EarnestMoney, refunded, p.Evidences); err != nil {
 		tx.Rollback()
 		return utils.Internal(err, "创建违约账单失败")
 	}
@@ -295,7 +299,7 @@ func (s *RoomService) VacateRoom(room *models.Room, p RoomStatusParams) (hasFutu
 		return false, utils.Internal(err, "结束合同失败")
 	}
 
-	if err := CreateDepositRefundBill(tx, room.BuildingID, room.ID, p.UserID, originalDeposit, *p.RefundedDeposit); err != nil {
+	if err := CreateDepositRefundBill(tx, room.BuildingID, room.ID, p.UserID, originalDeposit, *p.RefundedDeposit, p.Evidences); err != nil {
 		tx.Rollback()
 		return false, utils.Internal(err, "创建退还账单失败")
 	}

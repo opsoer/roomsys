@@ -40,6 +40,7 @@ var allModels = []interface{}{
 	&models.Tenant{},
 	&models.RentalContract{},
 	&models.Bill{},
+	&models.BillEvidence{},
 	&models.Shareholder{},
 	&models.Dividend{},
 	&models.Task{},

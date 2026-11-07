@@ -27,6 +27,9 @@
         <el-form-item label="备注" prop="description" :rules="form.subtype === '其他' ? [{ required: true, message: '子类型为其他时，备注不能为空' }] : []">
           <el-input v-model="form.description" type="textarea" :rows="2" maxlength="200" show-word-limit />
         </el-form-item>
+        <el-form-item label="凭证截图">
+          <EvidenceUploader v-model="evidences" />
+        </el-form-item>
       </template>
       <template v-else>
         <el-form-item label="原金额">
@@ -38,6 +41,9 @@
         <el-form-item label="修改原因" prop="modify_reason"
           :rules="[{ required: true, message: '请填写修改原因' }]">
           <el-input v-model="form.modify_reason" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="请填写修改原因" />
+        </el-form-item>
+        <el-form-item label="凭证截图">
+          <EvidenceUploader v-model="evidences" />
         </el-form-item>
         <div style="background:#f5f7fa;padding:10px 14px;border-radius:6px;font-size:13px;color:#666">
           修改后将在备注追加：<br>
@@ -59,6 +65,7 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { buildingCreateBill, buildingUpdateBill } from '../../api'
+import EvidenceUploader from './EvidenceUploader.vue'
 
 const props = defineProps({
   allRooms: { type: Array, default: () => [] },
@@ -74,6 +81,9 @@ const formRef = ref(null)
 const form = reactive({
   type: 'income', subtype: '', amount: 0, bill_date: '', room_id: null, description: '', modify_reason: '', _old_amount: 0,
 })
+
+// 凭证截图（选填）：随单提交；编辑时整单替换
+const evidences = ref([])
 
 const subtypeOptions = computed(() => {
   return form.type === 'income'
@@ -96,6 +106,7 @@ function open() {
   form.description = ''
   form.modify_reason = ''
   form._old_amount = 0
+  evidences.value = []
   visible.value = true
 }
 
@@ -109,6 +120,7 @@ function openEdit(row) {
   form.description = row.description || ''
   form.modify_reason = ''
   form._old_amount = row.amount
+  evidences.value = (row.evidences || []).map(e => ({ file_key: e.file_key, file_name: e.file_name, file_size: e.file_size }))
   visible.value = true
 }
 
@@ -118,10 +130,10 @@ async function handleSave() {
   submitting.value = true
   try {
     if (editingId.value) {
-      await buildingUpdateBill(editingId.value, form)
+      await buildingUpdateBill(editingId.value, { ...form, evidences: evidences.value })
       ElMessage.success('更新成功')
     } else {
-      await buildingCreateBill(form)
+      await buildingCreateBill({ ...form, evidences: evidences.value })
       ElMessage.success('创建成功')
     }
     visible.value = false

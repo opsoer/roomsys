@@ -37,6 +37,9 @@
           :rules="[{ required: true, message: '请填写退还给定金的金额（不退填0）' }]">
           <el-input :model-value="cancelForm.refunded_deposit" @update:model-value="v => cancelForm.refunded_deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退还定金" style="width:100%" />
         </el-form-item>
+        <el-form-item label="凭证截图">
+          <EvidenceUploader v-model="cancelEvidences" />
+        </el-form-item>
       </el-form>
       <div v-if="earnestMoney - cancelForm.refunded_deposit > 0" class="vacate-deduction-note">
         租客违约/不租，扣留定金 <strong>{{ (earnestMoney - cancelForm.refunded_deposit).toFixed(2) }}</strong> 元，将创建定金违约收入账单
@@ -78,6 +81,9 @@
           <el-form-item label="退还押金" prop="refunded_deposit"
             :rules="[{ validator: validateRefundedDeposit }]">
             <el-input :model-value="vacateForm.refunded_deposit" @update:model-value="v => vacateForm.refunded_deposit = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退还押金" style="width:100%" />
+          </el-form-item>
+          <el-form-item label="凭证截图">
+            <EvidenceUploader v-model="vacateEvidences" />
           </el-form-item>
         </el-form>
         <div v-if="vacateForm.refunded_deposit > 0" class="vacate-deduction-note">
@@ -149,6 +155,7 @@ import { ElMessage } from 'element-plus'
 import { buildingUpdateRoomStatus, buildingRenewContract, buildingUpdateRoom } from '../../api'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../../utils/constants'
 import ContractForm from './ContractForm.vue'
+import EvidenceUploader from '../bill/EvidenceUploader.vue'
 
 const floorOptions = FLOOR_OPTIONS
 const layoutOptions = LAYOUT_OPTIONS
@@ -188,6 +195,7 @@ const signFormRef = ref(null)
 const showCancelReserveDialog = ref(false)
 const cancelSubmitting = ref(false)
 const cancelForm = ref({ refunded_deposit: null })
+const cancelEvidences = ref([])
 const cancelFormRef = ref(null)
 
 const earnestMoney = computed(() => props.currentContract?.earnest_money || 0)
@@ -202,6 +210,7 @@ const endDateFormRef = ref(null)
 const showVacateDialog = ref(false)
 const vacateSubmitting = ref(false)
 const vacateForm = ref({ refunded_deposit: null })
+const vacateEvidences = ref([])
 const vacateFormRef = ref(null)
 
 // 退还押金：0 ≤ 金额 ≤ 原押金（参照 Tasks 页退还押金的做法）
@@ -230,6 +239,7 @@ function openRenew() {
 
 function openVacant() {
   vacateForm.value = { refunded_deposit: null }
+  vacateEvidences.value = []
   showVacateDialog.value = true
 }
 
@@ -259,6 +269,7 @@ function openConfirmSign() {
 
 function openCancelReserve() {
   cancelForm.value = { refunded_deposit: 0 }
+  cancelEvidences.value = []
   showCancelReserveDialog.value = true
 }
 
@@ -304,7 +315,7 @@ async function handleCancelReserve() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   cancelSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit })
+    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit, evidences: cancelEvidences.value })
     ElMessage.success('已取消预订')
     showCancelReserveDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))
@@ -358,7 +369,7 @@ async function confirmVacate() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   vacateSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit })
+    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit, evidences: vacateEvidences.value })
     ElMessage.success('已设为未出租')
     showVacateDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))

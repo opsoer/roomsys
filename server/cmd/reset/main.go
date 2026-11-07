@@ -28,6 +28,7 @@ func main() {
 		&models.Dividend{},
 		&models.Shareholder{},
 		&models.Bill{},
+		&models.BillEvidence{},
 		&models.RentalContract{},
 		&models.Tenant{},
 		&models.RoomMedia{},

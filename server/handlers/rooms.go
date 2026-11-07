@@ -80,26 +80,26 @@ type BatchUpdatePricingReq struct {
 
 // UpdateRoomStatusReq 更新房间状态请求参数（出租/退租/预订/取消预订）
 type UpdateRoomStatusReq struct {
-	Status          string   `json:"status" binding:"required"`
-	TenantName      string   `json:"tenant_name"`
-	TenantPhone     string   `json:"tenant_phone"`
-	RentPrice       float64  `json:"rent_price" binding:"gte=0"`
-	ManagementFee   *float64 `json:"management_fee"`
-	Deposit         float64  `json:"deposit" binding:"gte=0"`
-	EarnestMoney    float64  `json:"earnest_money" binding:"gte=0"`
-	StartDate       string   `json:"start_date"`
-	EndDate         string   `json:"end_date"`
-	RefundedDeposit *float64 `json:"refunded_deposit"`
-	RecordDepositBill *bool  `json:"record_deposit_bill"` // 是否补记押金收入账单（历史租约押金是以前收的，可不记）
+	Status            string   `json:"status" binding:"required"`
+	TenantName        string   `json:"tenant_name"`
+	TenantPhone       string   `json:"tenant_phone"`
+	RentPrice         float64  `json:"rent_price" binding:"gte=0"`
+	ManagementFee     *float64 `json:"management_fee"`
+	Deposit           float64  `json:"deposit" binding:"gte=0"`
+	EarnestMoney      float64  `json:"earnest_money" binding:"gte=0"`
+	StartDate         string   `json:"start_date"`
+	EndDate           string   `json:"end_date"`
+	RefundedDeposit   *float64 `json:"refunded_deposit"`
+	RecordDepositBill *bool    `json:"record_deposit_bill"` // 是否补记押金收入账单（历史租约押金是以前收的，可不记）
+	// Evidences 随单凭证截图（可选，仅图片）：出租挂租金账单，退租挂押金退还账单，取消预订挂定金违约账单。
+	Evidences []services.EvidenceInput `json:"evidences"`
 }
-
 
 // createRentedBills 在事务内创建出租相关账单（收入、已收款）：
 //   - 租金账单：租金+管理费合计，账单期间取租期与"本月"的交集。
 //     录入在租历史租约（起租日在过去）时只补记本月，之前月份不补录；
 //     起租日在未来月份时本月不记，由月度租金定时任务在起租当月生成。
 //   - 押金账单：可选项。RecordDepositBill 为 nil 时按起租日期自动判断，
-
 
 // UpdateContractReq 续租合同请求参数
 type UpdateContractReq struct {
@@ -660,6 +660,7 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	audit.Log(c, audit.ActionDelete, audit.ResourceRoom, strconv.FormatUint(rid, 10), "删除房间")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
+
 // UpdateStatus 更新房间状态（出租/退租/预订）。
 // 业务规则与事务边界在 services.RoomService（RentRoom/ReserveRoom/CancelReservation/VacateRoom），
 // 这里只做参数校验、调用与响应组装。
@@ -706,6 +707,7 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		EndDate:           req.EndDate,
 		RefundedDeposit:   req.RefundedDeposit,
 		RecordDepositBill: req.RecordDepositBill,
+		Evidences:         req.Evidences,
 	}
 	if req.ManagementFee != nil {
 		params.ManagementFee = *req.ManagementFee
@@ -764,8 +766,6 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		}
 	}
 }
-
-
 
 // GetActiveContract 获取房间当前活跃合同
 func (h *RoomHandler) GetActiveContract(c *gin.Context) {
@@ -877,4 +877,3 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 		"合同续租 新到期日="+req.EndDate)
 	utils.SuccessWithMsg(c, "续租成功", nil)
 }
-

@@ -25,6 +25,8 @@ type TaskHandler struct {
 // ProcessTaskReq 处理退租任务的请求参数
 type ProcessTaskReq struct {
 	RefundedDeposit float64 `json:"refunded_deposit"`
+	// Evidences 随单凭证截图（可选），挂到本次生成的押金退还账单上。
+	Evidences []services.EvidenceInput `json:"evidences"`
 }
 
 // List 分页获取任务列表
@@ -114,7 +116,7 @@ func (h *TaskHandler) Process(c *gin.Context) {
 	var originalDeposit float64
 	tx.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", *task.RoomID, "active").Select("deposit").Scan(&originalDeposit)
 
-	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid, originalDeposit); err != nil {
+	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid, originalDeposit, req.Evidences); err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("创建押金退还账单失败")
 		utils.Error(c, http.StatusInternalServerError, "创建退还账单失败")
@@ -225,10 +227,14 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
 
-// handleDepositRefund 创建押金退还账单
-func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint, originalDeposit float64) error {
+// handleDepositRefund 创建押金退还账单（可携带随单凭证截图）
+func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint, originalDeposit float64, evidences []services.EvidenceInput) error {
 	if refundedDeposit <= 0 {
 		return nil
+	}
+	evRows, err := services.NormalizeEvidences(buildingID, evidences)
+	if err != nil {
+		return err
 	}
 
 	now := utils.Now()
@@ -252,5 +258,8 @@ func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64,
 		BillDate:    billDate,
 		CreatedBy:   userID,
 	}
-	return tx.Create(&bill).Error
+	if err := tx.Create(&bill).Error; err != nil {
+		return err
+	}
+	return services.CreateEvidences(tx, bill.ID, userID, evRows)
 }

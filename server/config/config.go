@@ -123,6 +123,8 @@ type SchedulerConfig struct {
 	TokenCleanup JobConfig `yaml:"token_cleanup"`
 	// DBBackup 数据库全量备份到对象存储（sqlite: VACUUM INTO；mysql: mysqldump）。
 	DBBackup JobConfig `yaml:"db_backup"`
+	// BillEvidenceGC 账单凭证孤儿文件清理：删除未被任何凭证记录引用且超过宽限期的图片。
+	BillEvidenceGC JobConfig `yaml:"bill_evidence_gc"`
 }
 
 // StorageConfig 对象存储 + CDN 配置组。
@@ -289,6 +291,8 @@ func normalize(cfg *Config) {
 	normalizeJob("soft_delete_cleanup", &cfg.Scheduler.SoftDeleteCleanup, "03:00", 0)
 	normalizeJob("token_cleanup", &cfg.Scheduler.TokenCleanup, "", 12)
 	normalizeJob("db_backup", &cfg.Scheduler.DBBackup, "04:00", 0)
+	// 凭证 GC 默认每周一次（interval 模式；time 优先，想改回每天定时刻配 time 即可）
+	normalizeJob("bill_evidence_gc", &cfg.Scheduler.BillEvidenceGC, "", 168)
 	if cfg.Scheduler.DBBackup.Keep <= 0 {
 		cfg.Scheduler.DBBackup.Keep = 7
 	}

@@ -301,6 +301,24 @@ export function buildingUpdateBill(id, data) {
   return api.put(`/building/bills/${id}`, data)
 }
 
+// 账单凭证截图（仅图片）：上传走服务端中转对象存储，返回 {file_key, file_name, file_size}；
+// key 随账单创建/编辑 payload 或补充接口落库，未挂账的文件由后端定时 GC 清理
+export function buildingUploadBillEvidence(formData, onProgress) {
+  return uploadApi.post('/building/bills/evidences/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress,
+  })
+}
+
+// 事后补充凭证（可选功能，自动生成的账单也走这里）
+export function buildingAddBillEvidences(id, evidences) {
+  return api.put(`/building/bills/${id}/evidences`, { evidences })
+}
+
+export function buildingDeleteBillEvidence(billId, evidenceId) {
+  return api.delete(`/building/bills/${billId}/evidences/${evidenceId}`)
+}
+
 export function buildingGetBillStats(month, year) {
   const params = {}
   if (month != null) params.month = month

@@ -60,9 +60,9 @@ func appendModification(desc, modLog string, maxMods int) string {
 
 // BillHandler 账单处理器，依赖数据库连接和账单服务
 type BillHandler struct {
-	DB           *gorm.DB
-	BillService  *services.BillService
-	RoomService  *services.RoomService
+	DB          *gorm.DB
+	BillService *services.BillService
+	RoomService *services.RoomService
 }
 
 // CreateBillReq 创建账单请求参数
@@ -73,6 +73,8 @@ type CreateBillReq struct {
 	RoomID      *uint   `json:"room_id"`
 	Description string  `json:"description"`
 	BillDate    string  `json:"bill_date" binding:"required"`
+	// Evidences 随单凭证截图（可选，仅图片），file_key 须来自本公寓的凭证上传接口。
+	Evidences []services.EvidenceInput `json:"evidences"`
 }
 
 // UpdateBillReq 更新账单请求参数
@@ -84,6 +86,8 @@ type UpdateBillReq struct {
 	Description  string   `json:"description"`
 	BillDate     string   `json:"bill_date"`
 	ModifyReason string   `json:"modify_reason"`
+	// Evidences 非 nil 时整单替换凭证列表（以请求内容为准），nil 表示不动凭证。
+	Evidences []services.EvidenceInput `json:"evidences"`
 }
 
 // List 获取账单列表，支持按类型、子类型、房间、日期范围筛选
@@ -182,7 +186,18 @@ func (h *BillHandler) Create(c *gin.Context) {
 		BillDate:    req.BillDate,
 		CreatedBy:   uid,
 	}
-	if err := h.BillService.Create(&bill); err != nil {
+	evidences, err := services.NormalizeEvidences(bid, req.Evidences)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&bill).Error; err != nil {
+			return err
+		}
+		return services.CreateEvidences(tx, bill.ID, uid, evidences)
+	})
+	if err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("创建账单数据库失败")
 		utils.Error(c, http.StatusInternalServerError, "创建账单失败")
 		return
@@ -198,7 +213,12 @@ func (h *BillHandler) Create(c *gin.Context) {
 	audit.Log(c, audit.ActionCreate, audit.ResourceBill, audit.ID(bill.ID),
 		"新建账单 单号="+billNo+" 类型="+req.Type+"/"+req.Subtype+
 			" 金额="+strconv.FormatFloat(req.Amount, 'f', 2, 64))
-	utils.Created(c, "创建成功", gin.H{"bill": bill})
+	// 事务后重读，响应带上已挂载的凭证
+	created, err := h.BillService.GetByID(bill.ID)
+	if err != nil {
+		created = &bill
+	}
+	utils.Created(c, "创建成功", gin.H{"bill": created})
 }
 
 // Update 更新账单，需填写修改原因，已结算月份不可修改
@@ -245,6 +265,11 @@ func (h *BillHandler) Update(c *gin.Context) {
 	if req.Amount != nil {
 		newAmount = *req.Amount
 	}
+	// 凭证创建人（uid 未取到时留 0，不影响凭证展示）
+	var uid uint
+	if v, ok := c.Get("user_id"); ok {
+		uid, _ = v.(uint)
+	}
 	updates := map[string]interface{}{
 		"amount": newAmount,
 	}
@@ -254,7 +279,28 @@ func (h *BillHandler) Update(c *gin.Context) {
 	}
 	const maxMods = 10
 	updates["description"] = appendModification(bill.Description, modLog, maxMods)
-	if err := h.BillService.Update(bill.ID, updates); err != nil {
+	// 凭证整单替换（req.Evidences 为 nil 表示不动凭证）；字段更新与凭证替换同事务
+	var newEvidences []models.BillEvidence
+	if req.Evidences != nil {
+		newEvidences, err = services.NormalizeEvidences(bid, req.Evidences)
+		if err != nil {
+			utils.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Bill{}).Where("id = ?", bill.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if req.Evidences == nil {
+			return nil
+		}
+		if err := tx.Where("bill_id = ?", bill.ID).Delete(&models.BillEvidence{}).Error; err != nil {
+			return err
+		}
+		return services.CreateEvidences(tx, bill.ID, uid, newEvidences)
+	})
+	if err != nil {
 		logger.Log.Error().Err(err).Uint("bill_id", bill.ID).Msg("更新账单失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
@@ -309,6 +355,110 @@ func (h *BillHandler) Delete(c *gin.Context) {
 	}
 	audit.Log(c, audit.ActionDelete, audit.ResourceBill, audit.ID(bill.ID),
 		"删除账单 单号="+bill.BillNo+" 金额="+strconv.FormatFloat(bill.Amount, 'f', 2, 64))
+	utils.SuccessWithMsg(c, "删除成功", nil)
+}
+
+// AddEvidences 事后补充凭证截图（可选功能：账单创建后任何时候都可补，含自动生成的账单）。
+// 凭证不参与金额与分红计算，故不受「该月已结算」限制。
+func (h *BillHandler) AddEvidences(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	billID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的账单ID")
+		return
+	}
+	bill, err := h.BillService.GetByID(uint(billID))
+	if err != nil || bill.BuildingID != bid {
+		utils.Error(c, http.StatusNotFound, "账单不存在")
+		return
+	}
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	uid, ok := userID.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "服务器错误")
+		return
+	}
+	var req struct {
+		Evidences []services.EvidenceInput `json:"evidences" binding:"required,min=1"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	// 已有凭证 + 本次新增不超过单笔上限
+	var existingCount int64
+	h.DB.Model(&models.BillEvidence{}).Where("bill_id = ?", bill.ID).Count(&existingCount)
+	if int(existingCount)+len(req.Evidences) > services.MaxEvidencesPerBill {
+		utils.Error(c, http.StatusBadRequest, fmt.Sprintf("每笔账单最多 %d 张凭证", services.MaxEvidencesPerBill))
+		return
+	}
+	evidences, err := services.NormalizeEvidences(bid, req.Evidences)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		return services.CreateEvidences(tx, bill.ID, uid, evidences)
+	})
+	if err != nil {
+		logger.Log.Error().Err(err).Uint("bill_id", bill.ID).Msg("补充凭证失败")
+		utils.Error(c, http.StatusInternalServerError, "补充凭证失败")
+		return
+	}
+	logger.Log.Info().Uint("bill_id", bill.ID).Int("count", len(evidences)).Msg("账单补充凭证成功")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBill, audit.ID(bill.ID),
+		"补充凭证 单号="+bill.BillNo+" 数量="+strconv.Itoa(len(evidences)))
+	updated, err := h.BillService.GetByID(bill.ID)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "查询账单失败")
+		return
+	}
+	utils.Success(c, gin.H{"bill": updated})
+}
+
+// DeleteEvidence 删除单张凭证（仅删 DB 行；存储文件由定时 GC 统一回收）。
+func (h *BillHandler) DeleteEvidence(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	billID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的账单ID")
+		return
+	}
+	evidenceID, err := strconv.ParseUint(c.Param("evidenceId"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的凭证ID")
+		return
+	}
+	bill, err := h.BillService.GetByID(uint(billID))
+	if err != nil || bill.BuildingID != bid {
+		utils.Error(c, http.StatusNotFound, "账单不存在")
+		return
+	}
+	var ev models.BillEvidence
+	if err := h.DB.Where("id = ? AND bill_id = ? AND building_id = ?", evidenceID, bill.ID, bid).First(&ev).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "凭证不存在")
+		return
+	}
+	if err := h.DB.Unscoped().Delete(&ev).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("evidence_id", ev.ID).Msg("删除凭证失败")
+		utils.Error(c, http.StatusInternalServerError, "删除凭证失败")
+		return
+	}
+	logger.Log.Info().Uint("bill_id", bill.ID).Uint("evidence_id", ev.ID).Msg("账单凭证已删除")
+	audit.Log(c, audit.ActionUpdate, audit.ResourceBill, audit.ID(bill.ID),
+		"删除凭证 单号="+bill.BillNo+" 文件="+ev.FileName)
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 
