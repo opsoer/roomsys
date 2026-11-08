@@ -77,10 +77,9 @@
         </h2>
         <div style="display:flex;gap:8px;align-items:center;">
           <el-button size="small" type="primary" plain @click="handleDownloadQr">二维码</el-button>
-          <span class="mobile-user-btn" @click="showUserMenu = !showUserMenu">用户</span>
+          <span class="mobile-user-btn" @click="handleLogout">退出</span>
         </div>
       </div>
-      <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-body">
         <router-view v-slot="{ Component }">
           <transition name="slide-fade" mode="out-in">
@@ -200,10 +199,8 @@ import { buildingKey } from '../utils/buildingKey'
 import { copyText } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
-import MobileUserMenu from '../components/common/MobileUserMenu.vue'
 
 const showMobileMenu = ref(false)
-const showUserMenu = ref(false)
 const router = useRouter()
 const authStore = useAuthStore()
 const buildingName = ref('')

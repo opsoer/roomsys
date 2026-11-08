@@ -30,9 +30,8 @@
       <div class="mobile-header">
         <span class="mobile-nav-btn" @click="$router.push('/')">返回</span>
         <h2 class="mobile-title">平台管理</h2>
-        <span class="mobile-user-btn" @click="showUserMenu = !showUserMenu">用户</span>
+        <span class="mobile-user-btn" @click="authStore.logout(); router.push('/')">退出</span>
       </div>
-      <MobileUserMenu :show="showUserMenu" :username="username" @close="showUserMenu = false" />
       <div class="mobile-tabs">
         <div :class="['mobile-tab', { active: $route.path === '/admin/buildings' }]" @click="$router.push('/admin/buildings')">公寓管理</div>
         <div :class="['mobile-tab', { active: $route.path === '/admin/locations' }]" @click="$router.push('/admin/locations')">位置管理</div>
@@ -58,13 +57,11 @@ import { ElMessage } from 'element-plus'
 import { adminGetPlatformTaskCount } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useMobile } from '../composables/useMobile'
-import MobileUserMenu from '../components/common/MobileUserMenu.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { isMobile } = useMobile()
 const username = ref(authStore.username)
-const showUserMenu = ref(false)
 const taskCount = ref(0)
 let timer = null
 
