@@ -228,7 +228,7 @@ func TestTask_ContractExpiry(t *testing.T) {
 func TestTask_BuildingExpiryAndRenew(t *testing.T) {
 	app, f := testkit.NewAppWithFixture(t)
 
-	// 30 天内 -> expiring + 双端待办
+	// 10 天内 -> expiring + 双端待办
 	app.SetTime(t, time.Now().AddDate(0, 0, 1))
 	app.Client.Do(http.MethodPost, "/api/admin/system/jobs/building_expiry/run", f.TokenRoot, nil).RequireOK(t)
 	require.Equal(t, "expiring", getBuilding(t, app, f.D.ID).Status)

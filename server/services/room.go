@@ -70,10 +70,10 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 	//   - "reserved" 同时命中「已出租但存在未来预订合同」的房间（这类房间动态状态
 	//     仍是 rented/expiring，未来预订也算一种可预订来源）；
 	//   - switch 无 default：传入未支持的状态值（如 "expired"）时不加任何过滤。
-	// "expiring" 边界与 DynamicRoomStatus 一致：到期日 < today+30（恰好30天整不算）。
+	// "expiring" 边界与 DynamicRoomStatus 一致：到期日 < today+10（恰好10天整不算）。
 	if status != "" {
 		today := utils.Now().Format("2006-01-02")
-		thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		expiringCutoff := utils.Now().AddDate(0, 0, utils.ExpiringSoonDays).Format("2006-01-02")
 		switch status {
 		case "vacant":
 			query = query.Where("status = ?", "vacant")
@@ -81,10 +81,10 @@ func (s *RoomService) List(buildingID uint, page, lastID, size int, floor, layou
 			query = query.Where("status = ? OR id IN (SELECT room_id FROM rental_contracts WHERE status = ?)", "reserved", "reserved")
 		case "expiring":
 			query = query.Where("status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date >= ? AND end_date < ?)",
-				"rented", "active", today, thirtyDaysLater)
+				"rented", "active", today, expiringCutoff)
 		case "rented":
 			query = query.Where("status = ? AND id NOT IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date < ?)",
-				"rented", "active", thirtyDaysLater)
+				"rented", "active", expiringCutoff)
 		}
 	}
 

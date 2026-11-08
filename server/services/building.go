@@ -74,8 +74,8 @@ func (s *BuildingService) IsVisible(id uint) (bool, error) {
 // Renew 公寓续约：更新到期日期并写入一条续约记录；新的到期日期不得早于今天。
 // 注意：无论原状态如何一律恢复 status=active —— 也会把被超管隐藏(hidden)的公寓重新公开。
 // operator 为操作人（用户名为空表示系统）。
-// 到期类待办（房东端 + 平台端）：新到期日严格晚于 today+30 天 → 两类到期类待办
-// 全部自动完成；≤30 天内（恰好30天整也落入此分支）→ 完成已到期待办，
+// 到期类待办（房东端 + 平台端）：新到期日严格晚于 today+10 天 → 两类到期类待办
+// 全部自动完成；≤10 天内（恰好10天整也落入此分支）→ 完成已到期待办，
 // 保留/刷新（不存在则对 building 与 platform 两个 scope 各补建一条）即将到期待办。
 func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) error {
 	if newExpiredAt == "" {
@@ -89,7 +89,7 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 	if date.Before(today) {
 		return fmt.Errorf("到期日期不能早于今天")
 	}
-	thirtyDaysLater := today.AddDate(0, 0, 30)
+	expiringCutoff := today.AddDate(0, 0, utils.ExpiringSoonDays)
 
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		var building models.Building
@@ -115,9 +115,9 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 		if err := tx.Create(&renewal).Error; err != nil {
 			return err
 		}
-		// 到期类待办按新到期日处理：超过30天视为已解决，全部自动完成；
-		// 30天内公寓仍属"即将到期"，完成已到期待办，保留并刷新即将到期待办（不存在则补建）
-		if date.After(thirtyDaysLater) {
+		// 到期类待办按新到期日处理：超过10天视为已解决，全部自动完成；
+		// 10天内公寓仍属"即将到期"，完成已到期待办，保留并刷新即将到期待办（不存在则补建）
+		if date.After(expiringCutoff) {
 			return tx.Model(&models.Task{}).
 				Where("building_id = ? AND type IN ? AND status = ?",
 					id, []string{"building_expired", "building_expiring"}, "pending").
@@ -322,7 +322,7 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 
 // BuildingListFilter 公寓列表筛选条件。
 // MinPrice/MaxPrice/Layout 属于房间级条件：要求公寓下至少存在一间
-// 「普通用户可见」的房间（未出租，或已出租但合同30天内到期）满足全部已选条件；
+// 「普通用户可见」的房间（未出租，或已出租但合同10天内到期）满足全部已选条件；
 // 位置条件与房间条件之间为 AND 关系，未提供的条件不参与筛选。
 type BuildingListFilter struct {
 	Status   string
@@ -383,14 +383,14 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 	}
 
 	today := utils.Now().Format("2006-01-02")
-	thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+	expiringCutoff := utils.Now().AddDate(0, 0, utils.ExpiringSoonDays).Format("2006-01-02")
 
 	if f.Status != "" {
 		switch f.Status {
 		case "normal":
-			query = query.Where("expired_at = '' OR expired_at IS NULL OR expired_at > ?", thirtyDaysLater)
+			query = query.Where("expired_at = '' OR expired_at IS NULL OR expired_at > ?", expiringCutoff)
 		case "expiring":
-			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at <= ? AND expired_at >= ?", thirtyDaysLater, today)
+			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at <= ? AND expired_at >= ?", expiringCutoff, today)
 		case "expired":
 			query = query.Where("expired_at != '' AND expired_at IS NOT NULL AND expired_at < ?", today)
 		}
@@ -413,7 +413,7 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 	}
 
 	if f.HasRoomFilter() {
-		cond, args := buildVisibleRoomCondition(f, today, thirtyDaysLater)
+		cond, args := buildVisibleRoomCondition(f, today, expiringCutoff)
 		query = query.Where(cond, args...)
 	}
 
@@ -496,15 +496,15 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 
 // buildVisibleRoomCondition 构造「公寓下存在满足条件的可见房间」的 EXISTS 子句及其参数。
 // 可见房间的定义与公开端房间列表接口一致：未出租（vacant），
-// 或已出租（rented）但存在30天内到期的活跃合同（即「即将到期」）。
+// 或已出租（rented）但存在10天内到期的活跃合同（即「即将到期」）。
 // 长租中（rented 且未临期）、已到期等状态对普通租客不可见，不参与匹配。
-func buildVisibleRoomCondition(f BuildingListFilter, today, thirtyDaysLater string) (string, []interface{}) {
+func buildVisibleRoomCondition(f BuildingListFilter, today, expiringCutoff string) (string, []interface{}) {
 	conds := []string{
 		"(r.status = 'vacant' OR (r.status = 'rented' AND EXISTS (" +
 			"SELECT 1 FROM rental_contracts rc WHERE rc.room_id = r.id AND rc.deleted_at IS NULL AND rc.status = 'active' " +
 			"AND rc.end_date >= ? AND rc.end_date < ?)))",
 	}
-	args := []interface{}{today, thirtyDaysLater}
+	args := []interface{}{today, expiringCutoff}
 	if f.MinPrice > 0 {
 		conds = append(conds, "r.rent_price IS NOT NULL AND r.rent_price >= ?")
 		args = append(args, f.MinPrice)

@@ -15,7 +15,7 @@ import (
 // AutoCheckExpiringContracts 自动检查到期合同，创建退租待办任务
 func AutoCheckExpiringContracts(db *gorm.DB) string {
 	now := utils.Now()
-	expireThreshold := now.AddDate(0, 0, 30)
+	expireThreshold := now.AddDate(0, 0, utils.ExpiringSoonDays)
 
 	logger.Log.Debug().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("AutoCheckExpiringContracts: 开始执行")
 
@@ -66,11 +66,11 @@ func AutoCheckExpiringContracts(db *gorm.DB) string {
 }
 
 // CheckExpiredBuildings 检查所有公寓的到期情况（每天凌晨3点定时执行）：
-//   - 即将到期（30天内）：状态更新为 expiring，并为房东和超级管理员创建续约提醒待办
+//   - 即将到期（10天内）：状态更新为 expiring，并为房东和超级管理员创建续约提醒待办
 //   - 已到期：状态更新为 hidden（自动不可见），并为房东和超级管理员创建到期待办
 func CheckExpiredBuildings(db *gorm.DB) string {
 	now := utils.Now()
-	expireThreshold := now.AddDate(0, 0, 30)
+	expireThreshold := now.AddDate(0, 0, utils.ExpiringSoonDays)
 
 	logger.Log.Debug().Str("threshold", expireThreshold.Format("2006-01-02")).Msg("CheckExpiredBuildings: 开始执行")
 

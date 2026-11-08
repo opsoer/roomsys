@@ -113,7 +113,8 @@ func (a *App) SeedBase(t *testing.T) *Fixture {
 	// 合同
 	f.ContractA102 = a.mustContract(t, f.A, f.Rooms["A102"], "张三", "13900000001", 2000, 200, 2000, minus(30), plus(335), "active", 0)
 	f.ContractA103 = a.mustContract(t, f.A, f.Rooms["A103"], "李四", "13900000002", 2100, 200, 2100, plus(31), plus(395), "reserved", 500)
-	f.ContractA104 = a.mustContract(t, f.A, f.Rooms["A104"], "王五", "13900000003", 1800, 180, 1800, minus(300), plus(10), "active", 0)
+	// A104 合同 5 天后到期：夹具里唯一的「即将到期」（10 天窗口内，避开恰好第10天不算的边界）
+	f.ContractA104 = a.mustContract(t, f.A, f.Rooms["A104"], "王五", "13900000003", 1800, 180, 1800, minus(300), plus(5), "active", 0)
 	f.ContractA105 = a.mustContract(t, f.A, f.Rooms["A105"], "赵六", "13900000004", 2200, 220, 2200, minus(60), plus(30), "active", 0)
 	f.ContractA105Future = a.mustContract(t, f.A, f.Rooms["A105"], "钱七", "13900000005", 2300, 230, 2300, plus(31), plus(395), "reserved", 600)
 	f.ContractB202 = a.mustContract(t, f.B, f.Rooms["B202"], "B租客", "13900000006", 3000, 300, 3000, minus(20), plus(345), "active", 0)

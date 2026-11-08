@@ -365,7 +365,7 @@ func TestRoom_ReserveValidation(t *testing.T) {
 func TestRoom_FutureReservation(t *testing.T) {
 	app, f := testkit.NewAppWithFixture(t)
 
-	// A104: 当前合同 D+10 结束，未来预订 D+11 起
+	// A104: 当前合同 D+5 结束，未来预订从当前合同结束日起接续
 	start := f.ContractA104.EndDate
 	end := f.ContractA105Future.EndDate
 	body := reserveBody(f.Rooms["A104"].ID, start, end, 500)

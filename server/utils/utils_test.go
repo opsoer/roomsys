@@ -45,12 +45,12 @@ func TestCalcProratedAmount(t *testing.T) {
 }
 
 // 房间动态状态：结合合同到期日推导对外可见状态。
-// 口径：已过期 → expired；30 天内到期（含今天）→ expiring；否则保持原状态。
+// 口径：已过期 → expired；10 天内到期（含今天）→ expiring；否则保持原状态。
 func TestDynamicRoomStatus(t *testing.T) {
 	now := Now()
 	today := now.Format("2006-01-02")
 	past := now.AddDate(0, 0, -5).Format("2006-01-02")
-	soon := now.AddDate(0, 0, 10).Format("2006-01-02")
+	soon := now.AddDate(0, 0, 5).Format("2006-01-02")
 	far := now.AddDate(0, 0, 60).Format("2006-01-02")
 
 	cases := []struct {
@@ -61,6 +61,9 @@ func TestDynamicRoomStatus(t *testing.T) {
 		{"vacant", "", "vacant"},
 		{"rented", far, "rented"},
 		{"rented", soon, "expiring"},
+		// 阈值边界（ExpiringSoonDays=10）：窗口最后一天仍 expiring，恰好第 10 天不算
+		{"rented", now.AddDate(0, 0, 9).Format("2006-01-02"), "expiring"},
+		{"rented", now.AddDate(0, 0, 10).Format("2006-01-02"), "rented"},
 		{"rented", past, "expired"},
 		{"rented", today, "expiring"},
 		{"reserved", "", "reserved"},

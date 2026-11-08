@@ -661,7 +661,7 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	// 未登录或其它公寓管理员仅可见「未出租」和「即将到期」的房间
 	if !h.canViewAllRooms(c, uint(buildingID)) {
 		today := utils.Now().Format("2006-01-02")
-		expiringBefore := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		expiringBefore := utils.Now().AddDate(0, 0, utils.ExpiringSoonDays).Format("2006-01-02")
 		query = query.Where(
 			"(status = ? OR (status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date >= ? AND end_date < ?)))",
 			"vacant", "rented", "active", today, expiringBefore,
@@ -678,16 +678,16 @@ func (h *BuildingHandler) GetRooms(c *gin.Context) {
 	// 状态筛选下沉到 SQL，保证 total 与分页结果一致（避免动态状态在内存过滤后 total 虚高导致前端无限加载）
 	if requestedStatus != "" {
 		today := utils.Now().Format("2006-01-02")
-		thirtyDaysLater := utils.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		expiringCutoff := utils.Now().AddDate(0, 0, utils.ExpiringSoonDays).Format("2006-01-02")
 		switch requestedStatus {
 		case "vacant":
 			query = query.Where("status = ?", "vacant")
 		case "expiring":
 			query = query.Where("status = ? AND id IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date >= ? AND end_date < ?)",
-				"rented", "active", today, thirtyDaysLater)
+				"rented", "active", today, expiringCutoff)
 		case "rented":
 			query = query.Where("status = ? AND id NOT IN (SELECT room_id FROM rental_contracts WHERE status = ? AND end_date != '' AND end_date < ?)",
-				"rented", "active", thirtyDaysLater)
+				"rented", "active", expiringCutoff)
 		case "reserved":
 			// 公开端基础查询已排除已预订房间
 			query = query.Where("1 = 0")

@@ -113,9 +113,9 @@ type JobConfig struct {
 type SchedulerConfig struct {
 	// RentBills 月度租金账单生成：为缺少当月账单的合同生成账单。
 	RentBills JobConfig `yaml:"rent_bills"`
-	// BuildingExpiry 公寓到期检查：30天内到期建提醒，已到期下架。
+	// BuildingExpiry 公寓到期检查：10天内到期建提醒，已到期下架。
 	BuildingExpiry JobConfig `yaml:"building_expiry"`
-	// ContractExpiry 到期合同检查：30天内到期建待办 + 预订超时转逾期。
+	// ContractExpiry 到期合同检查：给已到期的活跃合同建退租待办（查询窗口 10 天，未到期不建）+ 预订超时转逾期。
 	ContractExpiry JobConfig `yaml:"contract_expiry"`
 	// SoftDeleteCleanup 软删除清理：清 90 天前软删数据与浏览记录。
 	SoftDeleteCleanup JobConfig `yaml:"soft_delete_cleanup"`

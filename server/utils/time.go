@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// ExpiringSoonDays 「即将到期」统一判定阈值（天）。
+// 房间动态状态、公寓到期检查、续约待办、可见房间筛选共用此口径，
+// 前端只展示后端计算结果，改这里即可全局生效。
+const ExpiringSoonDays = 10
+
 // timeOffset 全局时间偏移量，用于模拟或时区调整
 var timeOffset time.Duration
 
@@ -82,9 +87,9 @@ func NewMonthlyFinanceSummary(totalIncome, totalExpense float64) MonthlyFinanceS
 
 // DynamicRoomStatus 根据数据库状态和到期日期计算房间动态状态。
 //   - 非 rented 状态直接透传，不做推导；
-//   - rented 今天到期或未来 30 天内（today <= end < today+30，恰好第30天不算）→ expiring；
+//   - rented 今天到期或未来 10 天内（today <= end < today+ExpiringSoonDays，恰好第10天不算）→ expiring；
 //     end 已过 → expired；end 解析失败按 rented 处理；
-//   - 剩余租期超过 30 天时保持 rented。
+//   - 剩余租期超过 10 天时保持 rented。
 // 时区边界：today 截断到本地日零点，end 解析为 UTC 零点（time.Parse）。
 // 两个绝对时刻比较：东八区本地日 D 的零点（UTC 前一天 16:00）恒早于 end（D 00:00 UTC），
 // 因此到期日 D 一整天都判 expiring，直到次日本地 00:00 才翻转为 expired。
@@ -105,7 +110,7 @@ func DynamicRoomStatus(dbStatus string, endDate string) string {
 	if today.After(end) {
 		return "expired"
 	}
-	if end.Before(today.AddDate(0, 0, 30)) {
+	if end.Before(today.AddDate(0, 0, ExpiringSoonDays)) {
 		return "expiring"
 	}
 	return dbStatus

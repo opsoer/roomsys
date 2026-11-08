@@ -58,9 +58,9 @@ func TestScenario_PlatformOnboardingToPublic(t *testing.T) {
 	pub.Decode(t, &rooms)
 	require.Contains(t, roomIDs(rooms.Rooms), room.ID)
 
-	// 出租到 10 天内到期，公开端仍可见
+	// 出租到 10 天内到期，公开端仍可见（end 取 5 天后，避开「恰好第10天不算」的边界）
 	start := testkit.MonthDay(time.Now().Format("2006-01"), 1)
-	end := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	end := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
 	rent := app.Client.Do(http.MethodPut, fmt.Sprintf("/api/building/rooms/%d/status", room.ID), ld.Token, rentBody(room.ID, start, end))
 	rent.RequireOK(t)
 

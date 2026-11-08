@@ -81,7 +81,7 @@ func TestPlatform_BuildingCRUD(t *testing.T) {
 	}
 	normal.Decode(t, &list)
 	for _, b := range list.Buildings {
-		require.True(t, b.ExpiredAt > time.Now().AddDate(0, 0, 30).Format("2006-01-02"))
+		require.True(t, b.ExpiredAt > time.Now().AddDate(0, 0, 10).Format("2006-01-02"))
 	}
 	expiring := app.Client.Do(http.MethodGet, "/api/admin/buildings?status=expiring", f.TokenRoot, nil)
 	expiring.RequireOK(t)

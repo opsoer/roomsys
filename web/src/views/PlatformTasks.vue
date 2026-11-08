@@ -142,7 +142,7 @@
           </el-form-item>
         </el-form>
         <div style="font-size: 12px; color: #999">
-          续约后公寓立即恢复展示；新到期日超过30天，相关待办将自动变为已完成
+          续约后公寓立即恢复展示；新到期日超过10天，相关待办将自动变为已完成
         </div>
       </div>
       <template #footer>
