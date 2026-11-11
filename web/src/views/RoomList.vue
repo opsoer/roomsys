@@ -27,8 +27,11 @@
         <el-button type="warning" @click="openImportDialog">
           <el-icon><DocumentAdd /></el-icon> 导入在租房间
         </el-button>
-        <el-button type="danger" :plain="!selectMode" @click="selectMode ? exitSelectMode() : enterSelectMode()">
+        <el-button type="danger" @click="selectMode ? exitSelectMode() : enterSelectMode()">
           <el-icon><SetUp /></el-icon> {{ selectMode ? '退出选择' : '批量调价' }}
+        </el-button>
+        <el-button type="primary" @click="showRentControl = true">
+          <el-icon><Document /></el-icon> 租控表
         </el-button>
       </div>
     </div>
@@ -445,6 +448,8 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <RentControlTable v-model="showRentControl" />
   </div>
 </template>
 
@@ -457,6 +462,7 @@ import { CopyDocument, DocumentAdd, SetUp } from '@element-plus/icons-vue'
 import { FLOOR_OPTIONS, LAYOUT_OPTIONS } from '../utils/constants'
 import { mediaUrl, statusLabel } from '../utils/format'
 import { useInfiniteList } from '../composables/useInfiniteList'
+import RentControlTable from '../components/room/RentControlTable.vue'
 
 const router = useRouter()
 
@@ -549,6 +555,8 @@ const selectMode = ref(false)
 const selectedIds = ref([])
 const showBatchPricing = ref(false)
 const batchPricing = ref(blankBatchPricing())
+// 租控表预览/编辑弹窗
+const showRentControl = ref(false)
 
 function blankBatchPricing() {
   return {
@@ -1050,9 +1058,12 @@ onMounted(fetchRooms)
 .batch-failure-item:last-child { border-bottom: none; }
 .batch-failure-item .num { font-weight: 600; color: #303133; }
 .batch-failure-item .reason { color: #f56c6c; text-align: right; }
-.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.section-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
 .section-header h2 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
-.section-actions { display: flex; gap: 10px; }
+.section-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+/* Element Plus 默认给相邻按钮加 margin-left，配合 gap 会出现间距不一致，这里统一交给 gap */
+.section-actions .el-button { margin-left: 0; }
+.section-actions .el-select { margin: 0; }
 .skeleton-wrap { display: grid; grid-template-columns: repeat(auto-fill,minmax(270px,1fr)); gap: 24px; padding: 12px 0; }
 .skeleton-item { background: #fff; border-radius: 12px; overflow: hidden; }
 .empty-wrap { padding: 60px 0; }
@@ -1085,15 +1096,17 @@ onMounted(fetchRooms)
 .room-card-body { padding: 16px; }
 .room-card-number { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-bottom: 6px; }
 .room-card-info { font-size: 13px; color: #888; }
-.room-card-price-row { margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+.room-card-price-row { margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .room-card-price { font-size: 16px; color: #e6a23c; font-weight: 700; }
-.room-card-mgmt { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; }
-.room-card-deposit { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; }
+.room-card-mgmt { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; white-space: nowrap; }
+.room-card-deposit { font-size: 12px; color: #909399; background: #f4f4f5; padding: 0 8px; border-radius: 4px; line-height: 20px; white-space: nowrap; }
 .room-card-utilities { margin-top: 2px; font-size: 12px; color: #999; }
 .room-card-enddate { margin-top: 6px; font-size: 12px; color: #e6a23c; font-weight: 600; }
 @media (max-width: 768px) {
   .section-header { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .section-actions { width: 100%; flex-wrap: wrap; }
+  .section-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+  /* 操作按钮等分换行：窄屏自动两列、更宽时自动多列，最后一行自动铺满 */
+  .section-actions .el-button { flex: 1 1 160px; margin-left: 0; padding-left: 10px; padding-right: 10px; }
   .room-grid { grid-template-columns: repeat(2,1fr); gap: 12px; }
   .room-card-image { height: 140px; }
   .room-card-body { padding: 12px; }

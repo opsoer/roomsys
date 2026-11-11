@@ -21,6 +21,7 @@
     "dayjs": "^1.11.0",
     "echarts": "^6.1.0",
     "element-plus": "^2.7.0",
+    "html-to-image": "^1.11.11",
     "pinia": "^3.0.4",
     "pinyin-pro": "^3.29.5",
     "qrcode": "^1.5.4",

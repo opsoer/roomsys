@@ -239,6 +239,11 @@ export function buildingGetContracts(params) {
   return api.get('/building/contracts', { params })
 }
 
+// 租控表导出数据：未出租 + 即将到期房间，以及公寓地址信息
+export function buildingGetRentControl() {
+  return api.get('/building/rent-control')
+}
+
 export function buildingCreateRoom(data, config) {
   return api.post('/building/rooms', data, config)
 }

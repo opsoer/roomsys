@@ -209,6 +209,8 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		building.GET("/contracts", h.room.ListBuildingContracts)
 		building.GET("/rooms/:id/contract", h.room.GetActiveContract)
 		building.PUT("/rooms/:id/contract", h.room.RenewContract)
+		// 租控表导出数据：只读聚合，未出租 + 即将到期房间
+		building.GET("/rent-control", h.room.RentControl)
 
 		// 媒体管理
 		building.POST("/rooms/:id/media", h.media.Upload)
