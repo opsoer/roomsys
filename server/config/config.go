@@ -160,6 +160,8 @@ type QiniuConfig struct {
 	//                  浏览器直接向七牛 CDN 拉取文件，不占用服务器带宽，走 CDN 加速。
 	//                  适用：正式备案的 HTTPS CDN 域名(此时建议 use_https=true)。
 	//                  代价：若域名仍为非备案 HTTP，微信端资源会被拦截而无法显示。
+	// TODO(上线): 换用已备案的 HTTPS 正式 CDN 域名后，把 proxy_mode 改为 false
+	// （直连模式，省服务器带宽），并同步更新本段注释。
 	ProxyMode bool `yaml:"proxy_mode"`
 	// PfopEnable 七牛转码开关：true 时视频上传后自动触发七牛持久化转码(720p)，
 	// 转码结果经回调写回，原片删除；false 则视频按原件存储。
