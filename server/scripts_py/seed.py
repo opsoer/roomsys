@@ -26,6 +26,7 @@ PUT /api/building/rooms/:id/status 设为 rented（后端自动生成租客/合�
 """
 from __future__ import annotations
 
+import argparse
 import calendar
 import random
 from datetime import date, timedelta
@@ -73,8 +74,39 @@ GIVEN_NAMES = [
 NOW = date.today()
 USED_PHONE = set()
 
+EPILOG = """\
+运行前提：
+  1. 在 server 目录下执行：python scripts_py/seed.py
+  2. 后端已启动且可访问（默认 http://127.0.0.1:8081）。
+  3. 数据库中的公寓必须为空（脚本要求公寓总数为 0）。
+  4. 超级管理员 root/root 可正常登录。
+  5. 只可用于可丢弃的数据库，严禁对生产库运行
+     （会写入约 100 个公寓、5000 个房间及数千条账单）。
+
+环境变量：
+  SEED_BASE_URL      后端地址，默认 http://127.0.0.1:8081
+  SEED_RATE_PER_MIN  请求自限速，默认 200 次/分钟；后端限流调大后可设 0 关闭
+
+相关脚本（在 server 目录下）：
+  python scripts_py/resetdb.py -y     重跑前清空数据库
+  python scripts_py/seedmedia.py      补充封面与房间图片
+
+注意：seed 不读取 config.yaml，仅通过 HTTP 访问后端。
+"""
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="seed",
+        description="通过 HTTP API 灌入演示数据：100 个公寓（含房东）+ 每栋 50 套房 + 约 70% 出租签约。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+    )
+    return parser
+
 
 def main():
+    build_parser().parse_args()
     print("登录超级管理员 root ...")
     try:
         root_token = login("root", "root")

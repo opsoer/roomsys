@@ -21,21 +21,55 @@ SQLite 固定单连接 PRAGMA foreign_keys=OFF，清完 wal_checkpoint）→ 只
 """
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import sys
 
 from _common import die, load_config, open_database
 
+EPILOG = """\
+配置与运行前提：
+  1. 在 server 目录下运行（脚本按当前工作目录查找 config.yaml）；
+     也可用环境变量 CONFIG_PATH 指定配置文件路径。
+  2. 配置加载顺序与后端一致：内置默认值 → config.yaml → 环境变量覆盖
+     （DB_DRIVER、DB_PATH、DB_HOST、DB_PORT、DB_USER、DB_PASSWORD、DB_NAME 等）。
+  3. 依赖：pip install pyyaml（MySQL 还需 pymysql）。
+  4. 建议先停止后端进程，避免运行中重建表产生不一致。
+  5. 支持 database.driver = sqlite / mysql；目标实例会在执行前打印。
+  6. 七牛云端对象不受 --media 影响，清理云端请到七牛控制台操作。
+
+安全提示：
+  默认需要输入 yes 确认，-y/--yes 可跳过。清库不可恢复！
+  清完后启动后端，AutoMigrate 会自动重建表并创建超级管理员 root/root。
+
+示例（在 server 目录下）：
+  python scripts_py/resetdb.py              # 交互确认后清库
+  python scripts_py/resetdb.py -y           # 跳过确认
+  python scripts_py/resetdb.py -y --media   # 连本地媒体文件一起清
+"""
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="resetdb",
+        description="清空本地数据库：删除当前库中的全部表（含 root 账号所在的 users 表），支持 MySQL / SQLite。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+    )
+    parser.add_argument("-y", "--yes", action="store_true", help="跳过交互确认，直接执行（谨慎使用）")
+    parser.add_argument(
+        "--media",
+        action="store_true",
+        help="额外清空本地媒体目录 server.upload_dir（七牛云端对象不受影响）",
+    )
+    return parser
+
 
 def main():
-    yes = False
-    clean_media = False
-    for arg in sys.argv[1:]:
-        if arg in ("-y", "--yes"):
-            yes = True
-        elif arg == "--media":
-            clean_media = True
+    args = build_parser().parse_args()
+    yes = args.yes
+    clean_media = args.media
 
     cfg = load_config()
     try:

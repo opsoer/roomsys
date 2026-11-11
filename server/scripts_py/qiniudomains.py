@@ -14,10 +14,35 @@ ListBucketDomains（GET /v3/domains）逐行打印域名。七牛测试域名（
 """
 from __future__ import annotations
 
-from _common import QiniuClient, QiniuError, load_config
+import argparse
+
+from _common import CONFIG_LOCATION_HELP, QiniuClient, QiniuError, load_config
+
+EPILOG = (
+    CONFIG_LOCATION_HELP
+    + """\
+  5. config.yaml 需配置 storage.qiniu.access_key / secret_key / bucket / zone。
+  6. 七牛管理接口固定走 http（与 Go 版一致），只需能访问外网。
+
+用途：列出当前 bucket 绑定的域名，排查 CDN 域名是否生效。
+示例（在 server 目录下）：
+  python scripts_py/qiniudomains.py
+"""
+)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="qiniudomains",
+        description="列出当前配置 bucket 在七牛上绑定的域名（排查 CDN 域名是否生效）。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+    )
+    return parser
 
 
 def main():
+    build_parser().parse_args()
     cfg = load_config()
     qiniu = cfg.storage.qiniu
     client = QiniuClient(qiniu.access_key, qiniu.secret_key, zone=qiniu.zone, use_https=False)

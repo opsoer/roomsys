@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import copy
 import hashlib
@@ -42,6 +43,15 @@ from urllib.request import Request, urlopen
 
 FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 JSON_CONTENT_TYPE = "application/json"
+
+# 各脚本 -h 帮助里复用的「配置位置与运行前提」说明，避免各写一份出现偏差。
+CONFIG_LOCATION_HELP = """\
+配置与运行前提：
+  1. 在 server 目录下运行：脚本按当前工作目录查找 config.yaml。
+  2. 也可用环境变量 CONFIG_PATH 指定配置文件路径（绝对路径或相对当前目录）。
+  3. 配置加载顺序与后端一致：内置默认值 → config.yaml → 环境变量覆盖。
+  4. 依赖：pip install pyyaml（如需访问数据库且 database.driver=mysql，另需 pymysql）。
+"""
 
 DEFAULTS = {
     "server": {
@@ -490,3 +500,30 @@ def do_upload(path, token, field, filename, data, extra=None):
 def login(username, password):
     data = do_json("POST", "/api/auth/login", "", {"username": username, "password": password})
     return data["token"]
+
+
+SCRIPTS = [
+    ("seed.py", "通过 HTTP API 灌入演示数据（100 公寓 / 5000 房间 / 约 70% 出租）"),
+    ("seedmedia.py", "为已有演示数据从 picsum.photos 补封面与房间图片"),
+    ("resetdb.py", "清空本地数据库全部表（启动后端后自动重建并创建 root/root）"),
+    ("qiniudomains.py", "列出当前配置 bucket 在七牛上绑定的域名"),
+    ("fixcache.py", "给七牛桶内已有对象补写 Cache-Control 缓存头"),
+    ("bucketmigrate.py", "把七牛旧 bucket 的全部文件服务端拷贝到新 bucket"),
+]
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="_common",
+        description="scripts_py 公共模块（被其他脚本导入，通常不单独执行）。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=CONFIG_LOCATION_HELP
+        + "\n可用脚本（在 server 目录下执行，加 -h 查看各自用法）：\n"
+        + "\n".join("  python scripts_py/%-18s %s" % (name, desc) for name, desc in SCRIPTS),
+    )
+    parser.parse_args()
+    print(__doc__.strip())
+
+
+if __name__ == "__main__":
+    main()

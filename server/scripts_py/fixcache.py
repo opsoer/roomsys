@@ -18,10 +18,37 @@ immutable 策略安全；对象较多时发起等量 ChangeMeta 请求（管理�
 """
 from __future__ import annotations
 
-from _common import QiniuClient, QiniuError, load_config, media_cache_control
+import argparse
+
+from _common import CONFIG_LOCATION_HELP, QiniuClient, QiniuError, load_config, media_cache_control
+
+EPILOG = (
+    CONFIG_LOCATION_HELP
+    + """\
+  5. config.yaml 需配置 storage.qiniu.access_key / secret_key / bucket / zone；
+     未配置七牛时脚本直接跳过。
+  6. 缓存时长取 storage.media_max_age（默认 604800 秒 = 7 天）。
+
+用途：为存量对象一次性补写 Cache-Control，新上传文件已自动带缓存头。
+      重复运行无害但没必要；对象较多时会发起等量 ChangeMeta 请求。
+示例（在 server 目录下）：
+  python scripts_py/fixcache.py
+"""
+)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="fixcache",
+        description="给七牛 bucket 中所有已存在对象补写 Cache-Control 响应缓存头。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+    )
+    return parser
 
 
 def main():
+    build_parser().parse_args()
     cfg = load_config()
     qiniu = cfg.storage.qiniu
     if not qiniu.access_key or not qiniu.bucket:

@@ -30,16 +30,36 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _common import QiniuClient, QiniuError, load_config, uri_copy
+from _common import CONFIG_LOCATION_HELP, QiniuClient, QiniuError, load_config, uri_copy
 
 BATCH_CHUNK = 500
 CODE_EXISTS = 614
+
+EPILOG = (
+    CONFIG_LOCATION_HELP
+    + """\
+  5. config.yaml 需配置七牛 storage.qiniu.access_key / secret_key / bucket / zone。
+  6. 新 bucket 必须先在七牛控制台创建，且与源桶同区域（跨区域请改用 qshell）。
+  7. 服务端拷贝不经过域名、不消耗 CDN/下载流量，保留 MIME 与自定义元数据。
+  8. 可中断重跑：已存在的文件会自动跳过（-force 可覆盖）。
+
+示例（在 server 目录下）：
+  python scripts_py/bucketmigrate.py -dry -dst 新桶名        # 只统计不拷贝
+  python scripts_py/bucketmigrate.py -dst 新桶名             # 源桶取 config.yaml
+  python scripts_py/bucketmigrate.py -src 旧桶 -dst 新桶
+  python scripts_py/bucketmigrate.py -dst 新桶 -force        # 覆盖同名文件
+
+建议顺序：先 -dry 预览 → 正式拷贝 → 抽查 → 改配置重启。全程可重复执行。
+"""
+)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="bucketmigrate",
-        description="把七牛旧 bucket 的全部文件服务端拷贝到新 bucket（同账号、同区域）",
+        description="把七牛旧 bucket 的全部文件服务端拷贝到新 bucket（同账号、同区域）。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
     )
     parser.add_argument("-src", dest="src", default="", help="源 bucket，默认取 config.yaml 的 storage.qiniu.bucket")
     parser.add_argument("-dst", dest="dst", default="", help="目标 bucket（必填）")

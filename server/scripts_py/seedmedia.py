@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import os
 import tempfile
 import threading
@@ -51,8 +52,39 @@ _counter_lock = threading.Lock()
 _tokens = {}
 _tokens_lock = threading.Lock()
 
+EPILOG = """\
+运行前提：
+  1. 在 server 目录下执行：python scripts_py/seedmedia.py
+  2. 后端已启动且可访问（默认 http://127.0.0.1:8081）。
+  3. 已成功运行过 scripts_py/seed.py，楼栋管理员账号存在（用户名=密码=公寓 id）。
+  4. 机器可访问外网 https://picsum.photos（下载图片）。
+
+环境变量：
+  SEED_BASE_URL      后端地址，默认 http://127.0.0.1:8081
+  SEED_TMP_DIR       图片下载缓存目录，默认 <系统临时目录>/seedmedia
+  SEED_RATE_PER_MIN  对后端的请求自限速，默认 200 次/分钟；设 0 关闭
+                     （下载图片不受此限速影响）
+
+相关脚本（在 server 目录下）：
+  python scripts_py/seed.py           先生成演示数据
+  python scripts_py/resetdb.py -y     需要重来时清空数据库
+
+注意：seedmedia 不读取 config.yaml，仅通过 HTTP 访问后端。
+"""
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="seedmedia",
+        description="通过 HTTP API 为已有演示数据补图：每个公寓 1 张封面、每个房间 1 张照片。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+    )
+    return parser
+
 
 def main():
+    build_parser().parse_args()
     try:
         os.makedirs(TMP_DIR, exist_ok=True)
     except OSError as exc:
