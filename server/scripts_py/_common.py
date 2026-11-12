@@ -7,7 +7,8 @@
   - QiniuClient         ← qbox.Mac + BucketManager（ListFiles / ChangeMeta / Batch / Buckets / ListBucketDomains）
   - do_json / do_upload / login / Throttle ← scripts/seed 与 scripts/seedmedia 中的同名逻辑
 
-依赖：pyyaml（配置文件解析，pip install pyyaml）、pymysql（仅 driver=mysql 时导入）。
+依赖：pyyaml（配置文件解析，pip install pyyaml）、pymysql（仅 driver=mysql 时导入）、
+bcrypt（仅 setadmin.py 需要，pip install bcrypt）。
 七牛相关脚本只用标准库（hmac/hashlib/http.client/urllib），不依赖任何七牛 SDK。
 
 七牛签名（与 go-sdk v7 的 Qiniu V2 签名逐字节一致）：
@@ -89,6 +90,10 @@ DEFAULTS = {
             "pfop_callback_url": "",
         },
     },
+    "admin": {
+        "username": "root",
+        "password": "root",
+    },
 }
 
 _STR_ENV = {
@@ -100,6 +105,8 @@ _STR_ENV = {
     "DB_PASSWORD": ("database", "mysql", "password"),
     "DB_NAME": ("database", "mysql", "name"),
     "JWT_SECRET": ("server", "jwt_secret"),
+    "ADMIN_USERNAME": ("admin", "username"),
+    "ADMIN_PASSWORD": ("admin", "password"),
     "SERVER_PORT": ("server", "port"),
     "UPLOAD_DIR": ("server", "upload_dir"),
     "LOG_LEVEL": ("server", "log_level"),
@@ -227,6 +234,9 @@ def load_config():
         die("database password is required: set database.mysql.password in config.yaml or DB_PASSWORD env")
     if not cfg["server"]["jwt_secret"]:
         die("jwt secret is required: set server.jwt_secret in config.yaml or JWT_SECRET env")
+    cfg["admin"]["username"] = str(cfg["admin"]["username"] or "").strip() or "root"
+    if not cfg["admin"]["password"]:
+        die("admin password is required: set admin.password in config.yaml or ADMIN_PASSWORD env（默认 root/root 仅用于本地开发）")
 
     return _to_ns(cfg)
 
@@ -506,6 +516,7 @@ SCRIPTS = [
     ("seed.py", "通过 HTTP API 灌入演示数据（100 公寓 / 5000 房间 / 约 70% 出租）"),
     ("seedmedia.py", "为已有演示数据从 picsum.photos 补封面与房间图片"),
     ("resetdb.py", "清空本地数据库全部表（启动后端后自动重建并创建 root/root）"),
+    ("setadmin.py", "直接改库修改超级管理员账号密码（改完需同步 config.yaml 的 admin 段）"),
     ("qiniudomains.py", "列出当前配置 bucket 在七牛上绑定的域名"),
     ("fixcache.py", "给七牛桶内已有对象补写 Cache-Control 缓存头"),
     ("bucketmigrate.py", "把七牛旧 bucket 的全部文件服务端拷贝到新 bucket"),

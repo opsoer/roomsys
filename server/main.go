@@ -69,7 +69,7 @@ func main() {
 		logger.Log.Info().Msg("数据库结构已是最新")
 	}
 
-	seedAdmin(db)
+	seedAdmin(db, cfg)
 
 	// 查看房东电话的免费额度来自配置；必须在 HTTP 服务开始接收请求前初始化
 	utils.InitRevealQuota(cfg.Server.RevealFreePerDay)
@@ -289,35 +289,61 @@ func resetDatabase(db *gorm.DB) {
 	logger.Log.Info().Msg("所有表已删除，等待 AutoMigrate 重建")
 }
 
-// seedAdmin 检查是否存在 root 用户，如不存在则创建，否则重置密码。
-func seedAdmin(db *gorm.DB) {
-	var admin models.User
-	result := db.Where("username = ?", "root").First(&admin)
-	password := "root"
+// seedAdmin 把超级管理员的账号密码与配置 admin 段对齐（有则改、无则建），
+// 保证每次启动后登录凭据以 config.yaml 为准（默认 root/root，生产务必修改配置）。
+// 用 scripts/setadmin 直接改库后需同步配置，否则下次启动会被对齐回配置值。
+func seedAdmin(db *gorm.DB, cfg *config.Config) {
+	username, password := cfg.Admin.Username, cfg.Admin.Password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("管理员密码加密失败")
 		return
 	}
 
-	if result.Error != nil {
-		admin = models.User{
-			Username:     "root",
-			PasswordHash: string(hash),
-			Role:         "super_admin",
-		}
-		if err := db.Create(&admin).Error; err != nil {
-			logger.Log.Fatal().Err(err).Msg("创建默认管理员失败")
+	// 配置的账号已存在：是超管就校准密码（一致则跳过），同名普通账号则不动以免误提升
+	var admin models.User
+	if err := db.Where("username = ?", username).First(&admin).Error; err == nil {
+		if admin.Role != "super_admin" {
+			logger.Log.Warn().Str("username", username).Msg("admin.username 与已有普通账号重名，跳过超级管理员对齐，请修改配置")
 			return
 		}
-		logger.Log.Info().Msg("已创建默认超级管理员: root / root")
-	} else {
-		db.Model(&admin).Updates(map[string]interface{}{
+		if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(password)) == nil {
+			logger.Log.Info().Str("username", username).Msg("超级管理员与 admin 配置一致，跳过")
+			return
+		}
+		if err := db.Model(&admin).Update("password_hash", string(hash)).Error; err != nil {
+			logger.Log.Fatal().Err(err).Msg("按配置同步超级管理员密码失败")
+			return
+		}
+		logger.Log.Info().Str("username", username).Msg("已按 admin 配置重置超级管理员密码")
+		return
+	}
+
+	// 配置的账号不存在：有历史超管（如改名前的账号）则就地改名对齐，否则新建
+	if err := db.Where("role = ?", "super_admin").Order("id ASC").First(&admin).Error; err == nil {
+		old := admin.Username
+		if err := db.Model(&admin).Updates(map[string]interface{}{
+			"username":      username,
 			"password_hash": string(hash),
 			"role":          "super_admin",
-		})
-		logger.Log.Info().Msg("已重置超级管理员密码: root / root")
+		}).Error; err != nil {
+			logger.Log.Fatal().Err(err).Msg("按 admin 配置对齐超级管理员账号失败")
+			return
+		}
+		logger.Log.Info().Str("old", old).Str("username", username).Msg("已将超级管理员账号改为 admin 配置的账号")
+		return
 	}
+
+	admin = models.User{
+		Username:     username,
+		PasswordHash: string(hash),
+		Role:         "super_admin",
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		logger.Log.Fatal().Err(err).Msg("创建超级管理员失败")
+		return
+	}
+	logger.Log.Info().Str("username", username).Msg("已按 admin 配置创建超级管理员")
 }
 
 // ensureFFmpegCore 确保 FFmpeg WASM 核心文件已下载到上传目录。

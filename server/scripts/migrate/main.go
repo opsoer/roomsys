@@ -1,4 +1,4 @@
-// migrate 独立于后端进程执行数据库迁移：按编号应用尚未执行的结构变更 + 确保 root 账号存在。
+// migrate 独立于后端进程执行数据库迁移：按编号应用尚未执行的结构变更 + 确保配置的超级管理员账号存在。
 //
 // 使用场景：
 //   - 部署前显式升级数据库结构（不依赖后端启动时自动迁移）
@@ -9,7 +9,7 @@
 //  1. 读取 config.yaml（或 CONFIG_PATH 指定的文件），按 database.driver 连接 MySQL 或 SQLite
 //  2. 调用 migrations.Apply：按编号顺序执行尚未应用的步骤，并把版本记入 schema_migrations 表
 //     （结构变更的「台账」，可查可审计；详见 migrations 包说明）
-//  3. 若 username=root 的账号不存在则创建（root/root，super_admin）；已存在则不动
+//  3. 若配置 admin.username 的超级管理员不存在则按配置创建（默认 root/root）；已存在则不动
 //
 // 常用参数：
 //
@@ -77,7 +77,7 @@ func main() {
 		}
 	}
 
-	seedAdmin(db)
+	seedAdmin(db, cfg)
 }
 
 // printStatus 打印已应用与待应用的迁移版本。
@@ -102,10 +102,10 @@ func printStatus(db *gorm.DB) {
 	}
 }
 
-func seedAdmin(db *gorm.DB) {
+func seedAdmin(db *gorm.DB, cfg *config.Config) {
 	var admin models.User
-	result := db.Where("username = ?", "root").First(&admin)
-	password := "root"
+	result := db.Where("username = ?", cfg.Admin.Username).First(&admin)
+	password := cfg.Admin.Password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		panic(err)
@@ -113,11 +113,11 @@ func seedAdmin(db *gorm.DB) {
 
 	if result.Error != nil {
 		admin = models.User{
-			Username:     "root",
+			Username:     cfg.Admin.Username,
 			PasswordHash: string(hash),
 			Role:         "super_admin",
 		}
 		db.Create(&admin)
-		fmt.Printf("已创建默认超级管理员: root / %s\n", password)
+		fmt.Printf("已创建超级管理员: %s / %s（来自 config.yaml 的 admin 段）\n", cfg.Admin.Username, password)
 	}
 }

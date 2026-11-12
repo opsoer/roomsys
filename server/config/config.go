@@ -27,7 +27,7 @@ const (
 	ModePrivate = "private"
 )
 
-// Config 存储所有应用程序配置项，按 server / database / storage / scheduler 四组划分。
+// Config 存储所有应用程序配置项，按 server / database / storage / scheduler / admin 五组划分。
 type Config struct {
 	// Server 服务自身配置：监听端口、鉴权密钥、目录与日志等。
 	Server ServerConfig `yaml:"server"`
@@ -37,6 +37,18 @@ type Config struct {
 	Storage StorageConfig `yaml:"storage"`
 	// Scheduler 定时任务配置：每个任务可独立设置启用开关与执行周期。
 	Scheduler SchedulerConfig `yaml:"scheduler"`
+	// Admin 超级管理员账号密码，启动时强制与配置对齐（有则改、无则建）。
+	Admin AdminConfig `yaml:"admin"`
+}
+
+// AdminConfig 超级管理员账号配置：每次启动都会把库里超管账号密码同步成本段的值，
+// 生产部署务必改掉默认的 root/root。改库可用 scripts/setadmin（Go）或
+// scripts_py/setadmin.py（Python），改完需同步本段，否则下次重启会被对齐回配置值。
+type AdminConfig struct {
+	// Username 超级管理员登录账号。
+	Username string `yaml:"username"`
+	// Password 超级管理员登录密码（明文存放于配置文件，注意文件权限）。
+	Password string `yaml:"password"`
 }
 
 // ServerConfig 服务配置组。
@@ -223,6 +235,10 @@ func defaults() *Config {
 			TokenCleanup:      JobConfig{Enabled: true, IntervalHours: 12},
 			DBBackup:          JobConfig{Enabled: true, Time: "04:00", Keep: 7},
 		},
+		Admin: AdminConfig{
+			Username: "root",
+			Password: "root",
+		},
 	}
 }
 
@@ -261,6 +277,13 @@ func Load() *Config {
 
 // normalize 归一化驱动选项：小写、空值与非法值兜底，补齐 SQLite 文件路径默认值。
 func normalize(cfg *Config) {
+	cfg.Admin.Username = strings.TrimSpace(cfg.Admin.Username)
+	if cfg.Admin.Username == "" {
+		cfg.Admin.Username = "root"
+	}
+	if cfg.Admin.Password == "" {
+		panic("admin password is required: set admin.password in config.yaml or ADMIN_PASSWORD env（默认 root/root 仅用于本地开发）")
+	}
 	cfg.Database.Driver = strings.ToLower(strings.TrimSpace(cfg.Database.Driver))
 	if cfg.Database.Driver == "" {
 		cfg.Database.Driver = DriverSQLite
@@ -379,6 +402,12 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		cfg.Server.JWTSecret = v
+	}
+	if v := os.Getenv("ADMIN_USERNAME"); v != "" {
+		cfg.Admin.Username = v
+	}
+	if v := os.Getenv("ADMIN_PASSWORD"); v != "" {
+		cfg.Admin.Password = v
 	}
 	if v := os.Getenv("APP_MODE"); v != "" {
 		cfg.Server.Mode = v

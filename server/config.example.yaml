@@ -102,3 +102,13 @@ scheduler:
   # 数据库备份到对象存储（sqlite: VACUUM INTO；mysql: mysqldump）
   # key 形如 backups/db/rental-YYYYMMDD-HHMMSS-<随机>.gz；keep = 保留份数（按时间删旧）
   db_backup: { enabled: true, time: "04:00", keep: 7 }
+
+# ---------------------- 超级管理员 ----------------------
+# 每次后端启动都会把超级管理员的账号密码与这里对齐（有则改、无则建），
+# 保证重启后登录凭据始终以配置文件为准。★ 生产部署务必改掉默认的 root/root。
+# 用 scripts/setadmin（Go）或 scripts_py/setadmin.py（Python）直接改库后，
+# 也要同步改这里，否则下次重启会被对齐回配置值。也可用 ADMIN_USERNAME / ADMIN_PASSWORD 环境变量覆盖。
+admin:
+  username: "root"
+  # 密码明文存放于本文件，请控制文件权限；显式留空会拒绝启动
+  password: "root"
