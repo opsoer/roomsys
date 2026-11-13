@@ -148,7 +148,7 @@ func createBuildingExpiryTasks(db *gorm.DB, b models.Building, taskType, title, 
 	}
 }
 
-// AutoCleanupData 清理超过90天的软删除数据和 page_views 记录。
+// AutoCleanupData 清理超过90天的软删除数据、page_views 记录与死楼栋孤儿统计行，并修剪每日去重 IP 表。
 func AutoCleanupData(db *gorm.DB) string {
 	cleanupResult := ""
 	if err := models.CleanupSoftDeleted(db, 90); err != nil {
@@ -166,6 +166,28 @@ func AutoCleanupData(db *gorm.DB) string {
 	} else {
 		logger.Log.Debug().Msg("page_views 清理完成")
 		cleanupResult += "，PageView: 完成"
+	}
+	// stat_daily_ips 每日去重 IP 保留 370 天：覆盖趋势接口最大 365 天窗口，
+	// 更早的日 UV 已无从展示，修剪避免表无限膨胀（平台总 UV 在 stat_ips，不受影响）
+	dayIPCutoff := time.Now().AddDate(0, 0, -370).Format("2006-01-02")
+	if err := db.Where("day < ?", dayIPCutoff).Delete(&models.StatDailyIP{}).Error; err != nil {
+		logger.Log.Warn().Err(err).Msg("每日去重 IP 清理失败")
+	}
+	// stat_daily 孤儿楼栋行兜底清理：楼栋已被硬删/软删（如绕过 BuildingService.Delete
+	// 的路径、迁移回填、异步竞争留下的行）时清除；排行查询已按存活楼栋过滤，
+	// 此处主要防存储无限增长。平台行（building_id=0）与存活楼栋不受影响。
+	if err := db.Exec(
+		"DELETE FROM stat_daily WHERE building_id > 0 AND building_id NOT IN " +
+			"(SELECT id FROM buildings WHERE deleted_at IS NULL)").Error; err != nil {
+		logger.Log.Warn().Err(err).Msg("stat_daily 孤儿楼栋行清理失败")
+	}
+	// page_views 孤儿楼栋行兜底清理：与 stat_daily 同源（异步竞争、历史软删），
+	// 平台 PV/UV 已落在聚合表，删除这些明细不影响面板总量；存活楼栋与 building_id=0
+	// 的列表页明细不受影响。
+	if err := db.Exec(
+		"DELETE FROM page_views WHERE building_id > 0 AND building_id NOT IN " +
+			"(SELECT id FROM buildings WHERE deleted_at IS NULL)").Error; err != nil {
+		logger.Log.Warn().Err(err).Msg("page_views 孤儿楼栋行清理失败")
 	}
 	// 审计日志保留 180 天，避免 audit_logs 表无限膨胀
 	auditCutoff := time.Now().AddDate(0, 0, -180)

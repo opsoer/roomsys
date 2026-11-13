@@ -84,6 +84,8 @@ func main() {
 		func() string { return scheduler.AutoCheckExpiringContracts(db) }))
 	jobs.Add(scheduler.NewJob("soft_delete_cleanup", "软删除清理", cfg.Scheduler.SoftDeleteCleanup, false,
 		func() string { return scheduler.AutoCleanupData(db) }))
+	jobs.Add(scheduler.NewJob("bill_evidence_gc", "账单凭证孤儿文件清理", cfg.Scheduler.BillEvidenceGC, false,
+		func() string { return scheduler.CleanupBillEvidenceFiles(db, cfg) }))
 	jobs.Add(scheduler.NewJob("token_cleanup", "吊销令牌清理", cfg.Scheduler.TokenCleanup, false,
 		utils.CleanupRevokedTokens))
 	jobs.Add(scheduler.NewJob("db_backup", "数据库备份到对象存储", cfg.Scheduler.DBBackup, false,
@@ -278,6 +280,10 @@ func resetDatabase(db *gorm.DB) {
 		&models.Building{},
 		&models.User{},
 		&models.PageView{},
+		&models.StatTotal{},
+		&models.StatIP{},
+		&models.StatDailyIP{},
+		&models.StatDaily{},
 		&models.LocationCustom{},
 		&models.LocationRename{},
 	}

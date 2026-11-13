@@ -627,6 +627,16 @@ func (s *BuildingService) Delete(id uint) error {
 		if err := tx.Where("building_id = ?", id).Delete(&models.User{}).Error; err != nil {
 			return err
 		}
+		// 监测类数据跟随公寓一并清理：page_views 明细 + stat_daily 楼栋日行，
+		// 保证已删公寓从楼栋排行/详情中消失。平台级聚合（stat_totals / stat_ips /
+		// stat_daily_ips / stat_daily 的 building_id=0 平台行）不动——平台总 PV/UV/
+		// 趋势只增不减，不随公寓删除回落。
+		if err := tx.Where("building_id = ?", id).Delete(&models.PageView{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("building_id = ?", id).Delete(&models.StatDaily{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&models.Building{}, id).Error
 	})
 }

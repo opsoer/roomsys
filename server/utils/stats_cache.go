@@ -37,7 +37,9 @@ func CacheGetOrSet(key string, ttl time.Duration, fetch func() (interface{}, err
 }
 
 // ClearStatsCache 清空统计数据缓存。
-// 供测试或运维在数据切换后强制重新计算；生产请求路径不应调用。
+// 适用场景：统计数据被整体性变更后强制重新计算——包括测试隔离（testkit 每个用例
+// 清一次防串味）与生产中删除公寓（handlers/buildings.go 删除级联清掉该公寓的
+// 浏览数据后立即失效缓存，避免 5 分钟 TTL 内数据面板仍显示已删公寓的排行）。
 func ClearStatsCache() {
 	statsCache.Range(func(key, _ interface{}) bool {
 		statsCache.Delete(key)

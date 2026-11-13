@@ -266,6 +266,60 @@ type PageView struct {
 	CreatedAt  time.Time `gorm:"index:idx_pv_query;index:idx_pv_cleanup" json:"created_at"`
 }
 
+// StatTotal 平台级累计计数器（单行，主键固定为 1）：与具体公寓的生死解耦，只增不减。
+// 总浏览量/获电数读取走本表（写入路径 utils.ApplyPageViewBatch 同步累加），
+// 不再对 page_views 全表 COUNT(*)；删除公寓不会回退这里的值。
+type StatTotal struct {
+	ID                uint      `gorm:"primaryKey" json:"id"`
+	TotalPV           int64     `gorm:"not null;default:0" json:"total_pv"`
+	TotalLandlordView int64     `gorm:"not null;default:0" json:"total_landlord_view"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// TableName 固定表名（避免 gorm 复数化歧义）。
+func (StatTotal) TableName() string { return "stat_totals" }
+
+// StatIP 全历史来过的去重 IP（每个 IP 一行，只增不减）：总 UV = 本表行数。
+// 由 page_views 写入路径同步登记（INSERT OR IGNORE），与公寓删除、90 天明细清理均无关。
+type StatIP struct {
+	IP        string    `gorm:"primaryKey;size:45" json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName 固定表名。
+func (StatIP) TableName() string { return "stat_ips" }
+
+// StatDailyIP 每日去重 IP（day+ip 复合主键）：当日平台 UV = 当日行数。
+// 历史行由 soft_delete_cleanup 定时修剪（见 scheduler.AutoCleanupData，保留 370 天，
+// 覆盖趋势接口最大 365 天窗口）。
+type StatDailyIP struct {
+	Day       string    `gorm:"primaryKey;size:10" json:"day"` // "2006-01-02"
+	IP        string    `gorm:"primaryKey;size:45" json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName 固定表名。
+func (StatDailyIP) TableName() string { return "stat_daily_ips" }
+
+// StatDaily 按天按公寓的累计计数器（day+building_id 复合主键）：
+//   - building_id=0 为平台级日计数（趋势图、今日/昨日 PV 的数据源，永不删除）；
+//   - building_id>0  为楼栋日计数（楼栋累计 PV/获电数、月热度排行），随公寓删除一并清理。
+//
+// 列口径：PV=该公寓全部事件；DetailPV=building_detail+room_detail 两类（楼栋排行/
+// 楼栋详情/楼栋概览获电率的历史分母口径，见 services/stats.go 注释）；LandlordView=获电埋点。
+// 删除公寓只清 building_id=该公寓的行，平台行与其余公寓不受影响。
+type StatDaily struct {
+	Day          string    `gorm:"primaryKey;size:10" json:"day"` // "2006-01-02"
+	BuildingID   uint      `gorm:"primaryKey;index" json:"building_id"`
+	PV           int64     `gorm:"not null;default:0" json:"pv"`
+	DetailPV     int64     `gorm:"not null;default:0" json:"detail_pv"`
+	LandlordView int64     `gorm:"not null;default:0" json:"landlord_view"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// TableName 固定表名（避免 gorm 把 daily 复数化为 dailies）。
+func (StatDaily) TableName() string { return "stat_daily" }
+
 // BuildingRenewal 公寓入驻/续约记录，类似租约历史：
 // join=入驻（记录签约日期与首次到期日），renew=续约（记录原到期日与新到期日）。
 type BuildingRenewal struct {
@@ -351,6 +405,10 @@ func AllModels() []interface{} {
 		&RecruitSubmission{},
 		&AuditLog{},
 		&PageView{},
+		&StatTotal{},
+		&StatIP{},
+		&StatDailyIP{},
+		&StatDaily{},
 		&LocationCustom{},
 		&LocationRename{},
 	}

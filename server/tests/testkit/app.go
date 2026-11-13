@@ -181,6 +181,8 @@ func newJobs(db *gorm.DB, cfg *config.Config) *scheduler.Registry {
 		func() string { return scheduler.AutoCheckExpiringContracts(db) }))
 	r.Add(scheduler.NewJob("soft_delete_cleanup", "软删除清理", cfg.Scheduler.SoftDeleteCleanup, false,
 		func() string { return scheduler.AutoCleanupData(db) }))
+	r.Add(scheduler.NewJob("bill_evidence_gc", "账单凭证孤儿文件清理", cfg.Scheduler.BillEvidenceGC, false,
+		func() string { return "测试环境不执行凭证文件清理" }))
 	r.Add(scheduler.NewJob("token_cleanup", "吊销令牌清理", cfg.Scheduler.TokenCleanup, false,
 		func() string { return utils.CleanupRevokedTokens() }))
 	r.Add(scheduler.NewJob("db_backup", "数据库备份到对象存储", cfg.Scheduler.DBBackup, false,

@@ -381,6 +381,9 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		}
 	}
 	logger.Log.Info().Str("id", id).Msg("公寓已删除")
+	// 删除级联清掉了该公寓的浏览明细与日计数，立即失效统计缓存，
+	// 避免数据面板在 5 分钟缓存窗口内仍显示已删公寓的排行。
+	utils.ClearStatsCache()
 	audit.Log(c, audit.ActionDelete, audit.ResourceBuilding, id, "删除公寓")
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }

@@ -1,8 +1,14 @@
-// 统计服务，提供数据看板、趋势分析等统计查询能力
+// 统计服务，提供数据看板、趋势分析等统计查询能力。
+//
+// 存储约定（2026-11 重构）：平台级累计数（总 PV/UV/趋势/今日昨日）来自聚合表
+// stat_totals / stat_ips / stat_daily_ips / stat_daily（building_id=0 平台行），
+// 由写入路径 utils.ApplyPageViewBatch 随每次访问同步维护——只增不减，
+// 删除公寓与 90 天明细清理都不会让平台总数回落；
+// 楼栋级统计（热度排行/楼栋详情/楼栋概览/房间排行）中 PV 类来自 stat_daily
+// 楼栋行（随公寓删除一并清零），去重 UV 类仍按 page_views 明细（90 天保留期内精确）。
 package services
 
 import (
-	"fmt"
 	"time"
 
 	"rental-server/database"
@@ -19,6 +25,11 @@ type StatsService struct {
 // NewStatsService 创建统计服务实例
 func NewStatsService(db *gorm.DB) *StatsService {
 	return &StatsService{DB: db}
+}
+
+// dayKey 把时间截断为本地日期键，与写入端 utils.ApplyPageViewBatch 的日键一致。
+func dayKey(t time.Time) string {
+	return t.Format("2006-01-02")
 }
 
 // OverviewData 概览统计数据
@@ -124,23 +135,37 @@ func fillTrendDays(rows []TrendItem, start, end time.Time) []TrendItem {
 // 在启用时间偏移的环境（测试/回放）下，统计窗口与业务时间会产生偏差。
 func (s *StatsService) Overview() (*OverviewData, error) {
 	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
 	var result OverviewData
 
-	s.DB.Model(&models.PageView{}).Select("COUNT(*)").Scan(&result.TotalPV)
-	s.DB.Model(&models.PageView{}).Select("COUNT(DISTINCT ip)").Scan(&result.TotalUV)
-	s.DB.Model(&models.PageView{}).Where("created_at >= ?", todayStart).Select("COUNT(*)").Scan(&result.TodayPV)
-	s.DB.Model(&models.PageView{}).Where("created_at >= ?", todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.TodayUV)
-	yesterdayStart := todayStart.AddDate(0, 0, -1)
-	s.DB.Model(&models.PageView{}).Where("created_at >= ? AND created_at < ?", yesterdayStart, todayStart).Select("COUNT(*)").Scan(&result.YesterdayPV)
-	s.DB.Model(&models.PageView{}).Where("created_at >= ? AND created_at < ?", yesterdayStart, todayStart).Select("COUNT(DISTINCT ip)").Scan(&result.YesterdayUV)
-	s.DB.Model(&models.PageView{}).Where("page_type = ?", "landlord_view").Select("COUNT(*)").Scan(&result.TotalLandlordView)
+	// 平台累计计数器：总 PV / 总获电数（只增不减，删除公寓不影响）
+	var totals models.StatTotal
+	if err := s.DB.First(&totals, 1).Error; err == nil {
+		result.TotalPV = totals.TotalPV
+		result.TotalLandlordView = totals.TotalLandlordView
+	}
+	// 总 UV：全历史去重 IP（stat_ips 行数，只增不减）
+	s.DB.Model(&models.StatIP{}).Select("COUNT(*)").Scan(&result.TotalUV)
 
-	// 获电率：landlord_view 事件数 / 属于本统计口径的 PV 总量 * 100（浮点百分比）。
-	// Overview 的分母是全部 page_type 的 PV（不过滤类型），BuildingDetail/MyBuildingStats
-	// 的分母是 building_detail+room_detail 两类合计 —— 三处口径不同，各自注释勿混淆；
+	// 今日/昨日 PV：平台日计数行（stat_daily building_id=0）
+	todayKey := dayKey(now)
+	yesterdayKey := dayKey(now.AddDate(0, 0, -1))
+	var todayRow, yesterdayRow models.StatDaily
+	if err := s.DB.Where("day = ? AND building_id = 0", todayKey).First(&todayRow).Error; err == nil {
+		result.TodayPV = todayRow.PV
+	}
+	if err := s.DB.Where("day = ? AND building_id = 0", yesterdayKey).First(&yesterdayRow).Error; err == nil {
+		result.YesterdayPV = yesterdayRow.PV
+	}
+	// 今日/昨日 UV：每日去重 IP
+	s.DB.Model(&models.StatDailyIP{}).Where("day = ?", todayKey).Select("COUNT(*)").Scan(&result.TodayUV)
+	s.DB.Model(&models.StatDailyIP{}).Where("day = ?", yesterdayKey).Select("COUNT(*)").Scan(&result.YesterdayUV)
+
+	// 获电率：landlord_view 事件数 / 平台 PV 总量 * 100（浮点百分比）。
+	// Overview 的分母是全部 page_type 的 PV（stat_totals.total_pv，不过滤类型），
+	// BuildingDetail/MyBuildingStats 的分母是 stat_daily.detail_pv（building_detail+
+	// room_detail 两类合计）—— 三处口径不同，各自注释勿混淆；
 	// 若调整分母口径，务必同步修改三处保持含义一致。
 	if result.TotalPV > 0 {
 		result.PhoneRate = float64(result.TotalLandlordView) / float64(result.TotalPV) * 100
@@ -154,42 +179,53 @@ func (s *StatsService) Overview() (*OverviewData, error) {
 		result.VacancyRate = float64(vacantRooms) / float64(totalRooms) * 100
 	}
 
-	// 楼栋排行
-	rows, err := s.DB.Raw(`
-		SELECT pv.building_id, b.name,
-		       COALESCE(pv.pv, 0) as pv,
-		       COALESCE(pv.uv, 0) as uv,
-		       COALESCE(lv.cnt, 0) as landlord_view
-		FROM (
-			SELECT building_id, COUNT(*) as pv, COUNT(DISTINCT ip) as uv
-			FROM page_views
-			WHERE page_type IN ('building_detail','room_detail')
-			  AND building_id > 0
-			  AND created_at >= ?
-			GROUP BY building_id
-		) pv
-		JOIN buildings b ON b.id = pv.building_id
-		LEFT JOIN (
-			SELECT building_id, COUNT(*) as cnt
-			FROM page_views
-			WHERE page_type = 'landlord_view'
-			  AND created_at >= ?
-			GROUP BY building_id
-		) lv ON lv.building_id = pv.building_id
-		ORDER BY pv DESC LIMIT 20
-	`, monthStart, monthStart).Rows()
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var item BuildingRankItem
-			var landlordView int64
-			if err := rows.Scan(&item.BuildingID, &item.BuildingName, &item.PV, &item.UV, &landlordView); err == nil {
-				item.LandlordView = landlordView
-				item.RoomCount = 0
-				item.VacantCount = 0
-				result.BuildingRank = append(result.BuildingRank, item)
-			}
-		}
+	// 楼栋排行：PV（detail 两类口径）/获电数来自 stat_daily 月窗聚合，随公寓删除一并清零；
+	// UV 来自 page_views 月窗去重（月窗恒在 90 天明细保留期内）。
+	// 「存活且未软删」「detail_pv>0 才入榜」的过滤必须下推到聚合查询里再 LIMIT——
+	// 若先取 Top20 再过滤，迁移回填或异步竞争留下的已删楼栋孤儿行会把活跃公寓挤出榜单。
+	monthKey := dayKey(monthStart)
+	type rankAgg struct {
+		BuildingID   uint
+		BuildingName string
+		DetailPV     int64
+		LV           int64
+	}
+	var aggs []rankAgg
+	s.DB.Table("stat_daily").
+		Select("stat_daily.building_id, b.name AS building_name, "+
+			"COALESCE(SUM(stat_daily.detail_pv), 0) AS detail_pv, "+
+			"COALESCE(SUM(stat_daily.landlord_view), 0) AS lv").
+		Joins("JOIN buildings b ON b.id = stat_daily.building_id AND b.deleted_at IS NULL").
+		Where("stat_daily.day >= ? AND stat_daily.building_id > 0", monthKey).
+		Group("stat_daily.building_id, b.name").
+		Having("COALESCE(SUM(stat_daily.detail_pv), 0) > 0").
+		Order("detail_pv DESC").
+		Limit(20).
+		Scan(&aggs)
+
+	type uvAgg struct {
+		BuildingID uint
+		UV         int64
+	}
+	var uvs []uvAgg
+	s.DB.Table("page_views").
+		Select("building_id, COUNT(DISTINCT ip) AS uv").
+		Where("page_type IN ('building_detail','room_detail') AND building_id > 0 AND created_at >= ?", monthStart).
+		Group("building_id").
+		Scan(&uvs)
+	uvBy := make(map[uint]int64, len(uvs))
+	for _, r := range uvs {
+		uvBy[r.BuildingID] = r.UV
+	}
+
+	for _, a := range aggs {
+		result.BuildingRank = append(result.BuildingRank, BuildingRankItem{
+			BuildingID:   a.BuildingID,
+			BuildingName: a.BuildingName,
+			PV:           a.DetailPV,
+			UV:           uvBy[a.BuildingID],
+			LandlordView: a.LV,
+		})
 	}
 
 	// 填充楼栋的房间数和空置数：单条 GROUP BY 聚合，替代逐楼栋两条查询的 N+1 写法
@@ -224,29 +260,39 @@ func (s *StatsService) Overview() (*OverviewData, error) {
 	return &result, nil
 }
 
-// Trend 获取PV/UV趋势数据（按天聚合后补零填充为连续日序列）
+// Trend 获取PV/UV趋势数据（平台日计数聚合，补零填充为连续日序列）。
+// PV/获电数来自 stat_daily 平台行（building_id=0），UV 来自 stat_daily_ips 按日去重
+// —— 删除公寓与 90 天明细清理都不影响平台日计数，历史趋势稳定。
 func (s *StatsService) Trend(cutoff, todayStart time.Time) ([]TrendItem, error) {
-	dayExpr := database.DayExpr(s.DB, "created_at")
-	rows, err := s.DB.Raw(fmt.Sprintf(`
-		SELECT %s as date,
-		       COUNT(*) as pv,
-		       COUNT(DISTINCT ip) as uv,
-		       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
-		FROM page_views
-		WHERE created_at >= ?
-		GROUP BY %s
-		ORDER BY date
-	`, dayExpr, dayExpr), cutoff).Rows()
-	if err != nil {
-		return nil, err
+	cutoffKey := dayKey(cutoff)
+	var rows []struct {
+		Day          string
+		PV           int64
+		LandlordView int64
 	}
-	defer rows.Close()
-	var result []TrendItem
-	for rows.Next() {
-		var item TrendItem
-		if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
-			result = append(result, item)
-		}
+	s.DB.Model(&models.StatDaily{}).
+		Select("day, pv, landlord_view").
+		Where("day >= ? AND building_id = 0", cutoffKey).
+		Order("day ASC").
+		Scan(&rows)
+
+	var uvRows []struct {
+		Day string
+		UV  int64
+	}
+	s.DB.Model(&models.StatDailyIP{}).
+		Select("day, COUNT(*) AS uv").
+		Where("day >= ?", cutoffKey).
+		Group("day").
+		Scan(&uvRows)
+	uvBy := make(map[string]int64, len(uvRows))
+	for _, r := range uvRows {
+		uvBy[r.Day] = r.UV
+	}
+
+	result := make([]TrendItem, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, TrendItem{Date: r.Day, PV: r.PV, UV: uvBy[r.Day], LandlordView: r.LandlordView})
 	}
 	return fillTrendDays(result, cutoff, todayStart), nil
 }
@@ -273,6 +319,8 @@ func (s *StatsService) PriceReference() ([]PriceRefItem, error) {
 
 // BuildingDetail 获取单个楼栋的详细统计数据（含房间浏览排行）
 // 注意：使用裸 time.Now()（未走 utils.Now()），不跟随全局时间偏移（同 Overview）。
+// PV/获电数来自 stat_daily 楼栋行累计（随公寓删除清零）；UV 按 page_views 去重
+// （明细 90 天保留期内精确，口径与重构前一致）。
 func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, error) {
 	now := time.Now()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
@@ -286,23 +334,27 @@ func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, err
 	}
 	result.BuildingName = building.Name
 
-	s.DB.Model(&models.PageView{}).
-		Where("(page_type = ? OR page_type = ?) AND building_id = ?", "building_detail", "room_detail", buildingID).
-		Select("COUNT(*)").Scan(&result.PV)
+	var dailyAgg struct {
+		PV int64
+		LV int64
+	}
+	s.DB.Model(&models.StatDaily{}).
+		Select("COALESCE(SUM(detail_pv), 0) AS pv, COALESCE(SUM(landlord_view), 0) AS lv").
+		Where("building_id = ?", buildingID).
+		Scan(&dailyAgg)
+	result.PV = dailyAgg.PV
+	result.LandlordView = dailyAgg.LV
 	s.DB.Model(&models.PageView{}).
 		Where("(page_type = ? OR page_type = ?) AND building_id = ?", "building_detail", "room_detail", buildingID).
 		Select("COUNT(DISTINCT ip)").Scan(&result.UV)
-	s.DB.Model(&models.PageView{}).
-		Where("page_type = ? AND building_id = ?", "landlord_view", buildingID).
-		Select("COUNT(*)").Scan(&result.LandlordView)
 
-	// 获电率：landlord_view 事件数 / building_detail+room_detail 两类 PV 合计 * 100。
+	// 获电率：landlord_view 事件数 / detail_pv（building_detail+room_detail 两类合计）* 100。
 	// 分母口径与 Overview 全量 PV 不同，见 Overview 处注释。
 	if result.PV > 0 {
 		result.PhoneRate = float64(result.LandlordView) / float64(result.PV) * 100
 	}
 
-	// 房间排行
+	// 房间排行：r.deleted_at IS NULL 保证软删除房间不漏出排行
 	rows, err := s.DB.Raw(`
 		SELECT pv.resource_id, r.room_number, r.layout, pv.pv, r.status
 		FROM (
@@ -313,7 +365,7 @@ func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, err
 			  AND created_at >= ?
 			GROUP BY resource_id
 		) pv
-		JOIN rooms r ON r.id = pv.resource_id AND r.building_id = ?
+		JOIN rooms r ON r.id = pv.resource_id AND r.building_id = ? AND r.deleted_at IS NULL
 		ORDER BY pv DESC LIMIT 50
 	`, buildingID, monthStart, buildingID).Rows()
 	if err == nil {
@@ -331,18 +383,36 @@ func (s *StatsService) BuildingDetail(buildingID uint) (*BuildingDetailData, err
 
 // MyBuildingStats 获取指定楼栋的统计概览（楼栋管理员 API，自动 scope 到自己的 building_id）
 // 注意：使用裸 time.Now()（未走 utils.Now()），不跟随全局时间偏移（同 Overview）。
+// PV/获电数/今日 PV 来自 stat_daily 楼栋行（随公寓删除清零）；UV/今日 UV 按
+// page_views 去重（口径与重构前一致）。
 func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 	now := time.Now()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayKey := dayKey(now)
 
 	var data MyBuildingStatsData
 
-	s.DB.Model(&models.PageView{}).Where("(page_type = ? OR page_type = ?) AND building_id = ?", "building_detail", "room_detail", bid).Select("COUNT(*)").Scan(&data.PV)
-	s.DB.Model(&models.PageView{}).Where("(page_type = ? OR page_type = ?) AND building_id = ?", "building_detail", "room_detail", bid).Select("COUNT(DISTINCT ip)").Scan(&data.UV)
-	s.DB.Model(&models.PageView{}).Where("(page_type = ? OR page_type = ?) AND building_id = ? AND created_at >= ?", "building_detail", "room_detail", bid, todayStart).Select("COUNT(*)").Scan(&data.TodayPV)
-	s.DB.Model(&models.PageView{}).Where("(page_type = ? OR page_type = ?) AND building_id = ? AND created_at >= ?", "building_detail", "room_detail", bid, todayStart).Select("COUNT(DISTINCT ip)").Scan(&data.TodayUV)
-	s.DB.Model(&models.PageView{}).Where("page_type = ? AND building_id = ?", "landlord_view", bid).Select("COUNT(*)").Scan(&data.LandlordView)
+	var agg struct {
+		PV int64
+		LV int64
+	}
+	s.DB.Model(&models.StatDaily{}).
+		Select("COALESCE(SUM(detail_pv), 0) AS pv, COALESCE(SUM(landlord_view), 0) AS lv").
+		Where("building_id = ?", bid).
+		Scan(&agg)
+	data.PV = agg.PV
+	data.LandlordView = agg.LV
+	var todayRow models.StatDaily
+	if err := s.DB.Where("day = ? AND building_id = ?", todayKey, bid).First(&todayRow).Error; err == nil {
+		data.TodayPV = todayRow.DetailPV
+	}
+	s.DB.Model(&models.PageView{}).
+		Where("(page_type = ? OR page_type = ?) AND building_id = ?", "building_detail", "room_detail", bid).
+		Select("COUNT(DISTINCT ip)").Scan(&data.UV)
+	s.DB.Model(&models.PageView{}).
+		Where("(page_type = ? OR page_type = ?) AND building_id = ? AND created_at >= ?", "building_detail", "room_detail", bid, todayStart).
+		Select("COUNT(DISTINCT ip)").Scan(&data.TodayUV)
 
 	if data.PV > 0 {
 		data.PhoneRate = float64(data.LandlordView) / float64(data.PV) * 100
@@ -366,6 +436,7 @@ func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 		data.OccupancyRate = float64(data.RoomRented) / float64(data.RoomTotal) * 100
 	}
 
+	// 房间排行：r.deleted_at IS NULL 保证软删除房间不漏出排行
 	rows, err := s.DB.Raw(`
 		SELECT pv.resource_id, r.room_number, r.layout, pv.pv, r.status
 		FROM (
@@ -374,7 +445,7 @@ func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 			WHERE page_type = 'room_detail' AND building_id = ? AND created_at >= ?
 			GROUP BY resource_id
 		) pv
-		JOIN rooms r ON r.id = pv.resource_id
+		JOIN rooms r ON r.id = pv.resource_id AND r.deleted_at IS NULL
 		ORDER BY pv DESC LIMIT 50
 	`, bid, monthStart).Rows()
 	if err == nil {
@@ -389,29 +460,40 @@ func (s *StatsService) MyBuildingStats(bid uint) (*MyBuildingStatsData, error) {
 	return &data, nil
 }
 
-// MyBuildingTrend 获取指定楼栋的趋势数据（按天聚合后补零填充为连续日序列）
+// MyBuildingTrend 获取指定楼栋的趋势数据（楼栋日计数聚合，补零填充为连续日序列）。
+// PV（=detail_pv+landlord_view，与重构前三类 page_type 口径一致）与获电数来自
+// stat_daily 楼栋行，随公寓删除清零；UV 仍按 page_views 日去重（明细保留期内）。
 func (s *StatsService) MyBuildingTrend(bid uint, cutoff, todayStart time.Time) ([]TrendItem, error) {
-	dayExpr := database.DayExpr(s.DB, "created_at")
-	rows, err := s.DB.Raw(fmt.Sprintf(`
-		SELECT %s as date,
-		       COUNT(*) as pv,
-		       COUNT(DISTINCT ip) as uv,
-		       SUM(CASE WHEN page_type = 'landlord_view' THEN 1 ELSE 0 END) as landlord_view
-		FROM page_views
-		WHERE (page_type IN ('building_detail','room_detail','landlord_view')) AND building_id = ? AND created_at >= ?
-		GROUP BY %s
-		ORDER BY date
-	`, dayExpr, dayExpr), bid, cutoff).Rows()
-	if err != nil {
-		return nil, err
+	cutoffKey := dayKey(cutoff)
+	var rows []struct {
+		Day          string
+		DetailPV     int64
+		LandlordView int64
 	}
-	defer rows.Close()
-	var result []TrendItem
-	for rows.Next() {
-		var item TrendItem
-		if err := rows.Scan(&item.Date, &item.PV, &item.UV, &item.LandlordView); err == nil {
-			result = append(result, item)
-		}
+	s.DB.Model(&models.StatDaily{}).
+		Select("day, detail_pv, landlord_view").
+		Where("day >= ? AND building_id = ?", cutoffKey, bid).
+		Order("day ASC").
+		Scan(&rows)
+
+	dayExpr := database.DayExpr(s.DB, "created_at")
+	var uvRows []struct {
+		Day string
+		UV  int64
+	}
+	s.DB.Table("page_views").
+		Select(dayExpr+" AS day, COUNT(DISTINCT ip) AS uv").
+		Where("page_type IN ('building_detail','room_detail','landlord_view') AND building_id = ? AND created_at >= ?", bid, cutoff).
+		Group(dayExpr).
+		Scan(&uvRows)
+	uvBy := make(map[string]int64, len(uvRows))
+	for _, r := range uvRows {
+		uvBy[r.Day] = r.UV
+	}
+
+	result := make([]TrendItem, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, TrendItem{Date: r.Day, PV: r.DetailPV + r.LandlordView, UV: uvBy[r.Day], LandlordView: r.LandlordView})
 	}
 	return fillTrendDays(result, cutoff, todayStart), nil
 }

@@ -37,6 +37,10 @@ func main() {
 		&models.BuildingRenewal{},
 		&models.Building{},
 		&models.User{},
+		&models.StatTotal{},
+		&models.StatIP{},
+		&models.StatDailyIP{},
+		&models.StatDaily{},
 		&models.LocationCustom{},
 		&models.LocationRename{},
 	)
@@ -48,9 +52,17 @@ func main() {
 	}
 	fmt.Println("   完成")
 
-	fmt.Println("3. 清空数据面板统计(page_views)数据...")
-	if err := db.Where("1 = 1").Delete(&models.PageView{}).Error; err != nil {
-		panic(err)
+	fmt.Println("3. 清空数据面板统计(page_views 与聚合表)数据...")
+	for _, table := range []interface{}{
+		&models.PageView{},
+		&models.StatTotal{},
+		&models.StatIP{},
+		&models.StatDailyIP{},
+		&models.StatDaily{},
+	} {
+		if err := db.Where("1 = 1").Delete(table).Error; err != nil {
+			panic(err)
+		}
 	}
 	fmt.Println("   完成")
 

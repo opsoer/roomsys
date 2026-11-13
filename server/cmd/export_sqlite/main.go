@@ -48,6 +48,10 @@ var allModels = []interface{}{
 	&models.RecruitSubmission{},
 	&models.AuditLog{},
 	&models.PageView{},
+	&models.StatTotal{},
+	&models.StatIP{},
+	&models.StatDailyIP{},
+	&models.StatDaily{},
 }
 
 const batchSize = 500
