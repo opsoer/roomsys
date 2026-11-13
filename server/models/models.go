@@ -261,17 +261,18 @@ type PageView struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	PageType   string    `gorm:"size:30;not null;index:idx_pv_query" json:"page_type"`
 	ResourceID uint      `gorm:"not null;default:0;index:idx_pv_query" json:"resource_id"`
-	BuildingID uint      `gorm:"default:0;index:idx_pv_query" json:"building_id"`
+	BuildingID uint      `gorm:"default:0;index:idx_pv_query;index:idx_pv_building" json:"building_id"`
 	IP         string    `gorm:"size:45;not null" json:"ip"`
 	CreatedAt  time.Time `gorm:"index:idx_pv_query;index:idx_pv_cleanup" json:"created_at"`
 }
 
 // StatTotal 平台级累计计数器（单行，主键固定为 1）：与具体公寓的生死解耦，只增不减。
-// 总浏览量/获电数读取走本表（写入路径 utils.ApplyPageViewBatch 同步累加），
-// 不再对 page_views 全表 COUNT(*)；删除公寓不会回退这里的值。
+// 总 PV/UV/获电数读取走本表（写入路径 utils.ApplyPageViewBatch 同步累加），
+// 不再对 page_views/stat_ips 全表 COUNT(*)；删除公寓不会回退这里的值。
 type StatTotal struct {
 	ID                uint      `gorm:"primaryKey" json:"id"`
 	TotalPV           int64     `gorm:"not null;default:0" json:"total_pv"`
+	TotalUV           int64     `gorm:"not null;default:0" json:"total_uv"`
 	TotalLandlordView int64     `gorm:"not null;default:0" json:"total_landlord_view"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -279,7 +280,8 @@ type StatTotal struct {
 // TableName 固定表名（避免 gorm 复数化歧义）。
 func (StatTotal) TableName() string { return "stat_totals" }
 
-// StatIP 全历史来过的去重 IP（每个 IP 一行，只增不减）：总 UV = 本表行数。
+// StatIP 全历史来过的去重 IP（每个 IP 一行，只增不减）：总 UV 的明细来源，
+// 写入时新 IP 会同步累加 stat_totals.total_uv（避免大表 COUNT(*)）。
 // 由 page_views 写入路径同步登记（INSERT OR IGNORE），与公寓删除、90 天明细清理均无关。
 type StatIP struct {
 	IP        string    `gorm:"primaryKey;size:45" json:"ip"`

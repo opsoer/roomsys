@@ -45,4 +45,6 @@ func ClearStatsCache() {
 		statsCache.Delete(key)
 		return true
 	})
+	// 存活楼栋缓存也属于统计写入链路，测试隔离/删除公寓时一并失效。
+	ClearBuildingAliveCache()
 }

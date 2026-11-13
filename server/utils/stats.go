@@ -64,9 +64,10 @@ type dailyAgg struct{ pv, detail, lv int64 }
 // ApplyPageViewBatch 将一批页面访问记录落库并同步维护平台级聚合计数（单事务）。
 //
 // 五步：① 批量插入 page_views 明细（90 天定时清理语义不变，仍是楼栋级精确去重 UV、
-// 房间排行、月排行 UV 的数据源）；② upsert stat_totals 平台累计计数；③ stat_ips
-// 登记全历史去重 IP（总 UV 数据源）；④ stat_daily_ips 登记当日去重 IP；
-// ⑤ upsert stat_daily 日计数——building_id>0 楼栋行与 building_id=0 平台行各累计一次。
+// 房间排行、月排行 UV 的数据源）；② stat_ips 登记全历史去重 IP（总 UV 数据源，
+// 新增 IP 数同步累加 stat_totals.total_uv）；③ upsert stat_totals 平台累计计数；
+// ④ stat_daily_ips 登记当日去重 IP；⑤ upsert stat_daily 日计数——building_id>0
+// 楼栋行与 building_id=0 平台行各累计一次。
 //
 // 平台级计数与公寓生死解耦：删除公寓只清明细与楼栋日行，stat_totals/stat_ips/
 // stat_daily_ips 与 stat_daily 的平台行永不受影响，平台总数只增不减。
@@ -81,32 +82,10 @@ func ApplyPageViewBatch(db *gorm.DB, batch []models.PageView) error {
 		// ⓪ 异步批次落库时公寓可能刚被删除（删除事务先提交、本批次后落库）：
 		// 平台级计数照常累计（事件真实发生过，平台总量只增不减），
 		// 仅跳过该公寓的明细行与楼栋日行，避免把孤儿数据写回。
-		aliveSet := map[uint]struct{}{}
-		needCheck := false
-		for i := range batch {
-			if batch[i].BuildingID != 0 {
-				needCheck = true
-				break
-			}
-		}
-		if needCheck {
-			ids := make([]uint, 0, len(batch))
-			seen := map[uint]struct{}{}
-			for i := range batch {
-				if id := batch[i].BuildingID; id != 0 {
-					if _, ok := seen[id]; !ok {
-						seen[id] = struct{}{}
-						ids = append(ids, id)
-					}
-				}
-			}
-			var alive []uint
-			if err := tx.Model(&models.Building{}).Where("id IN ?", ids).Pluck("id", &alive).Error; err != nil {
-				return err
-			}
-			for _, id := range alive {
-				aliveSet[id] = struct{}{}
-			}
+		// 存活楼栋的正结果缓存 30 秒（删除公寓时主动失效），避免每批都查一次 buildings。
+		aliveSet, err := aliveBuildingIDs(tx, batch)
+		if err != nil {
+			return err
 		}
 		// deadBuilding 返回 true 表示该公寓已被删除（软删/硬删），其事件不落明细与楼栋行
 		deadBuilding := func(bid uint) bool {
@@ -166,30 +145,35 @@ func ApplyPageViewBatch(db *gorm.DB, batch []models.PageView) error {
 			}
 		}
 
-		// ② 平台累计计数（行不存在则初始化，存在则累加）
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"total_pv":            gorm.Expr("total_pv + ?", int64(len(batch))),
-				"total_landlord_view": gorm.Expr("total_landlord_view + ?", lvDelta),
-				"updated_at":          now,
-			}),
-		}).Create(&models.StatTotal{ID: 1, TotalPV: int64(len(batch)), TotalLandlordView: lvDelta, UpdatedAt: now}).Error; err != nil {
-			return err
-		}
-
-		// ③ 全历史去重 IP（总 UV）
+		// ② 全历史去重 IP（总 UV）：RowsAffected 即本次新增的 IP 数，
+		// 只有真正插入的新 IP 才累加 stat_totals.total_uv（避免大表 COUNT(*)）。
+		newIPs := int64(0)
 		if len(ips) > 0 {
 			rows := make([]models.StatIP, 0, len(ips))
 			for ip := range ips {
 				rows = append(rows, models.StatIP{IP: ip, CreatedAt: now})
 			}
-			if err := tx.Clauses(clause.OnConflict{
+			res := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "ip"}},
 				DoNothing: true,
-			}).Create(&rows).Error; err != nil {
-				return err
+			}).Create(&rows)
+			if res.Error != nil {
+				return res.Error
 			}
+			newIPs = res.RowsAffected
+		}
+
+		// ③ 平台累计计数（行不存在则初始化，存在则累加）
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"total_pv":            gorm.Expr("total_pv + ?", int64(len(batch))),
+				"total_uv":            gorm.Expr("total_uv + ?", newIPs),
+				"total_landlord_view": gorm.Expr("total_landlord_view + ?", lvDelta),
+				"updated_at":          now,
+			}),
+		}).Create(&models.StatTotal{ID: 1, TotalPV: int64(len(batch)), TotalUV: newIPs, TotalLandlordView: lvDelta, UpdatedAt: now}).Error; err != nil {
+			return err
 		}
 
 		// ④ 当日去重 IP（每日平台 UV）

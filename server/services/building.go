@@ -581,7 +581,9 @@ func (s *BuildingService) Delete(id uint) error {
 	if has {
 		return ErrActiveContracts
 	}
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+	// 删除前后都失效存活缓存：避免异步批次在 TTL 窗口内仍把该公寓当作存活。
+	utils.InvalidateBuildingAliveCache(id)
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var roomIDs []uint
 		tx.Model(&models.Room{}).Where("building_id = ?", id).Pluck("id", &roomIDs)
 		if len(roomIDs) > 0 {
@@ -638,7 +640,11 @@ func (s *BuildingService) Delete(id uint) error {
 			return err
 		}
 		return tx.Delete(&models.Building{}, id).Error
-	})
+	}); err != nil {
+		return err
+	}
+	utils.InvalidateBuildingAliveCache(id)
+	return nil
 }
 
 // UpgradePackage 变更楼栋开放功能

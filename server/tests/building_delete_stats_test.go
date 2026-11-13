@@ -97,6 +97,7 @@ func TestBuildingDeleteCascadeStats(t *testing.T) {
 	var totals models.StatTotal
 	require.NoError(t, app.DB.First(&totals, 1).Error)
 	require.EqualValues(t, 5, totals.TotalPV)
+	require.EqualValues(t, 5, totals.TotalUV)
 	require.EqualValues(t, 1, totals.TotalLandlordView)
 
 	overviewAfter := app.Client.Do(http.MethodGet, "/api/admin/stats/overview", f.TokenRoot, nil)

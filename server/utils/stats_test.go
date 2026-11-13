@@ -15,6 +15,7 @@ import (
 // （写入路径需要按 buildings 判断公寓存活）。
 func newStatsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	ClearBuildingAliveCache()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开内存数据库失败: %v", err)
@@ -35,6 +36,15 @@ func statTotalPV(t *testing.T, db *gorm.DB) (int64, int64) {
 		return -1, -1
 	}
 	return row.TotalPV, row.TotalLandlordView
+}
+
+func statTotalUV(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var row models.StatTotal
+	if err := db.First(&row, 1).Error; err != nil {
+		return -1
+	}
+	return row.TotalUV
 }
 
 // TestApplyPageViewBatch_Aggregates 验证一批访问记录写入后，明细、平台累计、
@@ -69,6 +79,10 @@ func TestApplyPageViewBatch_Aggregates(t *testing.T) {
 	pv, lv := statTotalPV(t, db)
 	if pv != 6 || lv != 1 {
 		t.Fatalf("stat_totals 应为 (6,1)，实际 (%d,%d)", pv, lv)
+	}
+	// 总 UV：本批 3 个去重 IP
+	if uv := statTotalUV(t, db); uv != 3 {
+		t.Fatalf("stat_totals.total_uv 应为 3，实际 %d", uv)
 	}
 	// 全历史去重 IP：3 个
 	var ipCount int64
@@ -119,6 +133,9 @@ func TestApplyPageViewBatch_Aggregates(t *testing.T) {
 	if pv != 7 || lv != 1 {
 		t.Fatalf("累计后 stat_totals 应为 (7,1)，实际 (%d,%d)", pv, lv)
 	}
+	if uv := statTotalUV(t, db); uv != 3 {
+		t.Fatalf("重复 IP 不应累加 total_uv，实际 %d", uv)
+	}
 	db.Model(&models.StatIP{}).Count(&ipCount)
 	if ipCount != 3 {
 		t.Fatalf("重复 IP 不应新增 stat_ips 行，实际 %d", ipCount)
@@ -162,6 +179,8 @@ func TestApplyPageViewBatch_DeletedBuilding(t *testing.T) {
 	if err := db.Delete(&dead).Error; err != nil {
 		t.Fatal(err)
 	}
+	// 模拟 BuildingService.Delete 的缓存失效（测试直接走 DB 软删，不会触发 service）
+	InvalidateBuildingAliveCache(dead.ID)
 	if err := ApplyPageViewBatch(db, []models.PageView{
 		{PageType: "building_detail", BuildingID: dead.ID, IP: "5.5.5.6", CreatedAt: today},
 	}); err != nil {
@@ -187,6 +206,9 @@ func TestApplyPageViewBatch_DeletedBuilding(t *testing.T) {
 	db.Model(&models.StatIP{}).Count(&ipCount)
 	if ipCount != 2 {
 		t.Fatalf("stat_ips 应有 2 行，实际 %d", ipCount)
+	}
+	if uv := statTotalUV(t, db); uv != 2 {
+		t.Fatalf("stat_totals.total_uv 应保留已删楼栋事件的 2 个 IP，实际 %d", uv)
 	}
 	var dayIPCount int64
 	db.Model(&models.StatDailyIP{}).Count(&dayIPCount)

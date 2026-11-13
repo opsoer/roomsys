@@ -59,8 +59,8 @@ func TestStatAggregatesBackfill(t *testing.T) {
 	if err := db.First(&totals, 1).Error; err != nil {
 		t.Fatalf("stat_totals 计数行缺失: %v", err)
 	}
-	if totals.TotalPV != 7 || totals.TotalLandlordView != 1 {
-		t.Fatalf("stat_totals 应为 (7,1)，实际 (%d,%d)", totals.TotalPV, totals.TotalLandlordView)
+	if totals.TotalPV != 7 || totals.TotalUV != 4 || totals.TotalLandlordView != 1 {
+		t.Fatalf("stat_totals 应为 (7,4,1)，实际 (%d,%d,%d)", totals.TotalPV, totals.TotalUV, totals.TotalLandlordView)
 	}
 	// stat_ips：A/B/C/D 去重 4 个（已删楼栋的历史 IP 也计入平台口径，只增不减）
 	var ipCount int64

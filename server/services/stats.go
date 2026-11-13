@@ -139,14 +139,13 @@ func (s *StatsService) Overview() (*OverviewData, error) {
 
 	var result OverviewData
 
-	// 平台累计计数器：总 PV / 总获电数（只增不减，删除公寓不影响）
+	// 平台累计计数器：总 PV/UV/获电数（只增不减，删除公寓不影响）
 	var totals models.StatTotal
 	if err := s.DB.First(&totals, 1).Error; err == nil {
 		result.TotalPV = totals.TotalPV
+		result.TotalUV = totals.TotalUV
 		result.TotalLandlordView = totals.TotalLandlordView
 	}
-	// 总 UV：全历史去重 IP（stat_ips 行数，只增不减）
-	s.DB.Model(&models.StatIP{}).Select("COUNT(*)").Scan(&result.TotalUV)
 
 	// 今日/昨日 PV：平台日计数行（stat_daily building_id=0）
 	todayKey := dayKey(now)
