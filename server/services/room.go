@@ -4,6 +4,7 @@ package services
 import (
 	"errors"
 
+	"rental-server/database"
 	"rental-server/models"
 	"rental-server/utils"
 
@@ -132,19 +133,67 @@ func (s *RoomService) Create(room *models.Room) error {
 	if count > 0 {
 		return ErrRoomNumberExists
 	}
-	return s.DB.Create(room).Error
+	if err := s.DB.Create(room).Error; err != nil {
+		return err
+	}
+	utils.ClearStatsCache()
+	return nil
 }
 
 // Update 更新房间信息
 func (s *RoomService) Update(id uint, updates map[string]interface{}) error {
-	return s.DB.Model(&models.Room{}).Where("id = ?", id).Updates(updates).Error
+	if err := s.DB.Model(&models.Room{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return err
+	}
+	utils.ClearStatsCache()
+	return nil
 }
 
 // Delete 删除房间及关联的媒体资源、合同、租客和任务。
 // 全部为软删除；租客仅删除未被其他房间的未删除合同引用的（子查询排除），
-// 账单按外键 OnDelete:SET NULL 保留（软删不动账单）。
+// 账单保留但 room_id 置空（软删不触发外键 SET NULL，这里显式处理）。
+// 监控数据：删除该房间的 room_detail 明细，并按天扣减楼栋 stat_daily 的
+// pv/detail_pv（平台行不动，平台总量只增不减）。注意 page_views 只保留 90 天，
+// 更早的 room_detail 贡献无法从明细回算，楼栋历史 PV 会保留这部分。
 func (s *RoomService) Delete(id uint) error {
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+	var room models.Room
+	if err := s.DB.First(&room, id).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if room.ID != 0 {
+			// 监控数据：按天统计该房间的 room_detail 事件，扣减楼栋 stat_daily
+			dayExpr := database.DayExpr(tx, "created_at")
+			var dayCounts []struct {
+				Day string
+				Cnt int64
+			}
+			if err := tx.Model(&models.PageView{}).
+				Select(dayExpr+" AS day, COUNT(*) AS cnt").
+				Where("page_type = ? AND resource_id = ? AND building_id = ?", "room_detail", id, room.BuildingID).
+				Group(dayExpr).
+				Scan(&dayCounts).Error; err != nil {
+				return err
+			}
+			for _, dc := range dayCounts {
+				if err := tx.Model(&models.StatDaily{}).
+					Where("day = ? AND building_id = ?", dc.Day, room.BuildingID).
+					Updates(map[string]interface{}{
+						"pv":        gorm.Expr("CASE WHEN pv >= ? THEN pv - ? ELSE 0 END", dc.Cnt, dc.Cnt),
+						"detail_pv": gorm.Expr("CASE WHEN detail_pv >= ? THEN detail_pv - ? ELSE 0 END", dc.Cnt, dc.Cnt),
+					}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Where("page_type = ? AND resource_id = ? AND building_id = ?", "room_detail", id, room.BuildingID).
+				Delete(&models.PageView{}).Error; err != nil {
+				return err
+			}
+			// 账单保留，但房间已删：显式置空 room_id（软删不触发外键 SET NULL）
+			if err := tx.Model(&models.Bill{}).Where("room_id = ?", id).Update("room_id", nil).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("room_id = ?", id).Delete(&models.RoomMedia{}).Error; err != nil {
 			return err
 		}
@@ -163,7 +212,11 @@ func (s *RoomService) Delete(id uint) error {
 			return err
 		}
 		return tx.Delete(&models.Room{}, id).Error
-	})
+	}); err != nil {
+		return err
+	}
+	utils.ClearStatsCache()
+	return nil
 }
 
 // GetActiveContract 获取房间的活跃或已预订合同（含租客信息），活跃优先

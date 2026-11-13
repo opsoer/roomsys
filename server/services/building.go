@@ -91,7 +91,7 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 	}
 	expiringCutoff := today.AddDate(0, 0, utils.ExpiringSoonDays)
 
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var building models.Building
 		if err := tx.First(&building, id).Error; err != nil {
 			return err
@@ -157,7 +157,11 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	utils.ClearStatsCache()
+	return nil
 }
 
 // ListRenewals 查询公寓入驻/续约历史（倒序）。
@@ -556,7 +560,11 @@ func (s *BuildingService) GenerateSuggestedName(baseName string) (string, error)
 
 // Update 更新楼栋信息
 func (s *BuildingService) Update(id uint, updates map[string]interface{}) error {
-	return s.DB.Model(&models.Building{}).Where("id = ?", id).Updates(updates).Error
+	if err := s.DB.Model(&models.Building{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return err
+	}
+	utils.ClearStatsCache()
+	return nil
 }
 
 // HasActiveContracts 检查楼栋下是否有活跃合同
@@ -584,12 +592,10 @@ func (s *BuildingService) Delete(id uint) error {
 	// 删除前后都失效存活缓存：避免异步批次在 TTL 窗口内仍把该公寓当作存活。
 	utils.InvalidateBuildingAliveCache(id)
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
-		var roomIDs []uint
-		tx.Model(&models.Room{}).Where("building_id = ?", id).Pluck("id", &roomIDs)
-		if len(roomIDs) > 0 {
-			if err := tx.Where("room_id IN ?", roomIDs).Delete(&models.RoomMedia{}).Error; err != nil {
-				return err
-			}
+		// 删除该公寓下所有房间（含已软删）的媒体行：用子查询避免 GORM 默认作用域排除软删房间
+		if err := tx.Where("room_id IN (SELECT id FROM rooms WHERE building_id = ?)", id).
+			Delete(&models.RoomMedia{}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("building_id = ?", id).Delete(&models.Room{}).Error; err != nil {
 			return err
@@ -644,6 +650,7 @@ func (s *BuildingService) Delete(id uint) error {
 		return err
 	}
 	utils.InvalidateBuildingAliveCache(id)
+	utils.ClearStatsCache()
 	return nil
 }
 

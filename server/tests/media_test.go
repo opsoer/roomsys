@@ -171,13 +171,22 @@ func TestMedia_DeleteAndCopy(t *testing.T) {
 	})
 	crossSource.RequireError(t, http.StatusNotFound, 404)
 
-	// 当前实现行为：删除 A101 记录后，A106 的引用记录仍在，但物理文件被删除。
+	// 删除 A101 记录后，A106 仍引用同一文件：物理文件必须保留
 	del := app.Client.Do(http.MethodDelete, fmt.Sprintf("/api/building/rooms/%d/media/%d", f.Rooms["A101"].ID, m.ID), f.TokenA, nil)
 	del.RequireOK(t)
 	require.Zero(t, countWhere(t, app.DB, &models.RoomMedia{}, "id = ?", m.ID))
 	require.EqualValues(t, 1, countWhere(t, app.DB, &models.RoomMedia{}, "file_path = ?", m.FilePath))
-	_, err := os.Stat(filepath.Join(app.Cfg.Server.UploadDir, filepath.FromSlash(m.FilePath)))
-	require.True(t, os.IsNotExist(err), "按当前实现断言：共享文件被删除")
+	mediaPath := filepath.Join(app.Cfg.Server.UploadDir, filepath.FromSlash(m.FilePath))
+	_, err := os.Stat(mediaPath)
+	require.NoError(t, err, "A106 仍引用该文件，不能删除")
+
+	// 删除最后一个引用（A106 的复制记录）后，物理文件才应被清理
+	var copied models.RoomMedia
+	require.NoError(t, app.DB.Where("room_id = ?", f.Rooms["A106"].ID).First(&copied).Error)
+	delCopy := app.Client.Do(http.MethodDelete, fmt.Sprintf("/api/building/rooms/%d/media/%d", f.Rooms["A106"].ID, copied.ID), f.TokenA, nil)
+	delCopy.RequireOK(t)
+	_, err = os.Stat(mediaPath)
+	require.True(t, os.IsNotExist(err), "最后一个引用删除后，物理文件应被清理")
 
 	// 跨栋删除
 	require.NoError(t, app.DB.Create(&models.RoomMedia{

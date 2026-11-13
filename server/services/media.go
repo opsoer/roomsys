@@ -88,17 +88,19 @@ func (s *MediaService) GetRoomByNumber(buildingID uint, roomNumber string) (*mod
 	return &room, err
 }
 
-// CountFileReferences 统计某个文件路径被多少条媒体记录引用
+// CountFileReferences 统计某个文件路径被多少条媒体记录引用。
+// RoomMedia 没有 DeletedAt（硬删），不能加 deleted_at 条件，否则 SQL 报错、
+// 调用方忽略错误后 count=0，会把仍在被引用的共享文件误删。
 func (s *MediaService) CountFileReferences(filePath string) (int64, error) {
 	var count int64
-	err := s.DB.Model(&models.RoomMedia{}).Where("file_path = ? AND deleted_at IS NULL", filePath).Count(&count).Error
+	err := s.DB.Model(&models.RoomMedia{}).Where("file_path = ?", filePath).Count(&count).Error
 	return count, err
 }
 
-// CountThumbnailReferences 统计某个缩略图路径被多少条媒体记录引用
+// CountThumbnailReferences 统计某个缩略图路径被多少条媒体记录引用。
 func (s *MediaService) CountThumbnailReferences(thumbPath string) (int64, error) {
 	var count int64
-	err := s.DB.Model(&models.RoomMedia{}).Where("thumbnail_path = ? AND deleted_at IS NULL", thumbPath).Count(&count).Error
+	err := s.DB.Model(&models.RoomMedia{}).Where("thumbnail_path = ?", thumbPath).Count(&count).Error
 	return count, err
 }
 

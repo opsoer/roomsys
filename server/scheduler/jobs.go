@@ -79,6 +79,7 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 
 	expiringCount := 0
 	expiredCount := 0
+	statusChanged := false
 	for _, b := range buildings {
 		expDate, err := time.Parse("2006-01-02", b.ExpiredAt)
 		if err != nil {
@@ -88,6 +89,7 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 		if now.After(expDate) {
 			if b.Status != "hidden" {
 				db.Model(&b).Update("status", "hidden")
+				statusChanged = true
 				logger.Log.Info().
 					Uint("building_id", b.ID).
 					Str("name", b.Name).
@@ -101,6 +103,7 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 		} else if !expDate.After(expireThreshold) {
 			if b.Status != "expiring" {
 				db.Model(&b).Update("status", "expiring")
+				statusChanged = true
 				logger.Log.Info().
 					Uint("building_id", b.ID).
 					Str("name", b.Name).
@@ -112,6 +115,10 @@ func CheckExpiredBuildings(db *gorm.DB) string {
 				"公寓将于 "+b.ExpiredAt+" 到期，请尽快续约以免到期后自动隐藏")
 			expiringCount++
 		}
+	}
+	if statusChanged {
+		// 状态影响价格参考等按 active 过滤的统计，立即失效缓存
+		utils.ClearStatsCache()
 	}
 
 	result := fmt.Sprintf("公寓到期: %d 栋已到期, %d 栋即将到期", expiredCount, expiringCount)
@@ -194,6 +201,8 @@ func AutoCleanupData(db *gorm.DB) string {
 	if err := db.Where("created_at < ?", auditCutoff).Delete(&models.AuditLog{}).Error; err != nil {
 		logger.Log.Warn().Err(err).Msg("审计日志清理失败")
 	}
+	// 清理可能改动了 page_views/stat_daily，立即失效统计缓存
+	utils.ClearStatsCache()
 	return "数据清理: " + cleanupResult
 }
 

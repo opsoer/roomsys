@@ -354,17 +354,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "无效的公寓ID")
 		return
 	}
-	if err := h.BuildingService.Delete(uint(buildingID)); err != nil {
-		if errors.Is(err, services.ErrActiveContracts) {
-			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在活跃合同")
-			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract, "该公寓存在活跃合同，无法删除")
-			return
-		}
-		logger.Log.Error().Err(err).Str("id", id).Msg("删除公寓失败")
-		utils.Error(c, http.StatusInternalServerError, "删除失败")
-		return
-	}
-	// 删除该公寓下所有房间的媒体物理文件（封面和房间图片由 MediaHandler 各自管理）
+	// 物理文件路径必须在 service 删除 room_media 行之前收集，否则查不到、文件残留
 	var mediaPaths []string
 	h.DB.Table("room_media").
 		Joins("JOIN rooms ON rooms.id = room_media.room_id").
@@ -375,9 +365,43 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		Joins("JOIN rooms ON rooms.id = room_media.room_id").
 		Where("rooms.building_id = ?", buildingID).
 		Pluck("room_media.thumbnail_path", &thumbPaths)
-	for _, p := range append(mediaPaths, thumbPaths...) {
+	var coverImage string
+	h.DB.Model(&models.Building{}).Where("id = ?", buildingID).Select("cover_image").Scan(&coverImage)
+
+	if err := h.BuildingService.Delete(uint(buildingID)); err != nil {
+		if errors.Is(err, services.ErrActiveContracts) {
+			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在活跃合同")
+			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract, "该公寓存在活跃合同，无法删除")
+			return
+		}
+		logger.Log.Error().Err(err).Str("id", id).Msg("删除公寓失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+
+	// 物理文件按引用计数删除：房间媒体可能被其他房间/楼栋复用，封面可能被其他楼栋复用
+	mediaSvc := services.NewMediaService(h.DB, h.Cfg)
+	for _, p := range mediaPaths {
 		if p != "" {
-			deleteStoredFile(h.Cfg, p)
+			if count, _ := mediaSvc.CountFileReferences(p); count == 0 {
+				deleteStoredFile(h.Cfg, p)
+			}
+		}
+	}
+	for _, p := range thumbPaths {
+		if p != "" {
+			if count, _ := mediaSvc.CountThumbnailReferences(p); count == 0 {
+				deleteStoredFile(h.Cfg, p)
+			}
+		}
+	}
+	if coverImage != "" {
+		var refCount int64
+		h.DB.Model(&models.Building{}).
+			Where("cover_image = ? AND id <> ? AND deleted_at IS NULL", coverImage, buildingID).
+			Count(&refCount)
+		if refCount == 0 {
+			deleteStoredFile(h.Cfg, coverImage)
 		}
 	}
 	logger.Log.Info().Str("id", id).Msg("公寓已删除")

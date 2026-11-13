@@ -145,6 +145,7 @@ func (s *RoomService) RentRoom(room *models.Room, p RoomStatusParams) error {
 	if err := tx.Commit().Error; err != nil {
 		return utils.Internal(err, "状态更新失败")
 	}
+	utils.ClearStatsCache()
 	return nil
 }
 
@@ -216,6 +217,7 @@ func (s *RoomService) ReserveRoom(room *models.Room, p RoomStatusParams) error {
 	if err := tx.Commit().Error; err != nil {
 		return utils.Internal(err, "预订失败")
 	}
+	utils.ClearStatsCache()
 	return nil
 }
 
@@ -262,6 +264,7 @@ func (s *RoomService) CancelReservation(room *models.Room, p RoomStatusParams) e
 	if err := tx.Commit().Error; err != nil {
 		return utils.Internal(err, "取消预订失败")
 	}
+	utils.ClearStatsCache()
 	return nil
 }
 
@@ -326,5 +329,6 @@ func (s *RoomService) VacateRoom(room *models.Room, p RoomStatusParams) (hasFutu
 	if err := tx.Commit().Error; err != nil {
 		return false, utils.Internal(err, "退租事务提交失败")
 	}
+	utils.ClearStatsCache()
 	return hasFutureReservation, nil
 }

@@ -35,9 +35,16 @@ func (s *DividendService) UpdateShareholder(id uint, updates map[string]interfac
 	return s.DB.Model(&models.Shareholder{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// DeleteShareholder 删除股东
+// DeleteShareholder 删除股东，并同步软删其分红记录。
+// ShareholderID 的 OnDelete:CASCADE 只在硬删时触发；这里显式处理软删路径，
+// 避免分红行继续指向已删股东（List 的 Shareholder preload 会变成 nil）。
 func (s *DividendService) DeleteShareholder(id uint) error {
-	return s.DB.Delete(&models.Shareholder{}, id).Error
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("shareholder_id = ?", id).Delete(&models.Dividend{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.Shareholder{}, id).Error
+	})
 }
 
 // List 分页查询分红记录
@@ -69,6 +76,7 @@ func (s *DividendService) List(buildingID uint, page, lastID, size int, lastKey 
 //   - 预计租金收入 = 全部生效合同的月租金+管理费合计，每个月按同一金额全额计入
 //     （不检查合同到期日：到期前未退租即整额计入每个月，预测不做到期/退租收缩）；
 //   - 可分配净利润 = 预计租金收入 - 近3个月月均支出（口径见下方注释）。
+//
 // 预订中(reserved)/已结束(ended/cancelled)合同不参与预测。
 func (s *DividendService) Predict(buildingID uint, months int) ([]map[string]interface{}, error) {
 	var contracts []models.RentalContract

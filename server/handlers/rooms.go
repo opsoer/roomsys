@@ -607,6 +607,8 @@ func (h *RoomHandler) BatchUpdatePricing(c *gin.Context) {
 		updatedCount += result.RowsAffected
 	}
 
+	// 批量改价/字段会影响价格参考与楼栋统计，立即失效缓存
+	utils.ClearStatsCache()
 	audit.Log(c, audit.ActionUpdate, audit.ResourceRoom, strconv.Itoa(len(ids)),
 		"批量调整房间价格 房间数="+strconv.Itoa(len(ids))+
 			" 影响数="+strconv.FormatInt(updatedCount, 10)+
