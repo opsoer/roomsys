@@ -287,6 +287,27 @@ func (h *MediaHandler) deleteFile(key string) {
 	deleteStoredFile(h.Cfg, key)
 }
 
+// deleteBuildingCoverIfUnreferenced 删除公寓封面物理文件：若仍有其他公寓引用同一 key 则保留。
+// 用于封面被替换/清空/公寓被删除时回收旧文件，避免对象存储（及本地磁盘）里
+// 永久留下再也无人引用的孤儿图片。
+// excludeBuildingID 是「正在改动的公寓」，它的引用不计入（改完就不再引用旧图了）。
+func deleteBuildingCoverIfUnreferenced(cfg *config.Config, db *gorm.DB, oldKey string, excludeBuildingID uint) {
+	if oldKey == "" {
+		return
+	}
+	var refCount int64
+	if err := db.Model(&models.Building{}).
+		Where("cover_image = ? AND id <> ? AND deleted_at IS NULL", oldKey, excludeBuildingID).
+		Count(&refCount).Error; err != nil {
+		logger.Log.Warn().Err(err).Str("key", oldKey).Msg("统计封面引用数失败，保留旧封面文件")
+		return
+	}
+	if refCount > 0 {
+		return
+	}
+	deleteStoredFile(cfg, oldKey)
+}
+
 // urlSafeBase64 七牛风格的 URL-safe Base64 编码（无 padding）
 func urlSafeBase64(data []byte) string {
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(data), "=")
@@ -788,9 +809,9 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 		return
 	}
 
-	if building.CoverImage != "" {
-		h.deleteFile(building.CoverImage)
-	}
+	// 旧封面先标记为待回收，等新封面写库成功后再删（避免上传失败把封面也丢了）。
+	// 若仍有其他公寓引用同一张图则保留。
+	oldCover := building.CoverImage
 
 	vf, file, _, err := validateUploadFile(c, false)
 	if err != nil {
@@ -830,6 +851,10 @@ func (h *MediaHandler) UploadCover(c *gin.Context) {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新公寓封面字段失败")
 		utils.Error(c, http.StatusInternalServerError, "保存封面失败")
 		return
+	}
+	// 新封面已生效，再回收旧封面（仍有其他公寓引用则保留）
+	if oldCover != "" && oldCover != key {
+		deleteBuildingCoverIfUnreferenced(h.Cfg, h.DB, oldCover, building.ID)
 	}
 	logger.Log.Info().Uint("building_id", bid).Str("key", key).Msg("公寓封面上传成功")
 	audit.Log(c, audit.ActionUpdate, audit.ResourceBuilding, audit.ID(bid), "上传公寓封面")

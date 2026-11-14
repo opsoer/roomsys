@@ -102,6 +102,11 @@ scheduler:
   # 数据库备份到对象存储（sqlite: VACUUM INTO；mysql: mysqldump）
   # key 形如 backups/db/rental-YYYYMMDD-HHMMSS-<随机>.gz；keep = 保留份数（按时间删旧）
   db_backup: { enabled: true, time: "04:00", keep: 7 }
+  # 孤儿文件清理（每周一次；interval 模式自启动起算，删前有 7 天宽限期）
+  # bill_evidence_gc：账单凭证图片（buildings/*/bills/）
+  bill_evidence_gc: { enabled: true, interval_hours: 168 }
+  # media_gc：房间媒体与公寓封面（buildings/*/rooms、buildings/*/cover）
+  media_gc: { enabled: true, interval_hours: 168 }
 
 # ---------------------- 超级管理员 ----------------------
 # 每次后端启动都会把超级管理员的账号密码与这里对齐（有则改、无则建），

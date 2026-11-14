@@ -567,16 +567,20 @@ func (s *BuildingService) Update(id uint, updates map[string]interface{}) error 
 	return nil
 }
 
-// HasActiveContracts 检查楼栋下是否有活跃合同
+// HasActiveContracts 检查楼栋下是否有未结束的合同。
+// 「未结束」= 生效中(active) 或 已收定金的预订中(reserved)：
+// 这两类合同都还占着房源与钱（预订已收定金），删楼栋会让合同与租客记录悬空，
+// 因此一并拦截；历史实现只查 active，是「交定金/预订功能」上线晚于删除约束功能
+// 造成的遗漏（对应 回归-未修改缺陷.md 的 BUG-003）。
 func (s *BuildingService) HasActiveContracts(id uint) (bool, error) {
 	var count int64
 	err := s.DB.Model(&models.RentalContract{}).
-		Where("building_id = ? AND status = ?", id, "active").
+		Where("building_id = ? AND status IN ?", id, []string{"active", "reserved"}).
 		Count(&count).Error
 	return count > 0, err
 }
 
-// ErrActiveContracts 公寓存在生效中的合同，不允许删除。
+// ErrActiveContracts 公寓存在未结束的合同（生效中或已收定金预订），不允许删除。
 // 用哨兵错误替代字符串比较，handler 通过 errors.Is 判断。
 var ErrActiveContracts = errors.New("active_contracts_exist")
 
@@ -592,6 +596,13 @@ func (s *BuildingService) Delete(id uint) error {
 	// 删除前后都失效存活缓存：避免异步批次在 TTL 窗口内仍把该公寓当作存活。
 	utils.InvalidateBuildingAliveCache(id)
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// 账单保留但房间已删：显式置空 room_id（软删不触发外键 SET NULL，
+		// 且存量库外键是 NO ACTION，不置空则 90 天后房间行永远硬删不掉）。
+		if err := tx.Unscoped().Model(&models.Bill{}).
+			Where("room_id IN (SELECT id FROM rooms WHERE building_id = ?)", id).
+			Update("room_id", nil).Error; err != nil {
+			return err
+		}
 		// 删除该公寓下所有房间（含已软删）的媒体行：用子查询避免 GORM 默认作用域排除软删房间
 		if err := tx.Where("room_id IN (SELECT id FROM rooms WHERE building_id = ?)", id).
 			Delete(&models.RoomMedia{}).Error; err != nil {

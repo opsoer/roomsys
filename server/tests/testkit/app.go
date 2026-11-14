@@ -161,6 +161,8 @@ func testConfig(dir string) *config.Config {
 			SoftDeleteCleanup: config.JobConfig{Enabled: true, Time: "03:00"},
 			TokenCleanup:      config.JobConfig{Enabled: true, IntervalHours: 12},
 			DBBackup:          config.JobConfig{Enabled: false, Time: "04:00", Keep: 7},
+			BillEvidenceGC:    config.JobConfig{Enabled: false, IntervalHours: 168},
+			MediaGC:           config.JobConfig{Enabled: false, IntervalHours: 168},
 		},
 	}
 }
@@ -183,6 +185,8 @@ func newJobs(db *gorm.DB, cfg *config.Config) *scheduler.Registry {
 		func() string { return scheduler.AutoCleanupData(db) }))
 	r.Add(scheduler.NewJob("bill_evidence_gc", "账单凭证孤儿文件清理", cfg.Scheduler.BillEvidenceGC, false,
 		func() string { return "测试环境不执行凭证文件清理" }))
+	r.Add(scheduler.NewJob("media_gc", "房间媒体孤儿文件清理", cfg.Scheduler.MediaGC, false,
+		func() string { return "测试环境不执行媒体文件清理" }))
 	r.Add(scheduler.NewJob("token_cleanup", "吊销令牌清理", cfg.Scheduler.TokenCleanup, false,
 		func() string { return utils.CleanupRevokedTokens() }))
 	r.Add(scheduler.NewJob("db_backup", "数据库备份到对象存储", cfg.Scheduler.DBBackup, false,

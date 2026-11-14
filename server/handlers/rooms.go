@@ -630,10 +630,13 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 
 	var activeContractCount int64
 	h.DB.Model(&models.RentalContract{}).
-		Where("room_id = ? AND status = ?", rid, "active").
+		Where("room_id = ? AND status IN ?", rid, []string{"active", "reserved"}).
 		Count(&activeContractCount)
 	if activeContractCount > 0 {
-		utils.Error(c, http.StatusBadRequest, "该房间存在活跃合同，无法删除")
+		// 生效中(active)与已收定金预订中(reserved)都还占着房源与钱，
+		// 直接删会让合同与租客记录悬空（历史实现只拦 active，是预订功能
+		// 上线晚于删除约束功能造成的遗漏，见 回归-未修改缺陷.md BUG-003）。
+		utils.Error(c, http.StatusBadRequest, "该房间存在未结束的合同（生效中或已收定金预订），无法删除")
 		return
 	}
 
@@ -648,14 +651,26 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// 删除记录后检查引用计数，无其他房间引用时才真正删除存储文件
-	for _, p := range append(mediaPaths, thumbPaths...) {
-		if p != "" {
-			var refCount int64
-			h.DB.Table("room_media").Where("file_path = ? AND deleted_at IS NULL", p).Count(&refCount)
-			if refCount == 0 {
-				deleteStoredFile(h.Cfg, p)
-			}
+	// 删除记录后检查引用计数，无其他房间引用时才真正删除存储文件。
+	// 引用计数必须用 MediaService 的实现：room_media 没有 deleted_at 列，
+	// 在 SQL 里加 deleted_at 条件会直接报错，而错误被忽略后 count 恒为 0，
+	// 结果是「其他房间仍在引用的共享图片」被误删（见 services/media.go 的说明）。
+	mediaSvc := services.NewMediaService(h.DB, h.Cfg)
+	for _, p := range mediaPaths {
+		if p == "" {
+			continue
+		}
+		if count, err := mediaSvc.CountFileReferences(p); err == nil && count == 0 {
+			deleteStoredFile(h.Cfg, p)
+		}
+	}
+	for _, p := range thumbPaths {
+		if p == "" {
+			continue
+		}
+		// 缩略图按 thumbnail_path 统计引用，不能与原图混用同一个字段
+		if count, err := mediaSvc.CountThumbnailReferences(p); err == nil && count == 0 {
+			deleteStoredFile(h.Cfg, p)
 		}
 	}
 

@@ -135,15 +135,18 @@ func TestRoom_Delete(t *testing.T) {
 
 	active := app.Client.Do(http.MethodDelete, fmt.Sprintf("/api/building/rooms/%d", f.Rooms["A102"].ID), f.TokenA, nil)
 	active.RequireError(t, http.StatusBadRequest, 400).
-		RequireMessageContains(t, "活跃合同")
+		RequireMessageContains(t, "未结束的合同")
 
 	cross := app.Client.Do(http.MethodDelete, fmt.Sprintf("/api/building/rooms/%d", f.Rooms["B201"].ID), f.TokenA, nil)
 	cross.RequireError(t, http.StatusNotFound, 404)
 
-	// 当前删除逻辑只检查 active 合同
-	t.Run("reserved contract delete", func(t *testing.T) {
+	// 预订中（已收定金）的房间同样不可删：合同与租客记录不能悬空
+	t.Run("reserved contract blocks delete", func(t *testing.T) {
 		r := app.Client.Do(http.MethodDelete, fmt.Sprintf("/api/building/rooms/%d", f.Rooms["A103"].ID), f.TokenA, nil)
-		r.RequireOK(t)
+		r.RequireError(t, http.StatusBadRequest, 400).
+			RequireMessageContains(t, "未结束的合同")
+		require.EqualValues(t, 1, countWhere(t, app.DB, &models.Room{}, "id = ?", f.Rooms["A103"].ID),
+			"预订中的房间不应被删除")
 	})
 }
 

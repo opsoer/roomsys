@@ -52,6 +52,7 @@ func Steps() []Step {
 		{Version: 6, Name: "stat_daily_building_index", Up: upStatDailyBuildingIndex, Down: downStatDailyBuildingIndex},
 		{Version: 7, Name: "page_view_building_index", Up: upPageViewBuildingIndex, Down: downPageViewBuildingIndex},
 		{Version: 8, Name: "stat_total_uv", Up: upStatTotalUV, Down: downStatTotalUV},
+		{Version: 9, Name: "cleanup_orphans", Up: upCleanupOrphans, Down: downCleanupOrphans},
 	}
 	// 后续变更在此追加：{Version: 2, Name: "xxx", Up: upXxx, Down: downXxx}
 	sort.Slice(steps, func(i, j int) bool { return steps[i].Version < steps[j].Version })

@@ -314,6 +314,10 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 			utils.Error(c, http.StatusConflict, "更新失败")
 			return
 		}
+		// 封面被替换/清空后回收旧文件：否则对象存储里会永久留下孤儿图片。
+		if newCover, ok := updates["cover_image"].(string); ok && newCover != building.CoverImage {
+			deleteBuildingCoverIfUnreferenced(h.Cfg, h.DB, building.CoverImage, building.ID)
+		}
 	}
 
 	if len(req.Landlords) > 0 {
@@ -370,8 +374,9 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 
 	if err := h.BuildingService.Delete(uint(buildingID)); err != nil {
 		if errors.Is(err, services.ErrActiveContracts) {
-			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在活跃合同")
-			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract, "该公寓存在活跃合同，无法删除")
+			logger.Log.Warn().Str("id", id).Msg("删除公寓失败: 存在未结束的合同")
+			utils.ErrorWithCode(c, http.StatusConflict, utils.CodeActiveContract,
+				"该公寓存在未结束的租赁合同（生效中或已收定金预订），无法删除")
 			return
 		}
 		logger.Log.Error().Err(err).Str("id", id).Msg("删除公寓失败")
@@ -396,13 +401,7 @@ func (h *BuildingHandler) Delete(c *gin.Context) {
 		}
 	}
 	if coverImage != "" {
-		var refCount int64
-		h.DB.Model(&models.Building{}).
-			Where("cover_image = ? AND id <> ? AND deleted_at IS NULL", coverImage, buildingID).
-			Count(&refCount)
-		if refCount == 0 {
-			deleteStoredFile(h.Cfg, coverImage)
-		}
+		deleteBuildingCoverIfUnreferenced(h.Cfg, h.DB, coverImage, uint(buildingID))
 	}
 	logger.Log.Info().Str("id", id).Msg("公寓已删除")
 	// 删除级联清掉了该公寓的浏览明细与日计数，立即失效统计缓存，
@@ -826,10 +825,10 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Directions  string `json:"directions"`
-		CoverImage  string `json:"cover_image"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Directions  string  `json:"directions"`
+		CoverImage  *string `json:"cover_image"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
@@ -845,13 +844,22 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	if req.Directions != "" {
 		updates["directions"] = req.Directions
 	}
-	if req.CoverImage != "" {
-		updates["cover_image"] = req.CoverImage
+	// 指针语义：显式传空串表示「清空封面」，不传表示「保持不变」。
+	// 历史实现用 string + != "" 判断，导致前端「删除封面」按钮点了没反应。
+	if req.CoverImage != nil {
+		updates["cover_image"] = *req.CoverImage
 	}
+	// 旧封面在更新前先取出，用于更新后回收旧文件
+	var oldCover string
+	h.DB.Model(&models.Building{}).Where("id = ?", bid).Select("cover_image").Scan(&oldCover)
 	if err := h.BuildingService.Update(bid, updates); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新公寓信息失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
+	}
+	// 封面被替换/清空后回收旧文件，避免对象存储里留下永久孤儿图片
+	if newCover, ok := updates["cover_image"].(string); ok && newCover != oldCover {
+		deleteBuildingCoverIfUnreferenced(h.Cfg, h.DB, oldCover, uint(bid))
 	}
 	utils.SuccessWithMsg(c, "更新成功", nil)
 }

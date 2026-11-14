@@ -137,6 +137,8 @@ type SchedulerConfig struct {
 	DBBackup JobConfig `yaml:"db_backup"`
 	// BillEvidenceGC 账单凭证孤儿文件清理：删除未被任何凭证记录引用且超过宽限期的图片。
 	BillEvidenceGC JobConfig `yaml:"bill_evidence_gc"`
+	// MediaGC 房间媒体/封面孤儿文件清理：删除未被任何 room_media 或公寓引用的图片/视频。
+	MediaGC JobConfig `yaml:"media_gc"`
 }
 
 // StorageConfig 对象存储 + CDN 配置组。
@@ -318,6 +320,8 @@ func normalize(cfg *Config) {
 	normalizeJob("db_backup", &cfg.Scheduler.DBBackup, "04:00", 0)
 	// 凭证 GC 默认每周一次（interval 模式；time 优先，想改回每天定时刻配 time 即可）
 	normalizeJob("bill_evidence_gc", &cfg.Scheduler.BillEvidenceGC, "", 168)
+	// 媒体孤儿文件 GC 同样按周执行（interval 模式）
+	normalizeJob("media_gc", &cfg.Scheduler.MediaGC, "", 168)
 	if cfg.Scheduler.DBBackup.Keep <= 0 {
 		cfg.Scheduler.DBBackup.Keep = 7
 	}

@@ -86,6 +86,8 @@ func main() {
 		func() string { return scheduler.AutoCleanupData(db) }))
 	jobs.Add(scheduler.NewJob("bill_evidence_gc", "账单凭证孤儿文件清理", cfg.Scheduler.BillEvidenceGC, false,
 		func() string { return scheduler.CleanupBillEvidenceFiles(db, cfg) }))
+	jobs.Add(scheduler.NewJob("media_gc", "房间媒体孤儿文件清理", cfg.Scheduler.MediaGC, false,
+		func() string { return scheduler.CleanupMediaFiles(db, cfg) }))
 	jobs.Add(scheduler.NewJob("token_cleanup", "吊销令牌清理", cfg.Scheduler.TokenCleanup, false,
 		utils.CleanupRevokedTokens))
 	jobs.Add(scheduler.NewJob("db_backup", "数据库备份到对象存储", cfg.Scheduler.DBBackup, false,

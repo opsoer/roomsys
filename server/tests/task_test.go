@@ -179,13 +179,13 @@ func TestTask_Jobs(t *testing.T) {
 		} `json:"jobs"`
 	}
 	list.Decode(t, &data)
-	require.Len(t, data.Jobs, 7)
+	require.Len(t, data.Jobs, 8)
 	names := map[string]bool{}
 	for _, j := range data.Jobs {
 		names[j.Name] = true
 		require.NotEmpty(t, j.Schedule)
 	}
-	for _, name := range []string{"rent_bills", "building_expiry", "contract_expiry", "soft_delete_cleanup", "bill_evidence_gc", "token_cleanup", "db_backup"} {
+	for _, name := range []string{"rent_bills", "building_expiry", "contract_expiry", "soft_delete_cleanup", "bill_evidence_gc", "media_gc", "token_cleanup", "db_backup"} {
 		require.True(t, names[name], "missing job %s", name)
 	}
 
@@ -206,7 +206,7 @@ func TestTask_Jobs(t *testing.T) {
 		Results []string `json:"results"`
 	}
 	all.Decode(t, &ad)
-	require.Len(t, ad.Results, 7)
+	require.Len(t, ad.Results, 8)
 }
 
 func TestTask_ContractExpiry(t *testing.T) {

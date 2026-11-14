@@ -159,8 +159,10 @@ func createBuildingExpiryTasks(db *gorm.DB, b models.Building, taskType, title, 
 func AutoCleanupData(db *gorm.DB) string {
 	cleanupResult := ""
 	if err := models.CleanupSoftDeleted(db, 90); err != nil {
-		logger.Log.Error().Err(err).Msg("软删除数据清理失败")
-		cleanupResult = "软删除: 失败"
+		// 部分步骤失败也要如实上报：以前这里恒为 nil，定时任务永远显示「完成」，
+		// 实际上一条数据都没删掉，残留无人察觉。
+		logger.Log.Error().Err(err).Msg("软删除数据清理失败（部分步骤）")
+		cleanupResult = "软删除: 部分失败"
 	} else {
 		logger.Log.Debug().Msg("软删除数据清理完成")
 		cleanupResult = "软删除: 完成"

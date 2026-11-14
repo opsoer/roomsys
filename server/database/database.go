@@ -64,7 +64,10 @@ func openMySQL(cfg *config.Config) (*gorm.DB, error) {
 //   - journal_mode=WAL    读写不互斥，并发查询不被写事务阻塞
 //   - synchronous=NORMAL  WAL 模式推荐级别，大幅减少 fsync 次数
 //   - busy_timeout=5000   SQLite 任意时刻仅一个写者，写锁竞争时等待 5s 而非立刻报错
-//   - foreign_keys=1      模型里的 OnDelete:CASCADE / SET NULL 依赖它（SQLite 默认关闭）
+//   - foreign_keys=1      打开外键约束。注意：存量库的外键都是 ON DELETE NO ACTION
+//     （模型里的 constraint 标签曾写在标量字段上，GORM 从不消费，等于没写），
+//     所以「父行有子行时硬删父行」会直接报 FOREIGN KEY constraint failed；
+//     删除顺序与显式解绑由 models.CleanupSoftDeleted 统一编排，不要依赖数据库级联。
 func openSQLite(path string) (*gorm.DB, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

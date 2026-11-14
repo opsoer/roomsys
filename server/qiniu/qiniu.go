@@ -104,4 +104,19 @@ func Delete(cfg *config.Config, keys ...string) error {
 	return nil
 }
 
+// PutTime 返回对象的最后写入时间；对象不存在或查询失败时返回零值与错误。
+// 供孤儿文件 GC 判断是否超过宽限期。
+func PutTime(cfg *config.Config, key string) (time.Time, error) {
+	bm := storage.NewBucketManager(newMac(cfg), ptr(newConfig(cfg)))
+	info, err := bm.Stat(cfg.Storage.Qiniu.Bucket, key)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if info.PutTime == 0 {
+		return time.Time{}, nil
+	}
+	// 七牛 putTime 单位为 100 纳秒
+	return time.Unix(0, info.PutTime*100), nil
+}
+
 func ptr[T any](v T) *T { return &v }
