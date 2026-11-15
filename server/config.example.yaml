@@ -29,6 +29,11 @@ server:
   # 每个 IP 每日免费查看房东完整电话次数（自然日重置）。
   # 超过后每次查看都要求图片验证码；0 = 每次都要验证码
   reveal_free_per_day: 5
+  # 启动环境自检（默认开启）：启动时打印数据库/对象存储/CDN 等组件状态。
+  # 只报告不阻断启动；enabled=false 可关闭，timeout_seconds 为单检查超时。
+  startup_check:
+    enabled: true
+    timeout_seconds: 5
 
 # ---------------------- 数据库配置 ----------------------
 database:

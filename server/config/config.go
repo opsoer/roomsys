@@ -81,6 +81,22 @@ type ServerConfig struct {
 	PprofAddr string `yaml:"pprof_addr"`
 	// PprofAllowRemote 是否允许 pprof 绑定非回环地址（默认禁止，无鉴权接口不应暴露公网）。
 	PprofAllowRemote bool `yaml:"pprof_allow_remote"`
+	// StartupCheck 启动环境自检配置：默认开启，检查结果只报告不阻断启动。
+	StartupCheck StartupCheckConfig `yaml:"startup_check"`
+}
+
+// StartupCheckConfig 启动环境自检配置。
+type StartupCheckConfig struct {
+	// Enabled 是否启用启动自检；指针用于区分「未配置」与「显式 false」：
+	// 未配置时默认启用，只有显式写 enabled: false 才关闭。
+	Enabled *bool `yaml:"enabled"`
+	// TimeoutSeconds 单个检查的超时时间（秒），<=0 时按默认 5 秒处理。
+	TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+// IsEnabled 返回自检是否启用：未配置（nil）时默认启用。
+func (c StartupCheckConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // DatabaseConfig 数据库配置组。
@@ -312,6 +328,9 @@ func normalize(cfg *Config) {
 	if cfg.Server.Mode != ModePlatform && cfg.Server.Mode != ModePrivate {
 		panic(fmt.Sprintf("不支持的 server.mode: %q（可选 platform=平台模式 / private=私享模式）", cfg.Server.Mode))
 	}
+	if cfg.Server.StartupCheck.TimeoutSeconds <= 0 {
+		cfg.Server.StartupCheck.TimeoutSeconds = 5
+	}
 	normalizeJob("rent_bills", &cfg.Scheduler.RentBills, "03:00", 0)
 	normalizeJob("building_expiry", &cfg.Scheduler.BuildingExpiry, "03:00", 0)
 	normalizeJob("contract_expiry", &cfg.Scheduler.ContractExpiry, "03:00", 0)
@@ -438,6 +457,15 @@ func envOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("PPROF_ALLOW_REMOTE"); v != "" {
 		cfg.Server.PprofAllowRemote = v == "true"
+	}
+	if v := os.Getenv("STARTUP_CHECK"); v != "" {
+		enabled := v != "false" && v != "0"
+		cfg.Server.StartupCheck.Enabled = &enabled
+	}
+	if v := os.Getenv("STARTUP_CHECK_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Server.StartupCheck.TimeoutSeconds = n
+		}
 	}
 	if v := os.Getenv("SERVER_PORT"); v != "" {
 		cfg.Server.Port = v

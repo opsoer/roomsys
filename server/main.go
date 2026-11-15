@@ -15,6 +15,7 @@ import (
 	"rental-server/audit"
 	"rental-server/config"
 	"rental-server/database"
+	"rental-server/envcheck"
 	"rental-server/handlers"
 	"rental-server/logger"
 	"rental-server/middleware"
@@ -67,6 +68,9 @@ func main() {
 	} else {
 		logger.Log.Info().Msg("数据库结构已是最新")
 	}
+
+	// 启动环境自检：只报告不阻断，默认开启（server.startup_check.enabled=false 可关闭）
+	envcheck.Run(cfg, db, Version)
 
 	seedAdmin(db, cfg)
 
