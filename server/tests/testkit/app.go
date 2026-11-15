@@ -133,7 +133,6 @@ func testConfig(dir string) *config.Config {
 	requireNoErr(os.MkdirAll(filepath.Join(webDir, "assets"), 0o755))
 	requireNoErr(os.WriteFile(filepath.Join(webDir, "index.html"), []byte("<!doctype html><html><body>test</body></html>"), 0o644))
 	requireNoErr(os.WriteFile(filepath.Join(webDir, "default-image.svg"), []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"), 0o644))
-	requireNoErr(os.MkdirAll(filepath.Join(dir, "media", "ffmpeg"), 0o755))
 	requireNoErr(os.MkdirAll(filepath.Join(dir, "logs"), 0o755))
 
 	return &config.Config{

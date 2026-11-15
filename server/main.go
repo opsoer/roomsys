@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -98,8 +97,6 @@ func main() {
 		logger.Log.Fatal().Err(err).Str("dir", cfg.Server.UploadDir).Msg("创建上传目录失败")
 	}
 	logger.Log.Info().Str("dir", cfg.Server.UploadDir).Msg("上传目录就绪")
-
-	ensureFFmpegCore(cfg.Server.UploadDir)
 
 	if gin.Mode() != gin.ReleaseMode {
 		gin.SetMode(gin.ReleaseMode)
@@ -354,53 +351,6 @@ func seedAdmin(db *gorm.DB, cfg *config.Config) {
 	logger.Log.Info().Str("username", username).Msg("已按 admin 配置创建超级管理员")
 }
 
-// ensureFFmpegCore 确保 FFmpeg WASM 核心文件已下载到上传目录。
-func ensureFFmpegCore(uploadDir string) {
-	dir := filepath.Join(uploadDir, "ffmpeg")
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		logger.Log.Warn().Err(err).Msg("创建 ffmpeg 目录失败")
-		return
-	}
-
-	baseURL := "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm"
-	files := []string{"ffmpeg-core.js", "ffmpeg-core.wasm"}
-
-	for _, f := range files {
-		path := filepath.Join(dir, f)
-		if _, err := os.Stat(path); err == nil {
-			logger.Log.Info().Str("file", f).Msg("FFmpeg core 文件已存在，跳过下载")
-			continue
-		}
-
-		url := baseURL + "/" + f
-		logger.Log.Info().Str("file", f).Msg("正在下载 FFmpeg core 文件")
-
-		client := &http.Client{Timeout: 120 * time.Second}
-		resp, err := client.Get(url)
-		if err != nil {
-			logger.Log.Warn().Err(err).Str("url", url).Msg("下载 FFmpeg core 失败")
-			continue
-		}
-
-		out, err := os.Create(path)
-		if err != nil {
-			logger.Log.Warn().Err(err).Msg("创建 ffmpeg 文件失败")
-			resp.Body.Close()
-			continue
-		}
-
-		_, err = io.Copy(out, resp.Body)
-		resp.Body.Close()
-		out.Close()
-		if err != nil {
-			logger.Log.Warn().Err(err).Msg("写入 ffmpeg 文件失败")
-			os.Remove(path)
-		} else {
-			logger.Log.Info().Str("file", f).Msg("FFmpeg core 文件下载完成")
-		}
-	}
-}
-
 // gzipWriter 包装 gin.ResponseWriter，用 gzip 压缩响应体。
 type gzipWriter struct {
 	gin.ResponseWriter
@@ -415,8 +365,8 @@ func (g *gzipWriter) Write(data []byte) (int, error) {
 	return g.writer.Write(data)
 }
 
-// skipGzipPrefixes 不需要 gzip 压缩的路径前缀（媒体文件和 FFmpeg wasm 已压缩过）
-var skipGzipPrefixes = []string{"/api/media/", "/api/ffmpeg/"}
+// skipGzipPrefixes 不需要 gzip 压缩的路径前缀（媒体文件已压缩过）
+var skipGzipPrefixes = []string{"/api/media/"}
 
 // minGzipLength 小于该长度的响应不压缩：gzip 头部 + 动态哈夫曼表约 20 字节，
 // 压缩几十字节的小 JSON 不仅不省流量，反而会变大且白白消耗 CPU。
@@ -468,7 +418,7 @@ func gzipMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		// 图片/视频/FFmpeg wasm 已经压缩过，跳过
+		// 图片/视频已经压缩过，跳过
 		for _, p := range skipGzipPrefixes {
 			if strings.HasPrefix(path, p) {
 				c.Next()

@@ -2,8 +2,6 @@
 package routes
 
 import (
-	"path/filepath"
-
 	"rental-server/config"
 	"rental-server/handlers"
 	"rental-server/middleware"
@@ -74,7 +72,6 @@ func setupStatic(r *gin.Engine, cfg *config.Config) {
 	r.Static("/assets", cfg.Server.WebDistDir+"/assets")
 	r.StaticFile("/default-image.svg", cfg.Server.WebDistDir+"/default-image.svg")
 	r.StaticFile("/", cfg.Server.WebDistDir+"/index.html")
-	r.Static("/api/ffmpeg", filepath.Join(cfg.Server.UploadDir, "ffmpeg"))
 	r.NoRoute(func(c *gin.Context) {
 		c.File(cfg.Server.WebDistDir + "/index.html")
 	})
@@ -220,7 +217,6 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		building.GET("/media/upload-token", h.media.GetUploadToken)
 		building.POST("/rooms/:id/media/confirm", h.media.ConfirmUpload)
 		building.POST("/rooms/:id/media/check-transcode", h.media.CheckTranscodeStatus)
-		building.POST("/ffmpeg/re-download", h.media.ReDownloadFFmpeg)
 
 		// 管理员管理（building_admin 可创建普通 admin）
 		building.POST("/auth/create-admin", h.auth.CreateRegularAdmin)
