@@ -27,6 +27,10 @@
         <el-form-item label="备注" prop="description" :rules="form.subtype === '其他' ? [{ required: true, message: '子类型为其他时，备注不能为空' }] : []">
           <el-input v-model="form.description" type="textarea" :rows="2" maxlength="200" show-word-limit />
         </el-form-item>
+        <el-form-item label="内部备注" prop="remark">
+          <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：仅后台可见，不会被修改记录覆盖" />
+        </el-form-item>
         <el-form-item label="凭证截图">
           <EvidenceUploader v-model="evidences" />
         </el-form-item>
@@ -41,6 +45,10 @@
         <el-form-item label="修改原因" prop="modify_reason"
           :rules="[{ required: true, message: '请填写修改原因' }]">
           <el-input v-model="form.modify_reason" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="请填写修改原因" />
+        </el-form-item>
+        <el-form-item label="内部备注" prop="remark">
+          <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：仅后台可见，不影响系统描述与修改记录" />
         </el-form-item>
         <el-form-item label="凭证截图">
           <EvidenceUploader v-model="evidences" />
@@ -79,7 +87,7 @@ const editingId = ref(null)
 const formRef = ref(null)
 
 const form = reactive({
-  type: 'income', subtype: '', amount: 0, bill_date: '', room_id: null, description: '', modify_reason: '', _old_amount: 0,
+  type: 'income', subtype: '', amount: 0, bill_date: '', room_id: null, description: '', remark: '', modify_reason: '', _old_amount: 0,
 })
 
 // 凭证截图（选填）：随单提交；编辑时整单替换
@@ -104,6 +112,7 @@ function open() {
   form.bill_date = ''
   form.room_id = null
   form.description = ''
+  form.remark = ''
   form.modify_reason = ''
   form._old_amount = 0
   evidences.value = []
@@ -118,9 +127,12 @@ function openEdit(row) {
   form.bill_date = row.bill_date
   form.room_id = row.room_id
   form.description = row.description || ''
+  form.remark = row.remark || ''
   form.modify_reason = ''
   form._old_amount = row.amount
-  evidences.value = (row.evidences || []).map(e => ({ file_key: e.file_key, file_name: e.file_name, file_size: e.file_size }))
+  evidences.value = (row.evidences || []).map(e => ({
+    file_key: e.file_key, file_name: e.file_name, file_size: e.file_size, remark: e.remark || '',
+  }))
   visible.value = true
 }
 

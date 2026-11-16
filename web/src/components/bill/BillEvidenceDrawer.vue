@@ -22,6 +22,7 @@
           <div v-else class="bev-fallback">
             <a :href="mediaUrl(ev.file_key)" :download="ev.file_name">下载查看</a>
           </div>
+          <div v-if="ev.remark" class="bev-remark">{{ ev.remark }}</div>
           <el-icon class="bev-remove" title="删除凭证" @click="removeOne(ev)"><Close /></el-icon>
         </div>
       </div>
@@ -126,6 +127,15 @@ async function removeOne(ev) {
 .bev-item {
   position: relative;
   width: 96px;
+}
+/* 凭证说明（仅后台可见） */
+.bev-remark {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .bev-thumb {
   width: 96px;

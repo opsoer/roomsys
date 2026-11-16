@@ -46,6 +46,9 @@
         <el-table :data="shareholders" border stripe>
           <el-table-column prop="name" label="股东姓名" />
           <el-table-column prop="share_ratio" label="持股比例(%)" />
+          <el-table-column label="备注" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '—' }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="160">
             <template #default="{ row }">
               <el-button size="small" type="primary" text @click="handleEditSH(row)">编辑</el-button>
@@ -60,6 +63,7 @@
             <span class="div-card-name">{{ s.name }}</span>
             <span class="div-card-ratio-badge">{{ s.share_ratio }}%</span>
           </div>
+          <div v-if="s.remark" class="div-card-ratio div-card-remark">{{ s.remark }}</div>
           <div class="uc-foot" style="margin-top:8px">
             <el-button size="small" type="primary" text @click="handleEditSH(s)">编辑</el-button>
             <el-button size="small" type="danger" text @click="handleDeleteSH(s.id)">删除</el-button>
@@ -80,6 +84,9 @@
           <el-table-column prop="dividend_amount" label="分红金额" />
           <el-table-column prop="created_at" label="结算时间" width="180">
             <template #default="{ row }">{{ row.created_at }}</template>
+          </el-table-column>
+          <el-table-column label="结算备注" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '—' }}</template>
           </el-table-column>
         </el-table>
       </div>
@@ -110,6 +117,7 @@
             <span>股东：{{ d.shareholder?.name }}</span>
             <span class="dhc-time">{{ d.created_at }}</span>
           </div>
+          <div v-if="d.remark" class="div-card-ratio div-card-remark">结算备注：{{ d.remark }}</div>
         </div>
       </div>
     </el-card>
@@ -121,6 +129,10 @@
         </el-form-item>
         <el-form-item label="持股比例(%)" prop="share_ratio" :rules="[{ required: true, message: '请输入比例' }]">
           <el-input-number v-model="shForm.share_ratio" :min="0" :max="100" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="shForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：联系方式、代持说明、收款账户…（仅后台可见）" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -142,7 +154,7 @@ const preview = ref(null)
 const shareholders = ref([])
 const showShareholderDialog = ref(false)
 const shSubmitting = ref(false)
-const shForm = ref({ name: '', share_ratio: 0 })
+const shForm = ref({ name: '', share_ratio: 0, remark: '' })
 const shFormRef = ref(null)
 const editingSHId = ref(null)
 const divPageSize = 20
@@ -207,7 +219,7 @@ async function handleAddSH() {
     }
     showShareholderDialog.value = false
     editingSHId.value = null
-    shForm.value = { name: '', share_ratio: 0 }
+    shForm.value = { name: '', share_ratio: 0, remark: '' }
     await fetchShareholders()
   } finally {
     shSubmitting.value = false
@@ -216,7 +228,7 @@ async function handleAddSH() {
 
 function handleEditSH(row) {
   editingSHId.value = row.id
-  shForm.value = { name: row.name, share_ratio: row.share_ratio }
+  shForm.value = { name: row.name, share_ratio: row.share_ratio, remark: row.remark || '' }
   showShareholderDialog.value = true
 }
 
@@ -272,6 +284,8 @@ onMounted(() => {
   color: #999;
   margin-top: 4px;
 }
+/* 备注：长文本换行 */
+.div-card-remark { white-space: pre-wrap; word-break: break-all; color: #606266; }
 .div-card-ratio-badge {
   font-size: 13px;
   font-weight: 600;

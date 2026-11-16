@@ -35,6 +35,8 @@ type ImportRentedRoomItem struct {
 	StartDate            string   `json:"start_date" binding:"required"`
 	EndDate              string   `json:"end_date" binding:"required"`
 	RecordDepositBill    bool     `json:"record_deposit_bill"` // 历史租约押金是以前收的，默认不补记
+	// Remark 该房间的合同备注（选填，仅后台可见）
+	Remark string `json:"remark"`
 }
 
 // ImportRentedReq 批量导入在租房间请求
@@ -189,6 +191,8 @@ func (h *RoomHandler) importOneRentedRoom(bid, uid uint, item ImportRentedRoomIt
 		StartDate:     item.StartDate,
 		EndDate:       item.EndDate,
 		Status:        "active",
+		// 每行的合同备注（仅后台可见）
+		Remark: utils.ClipRemark(item.Remark),
 	}
 	if err := tx.Create(&contract).Error; err != nil {
 		return errors.New("创建合同失败")

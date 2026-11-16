@@ -29,6 +29,8 @@ type locationReq struct {
 	NewName  string `json:"new_name"`
 	CustomID uint   `json:"custom_id"`
 	DryRun   bool   `json:"dry_run"`
+	// Remark 位置备注（仅后台可见）：「该村含X小区」等
+	Remark string `json:"remark"`
 }
 
 // 归一化：同一条目带或不带「街道/社区」后缀视为同一地方（与公开端筛选口径一致）
@@ -56,7 +58,8 @@ func (h *LocationManageHandler) List(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"customs": customs, "renames": renames})
+	// 后台视图：透出位置备注（模型层是 json:"-"）
+	utils.Success(c, gin.H{"customs": models.NewLocationCustomViews(customs), "renames": renames})
 }
 
 // ListOptions 公开只读接口：返回渲染位置选项树所需的最小字段。
@@ -136,12 +139,48 @@ func (h *LocationManageHandler) AddCustom(c *gin.Context) {
 		h.badRequest(c, "该自定义条目已存在")
 		return
 	}
-	entry := models.LocationCustom{Level: req.Level, District: req.District, Street: req.Street, Name: req.Name}
+	entry := models.LocationCustom{
+		Level: req.Level, District: req.District, Street: req.Street, Name: req.Name,
+		Remark: utils.ClipRemark(req.Remark),
+	}
 	if err := h.DB.Create(&entry).Error; err != nil {
 		utils.Error(c, http.StatusInternalServerError, "创建失败")
 		return
 	}
-	utils.Success(c, gin.H{"custom": entry})
+	utils.Success(c, gin.H{"custom": models.NewLocationCustomView(&entry)})
+}
+
+// UpdateCustomRemark 更新自定义位置条目的备注（仅后台可见）。
+func (h *LocationManageHandler) UpdateCustomRemark(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		h.badRequest(c, "无效的ID")
+		return
+	}
+	var entry models.LocationCustom
+	if err := h.DB.First(&entry, uint(id)).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "条目不存在")
+		return
+	}
+	var req struct {
+		Remark *string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.badRequest(c, "参数错误")
+		return
+	}
+	if req.Remark == nil {
+		utils.SuccessWithMsg(c, "更新成功", nil)
+		return
+	}
+	if err := h.DB.Model(&models.LocationCustom{}).Where("id = ?", entry.ID).
+		Update("remark", utils.ClipRemark(*req.Remark)).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceLocation, strconv.FormatUint(uint64(entry.ID), 10),
+		"修改位置备注")
+	utils.SuccessWithMsg(c, "更新成功", nil)
 }
 
 // DeleteCustom 删除自定义条目：只要还有未删除的公寓引用该位置就禁止，避免位置信息丢失（GORM 默认排除软删除行）

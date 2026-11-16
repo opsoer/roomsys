@@ -171,6 +171,11 @@ export function adminDeleteLocationCustom(id) {
   return api.delete(`/admin/locations/custom/${id}`)
 }
 
+// 位置条目备注（仅后台可见）
+export function adminUpdateLocationRemark(id, data) {
+  return api.put(`/admin/locations/custom/${id}/remark`, data)
+}
+
 // 改名 { level, district, street, old_name, new_name, custom_id?, dry_run? }
 export function adminRenameLocation(data) {
   return api.post('/admin/locations/rename', data)
@@ -218,8 +223,28 @@ export function adminUpdateUser(id, data) {
   return api.put(`/admin/auth/users/${id}`, data)
 }
 
+// 平台管理员列表（仅超管，含姓名/电话/备注）
+export function adminListUsers() {
+  return api.get('/admin/auth/users')
+}
+
+// 平台待办处理（可带处理备注）
+export function adminProcessPlatformTask(id, data) {
+  return api.post(`/admin/tasks/${id}/process`, data || {})
+}
+
 export function adminDeleteUser(id) {
   return api.delete(`/admin/auth/users/${id}`)
+}
+
+// 楼栋管理员更新本公寓账号（姓名/电话/备注，不含角色与密码）
+export function buildingUpdateUser(id, data) {
+  return api.put(`/building/auth/users/${id}`, data)
+}
+
+// 楼栋管理员删除本公寓的普通管理员
+export function buildingDeleteUser(id) {
+  return api.delete(`/building/auth/users/${id}`)
 }
 
 // ===== 公寓管理后台 =====
@@ -274,6 +299,16 @@ export function buildingUpdateRoomStatus(id, data) {
 
 export function buildingRenewContract(id, data) {
   return api.put(`/building/rooms/${id}/contract`, data)
+}
+
+// 租客信息（姓名/电话/紧急联系人/备注）：仅后台接口，租客端无入口
+export function buildingUpdateTenant(tenantId, data) {
+  return api.put(`/building/tenants/${tenantId}`, data)
+}
+
+// 媒体说明（仅后台可见）
+export function buildingUpdateMediaRemark(roomId, mediaId, data) {
+  return api.put(`/building/rooms/${roomId}/media/${mediaId}`, data)
 }
 
 export function buildingDeleteMedia(roomId, mediaId) {
@@ -404,10 +439,6 @@ export function adminGetPlatformTasks(status = '', pageOrParams = 1, pageSize = 
   const merged = typeof pageOrParams === 'object' ? { ...pageOrParams } : { page: pageOrParams, page_size: pageSize }
   if (status) merged.status = status
   return api.get('/admin/tasks', { params: merged })
-}
-
-export function adminProcessPlatformTask(id) {
-  return api.post(`/admin/tasks/${id}/process`)
 }
 
 export function adminGetPlatformTaskCount() {

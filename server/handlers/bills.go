@@ -73,6 +73,8 @@ type CreateBillReq struct {
 	RoomID      *uint   `json:"room_id"`
 	Description string  `json:"description"`
 	BillDate    string  `json:"bill_date" binding:"required"`
+	// Remark 账单内部备注（仅后台可见，与 description 分开存，不会被修改记录覆盖）
+	Remark *string `json:"remark"`
 	// Evidences 随单凭证截图（可选，仅图片），file_key 须来自本公寓的凭证上传接口。
 	Evidences []services.EvidenceInput `json:"evidences"`
 }
@@ -86,6 +88,8 @@ type UpdateBillReq struct {
 	Description  string   `json:"description"`
 	BillDate     string   `json:"bill_date"`
 	ModifyReason string   `json:"modify_reason"`
+	// Remark 账单内部备注（仅后台可见）：nil=不变，""=清空
+	Remark *string `json:"remark"`
 	// Evidences 非 nil 时整单替换凭证列表（以请求内容为准），nil 表示不动凭证。
 	Evidences []services.EvidenceInput `json:"evidences"`
 }
@@ -186,6 +190,9 @@ func (h *BillHandler) Create(c *gin.Context) {
 		BillDate:    req.BillDate,
 		CreatedBy:   uid,
 	}
+	if req.Remark != nil {
+		bill.Remark = utils.ClipRemark(*req.Remark)
+	}
 	evidences, err := services.NormalizeEvidences(bid, req.Evidences)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, err.Error())
@@ -272,6 +279,10 @@ func (h *BillHandler) Update(c *gin.Context) {
 	}
 	updates := map[string]interface{}{
 		"amount": newAmount,
+	}
+	// 内部备注（仅后台可见，与 description 分开）：nil=不变，""=清空
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
 	}
 	modLog := fmt.Sprintf("[%s] 修改原因: %s", utils.Now().Format("2006-01-02 15:04:05"), req.ModifyReason)
 	if req.Amount != nil {
@@ -550,7 +561,7 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 	writer := csv.NewWriter(c.Writer)
 	defer writer.Flush()
 
-	writer.Write([]string{"账单编号", "日期", "类型", "子类型", "金额", "关联房间", "备注"})
+	writer.Write([]string{"账单编号", "日期", "类型", "子类型", "金额", "关联房间", "备注", "内部备注"})
 	for _, b := range bills {
 		room := ""
 		if b.Room.RoomNumber != "" {
@@ -568,6 +579,7 @@ func (h *BillHandler) ExportCSV(c *gin.Context) {
 			fmt.Sprintf("%.2f", b.Amount),
 			sanitizeCSVCell(room),
 			sanitizeCSVCell(b.Description),
+			sanitizeCSVCell(b.Remark),
 		})
 	}
 }

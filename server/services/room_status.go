@@ -36,6 +36,21 @@ type RoomStatusParams struct {
 	// Evidences 随单凭证截图（可选）：出租挂到租金账单，退租挂到押金退还账单，
 	// 取消预订挂到定金违约账单；预订无账单，忽略。
 	Evidences []EvidenceInput
+	// Remark 备注（仅后台可见）：
+	//   - 出租/预订/确认签约：写到合同备注（车牌号、工作单位、特殊约定等）；
+	//   - 退租/取消预订：选填的扣款原因，拼进自动生成的账单描述。
+	//
+	// 指针语义：nil=本次不涉及备注（预订→确认签约时保留预订时已填的内容，
+	// 不会因为调用方没传就把备注冲掉）；非 nil=写入该值（""=清空）。
+	Remark *string
+}
+
+// remarkText 取出本次要写入的备注文本：nil 视为空串（新建场景没有历史值可继承）。
+func remarkText(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return utils.ClipRemark(*p)
 }
 
 // RentRoom 出租：结束旧合同、创建/激活合同、生成账单、置房间为 rented。
@@ -78,6 +93,7 @@ func (s *RoomService) RentRoom(room *models.Room, p RoomStatusParams) error {
 		StartDate:     p.StartDate,
 		EndDate:       p.EndDate,
 		Status:        "active",
+		Remark:        remarkText(p.Remark),
 	}
 
 	if reservedContract != nil {
@@ -90,6 +106,12 @@ func (s *RoomService) RentRoom(room *models.Room, p RoomStatusParams) error {
 			"start_date":     p.StartDate,
 			"end_date":       p.EndDate,
 			"status":         "active",
+		}
+		// 预订 → 确认签约：备注随合同延续。
+		// 只有本次明确传了 remark 才覆盖；没传就保留预订时填的内容（车牌号等），
+		// 避免「确认签约」表单没带 remark 就把预订备注冲掉。
+		if p.Remark != nil {
+			updates["remark"] = remarkText(p.Remark)
 		}
 		if p.TenantName != "" {
 			if err := tx.Model(&models.Tenant{}).Where("id = ?", contract.TenantID).
@@ -202,6 +224,7 @@ func (s *RoomService) ReserveRoom(room *models.Room, p RoomStatusParams) error {
 		StartDate:     p.StartDate,
 		EndDate:       p.EndDate,
 		Status:        "reserved",
+		Remark:        remarkText(p.Remark),
 	}
 	if err := tx.Create(&contract).Error; err != nil {
 		tx.Rollback()
@@ -243,7 +266,7 @@ func (s *RoomService) CancelReservation(room *models.Room, p RoomStatusParams) e
 		return utils.Internal(tx.Error, "服务器错误")
 	}
 
-	if err := CreateEarnestBreachBill(tx, room.BuildingID, room.ID, p.UserID, contract.EarnestMoney, refunded, p.Evidences); err != nil {
+	if err := CreateEarnestBreachBill(tx, room.BuildingID, room.ID, p.UserID, contract.EarnestMoney, refunded, p.Evidences, remarkText(p.Remark)); err != nil {
 		tx.Rollback()
 		return utils.Internal(err, "创建违约账单失败")
 	}
@@ -302,7 +325,7 @@ func (s *RoomService) VacateRoom(room *models.Room, p RoomStatusParams) (hasFutu
 		return false, utils.Internal(err, "结束合同失败")
 	}
 
-	if err := CreateDepositRefundBill(tx, room.BuildingID, room.ID, p.UserID, originalDeposit, *p.RefundedDeposit, p.Evidences); err != nil {
+	if err := CreateDepositRefundBill(tx, room.BuildingID, room.ID, p.UserID, originalDeposit, *p.RefundedDeposit, p.Evidences, remarkText(p.Remark)); err != nil {
 		tx.Rollback()
 		return false, utils.Internal(err, "创建退还账单失败")
 	}

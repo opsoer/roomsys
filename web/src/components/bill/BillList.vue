@@ -60,7 +60,12 @@
         <el-table-column prop="room" label="关联房间" width="100">
           <template #default="{ row }">{{ row.room?.room_number || '其他' }}</template>
         </el-table-column>
-        <el-table-column prop="description" label="备注" min-width="150" show-overflow-tooltip />
+        <el-table-column label="备注" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div>{{ row.description }}</div>
+            <div v-if="row.remark" class="bill-remark">内部备注：{{ row.remark }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="$emit('evidence', row)">
@@ -96,6 +101,7 @@
           </span>
         </div>
         <div v-if="row.description" class="bc-desc">{{ row.description }}</div>
+        <div v-if="row.remark" class="bc-desc bill-remark">内部备注：{{ row.remark }}</div>
       </div>
     </div>
   </div>
@@ -201,6 +207,8 @@ defineExpose({ getFilterParams })
   padding-top: 6px;
   border-top: 1px solid #f5f5f5;
 }
+/* 账单内部备注（仅后台可见，与系统描述区分展示） */
+.bill-remark { color: #8a6d3b; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 
 @media (max-width: 768px) {
   .desktop-table { display: none; }

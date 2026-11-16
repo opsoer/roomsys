@@ -17,13 +17,13 @@
     <div class="detail-body">
       <div class="detail-main">
         <RoomMedia :room="room" :gallery-images="galleryImages" :videos="videos" :is-admin="isAdmin"
-          @fullscreen="showFullscreen" @delete-media="handleDeleteMedia" />
+          @fullscreen="showFullscreen" @delete-media="handleDeleteMedia" @refresh="fetchRoom" />
       </div>
 
       <RoomSidebar :room="room" :landlords="landlords" :current-contract="currentContract" :future-reservation="futureReservation" :is-admin="isAdmin"
         @renew="openRenewDialog" @rent="openRentDialog" @vacant="handleVacant"
         @reserve="openReserveDialog" @confirm-sign="openConfirmSignDialog" @cancel-reserve="handleCancelReserve"
-        @upload-success="onUploadSuccess" />
+        @upload-success="onUploadSuccess" @refresh="fetchRoom" />
     </div>
 
     <RoomDialogs ref="dialogsRef" :room-id="route.params.id" :current-contract="currentContract" :room-status="room?.status"
@@ -102,6 +102,7 @@ async function fetchRoom(silent = false) {
       floor: room.value.floor,
       layout: room.value.layout,
       description: room.value.description,
+      remark: room.value.remark || '',
       rent_price: room.value.rent_price ?? null,
       deposit_months: room.value.deposit_months ?? null,
       management_fee: room.value.management_fee ?? null,

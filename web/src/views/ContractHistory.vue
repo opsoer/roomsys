@@ -79,6 +79,9 @@
               <span>¥{{ Number(row.deposit).toFixed(2) }}</span>
             </template>
           </el-table-column>
+          <el-table-column label="备注" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '—' }}</template>
+          </el-table-column>
         </el-table>
       </div>
 
@@ -105,6 +108,10 @@
             <span class="cc-value">{{ mgmtFeeLabel(row.management_fee) }}</span>
             <span class="cc-label">押金</span>
             <span class="cc-value">¥{{ Number(row.deposit).toFixed(2) }}</span>
+            <template v-if="row.remark">
+              <span class="cc-label">备注</span>
+              <span class="cc-value cc-remark">{{ row.remark }}</span>
+            </template>
           </div>
         </div>
       </div>
@@ -255,6 +262,8 @@ onMounted(async () => {
 }
 .cc-label { color: #999; }
 .cc-value { color: #333; }
+/* 合同备注：长文本换行显示 */
+.cc-remark { white-space: pre-wrap; word-break: break-all; color: #606266; }
 
 @media (max-width: 768px) {
   .desktop-table { display: none; }

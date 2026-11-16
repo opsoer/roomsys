@@ -26,6 +26,16 @@
             placeholder="输入您的公寓详细地址（区域、街道、门牌号）"
             :rules="[{ required: true, message: '请输入公寓地址' }]"
           />
+          <van-field
+            v-model="form.remark"
+            name="remark"
+            label="补充说明"
+            type="textarea"
+            rows="2"
+            maxlength="500"
+            show-word-limit
+            placeholder="选填：房源情况、预算、可看房时间等"
+          />
         </van-cell-group>
         <div style="margin: 24px 16px">
           <van-button round block type="primary" native-type="submit" :loading="submitting">
@@ -43,17 +53,18 @@ import { ref, reactive } from 'vue'
 import { showToast } from 'vant'
 import { submitRecruit } from '../api'
 
-const form = reactive({ phone: '', address: '' })
+const form = reactive({ phone: '', address: '', remark: '' })
 const submitting = ref(false)
 const submitted = ref(false)
 
 async function handleSubmit() {
   submitting.value = true
   try {
-    await submitRecruit({ phone: form.phone, address: form.address })
+    await submitRecruit({ phone: form.phone, address: form.address, remark: form.remark })
     submitted.value = true
     form.phone = ''
     form.address = ''
+    form.remark = ''
     showToast('提交成功')
   } catch {
     showToast('提交失败，请重试')

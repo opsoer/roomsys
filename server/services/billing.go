@@ -30,6 +30,8 @@ type EvidenceInput struct {
 	FileName string `json:"file_name"`
 	// FileSize 字节数（仅展示用）。
 	FileSize int64 `json:"file_size"`
+	// Remark 凭证说明（选填，仅后台可见）：「11月房租转账」等，便于对账。
+	Remark string `json:"remark"`
 }
 
 // NormalizeEvidences 校验并归一化凭证输入：去重、限数量、校验 key 归属本公寓的 bills 目录。
@@ -64,11 +66,13 @@ func NormalizeEvidences(bid uint, inputs []EvidenceInput) ([]models.BillEvidence
 		if size < 0 {
 			size = 0
 		}
+		remark := utils.ClipRemark(in.Remark)
 		out = append(out, models.BillEvidence{
 			BuildingID: bid,
 			FileKey:    key,
 			FileName:   name,
 			FileSize:   size,
+			Remark:     remark,
 		})
 	}
 	return out, nil
@@ -220,7 +224,8 @@ func CreateRentedBills(tx *gorm.DB, buildingID, roomID, uid uint, p RentBillsPar
 
 // CreateDepositRefundBill 生成押金退还账单（退租用）。
 // refunded <= 0 时不生成账单（负数同样跳过）。
-func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, originalDeposit, refunded float64, evidences []EvidenceInput) error {
+// remark 为管理员填写的扣款原因（选填，仅后台可见），拼进账单描述便于日后对账。
+func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, originalDeposit, refunded float64, evidences []EvidenceInput, remark string) error {
 	if refunded <= 0 {
 		return nil
 	}
@@ -234,6 +239,9 @@ func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, original
 	if deducted > 0 {
 		desc += fmt.Sprintf("（扣除%.2f元）", deducted)
 	}
+	if r := utils.ClipRemark(remark); r != "" {
+		desc += " 备注：" + r
+	}
 	bill := models.Bill{
 		BillNo:      NextBillNo(tx, now.Format("20060102")),
 		Type:        "expense",
@@ -242,6 +250,7 @@ func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, original
 		BuildingID:  buildingID,
 		RoomID:      &roomID,
 		Description: desc,
+		Remark:      utils.ClipRemark(remark),
 		BillDate:    now.Format("2006-01-02"),
 		PaidStatus:  "paid",
 		CreatedBy:   uid,
@@ -254,7 +263,8 @@ func CreateDepositRefundBill(tx *gorm.DB, buildingID, roomID, uid uint, original
 
 // CreateEarnestBreachBill 生成定金违约账单（取消预订用）。
 // diff = 原收定金 - 实际退还：正数表示扣留定金（收入），负数表示房东多退（支出）。
-func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest, refunded float64, evidences []EvidenceInput) error {
+// remark 为管理员填写的原因（选填），拼进账单描述与账单备注。
+func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest, refunded float64, evidences []EvidenceInput, remark string) error {
 	diff := float64(int((earnest-refunded)*100)) / 100
 	if diff == 0 {
 		return nil
@@ -269,6 +279,7 @@ func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest,
 		PaidStatus:  "paid",
 		CreatedBy:   uid,
 		Description: fmt.Sprintf("取消预订：原收定金%.2f元，实际退还%.2f元", earnest, refunded),
+		Remark:      utils.ClipRemark(remark),
 	}
 	if diff > 0 {
 		bill.Type = "income"
@@ -278,6 +289,9 @@ func CreateEarnestBreachBill(tx *gorm.DB, buildingID, roomID, uid uint, earnest,
 		bill.Type = "expense"
 		bill.Amount = -diff
 		bill.Description += fmt.Sprintf("，房东违约/主动多退，额外赔付%.2f元", -diff)
+	}
+	if r := utils.ClipRemark(remark); r != "" {
+		bill.Description += " 备注：" + r
 	}
 	if err := tx.Create(&bill).Error; err != nil {
 		return err

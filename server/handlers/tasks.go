@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -25,6 +24,8 @@ type TaskHandler struct {
 // ProcessTaskReq 处理退租任务的请求参数
 type ProcessTaskReq struct {
 	RefundedDeposit float64 `json:"refunded_deposit"`
+	// Remark 处理备注（选填，仅后台可见）：退租扣款原因；同时写入任务处理备注
+	Remark *string `json:"remark"`
 	// Evidences 随单凭证截图（可选），挂到本次生成的押金退还账单上。
 	Evidences []services.EvidenceInput `json:"evidences"`
 }
@@ -113,10 +114,15 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		}
 	}()
 
+	var remark string
+	if req.Remark != nil {
+		remark = utils.ClipRemark(*req.Remark)
+	}
+
 	var originalDeposit float64
 	tx.Model(&models.RentalContract{}).Where("room_id = ? AND status = ?", *task.RoomID, "active").Select("deposit").Scan(&originalDeposit)
 
-	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid, originalDeposit, req.Evidences); err != nil {
+	if err := handleDepositRefund(tx, models.Room{ID: *task.RoomID}, req.RefundedDeposit, uid, bid, originalDeposit, req.Evidences, remark); err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("创建押金退还账单失败")
 		utils.Error(c, http.StatusInternalServerError, "创建退还账单失败")
@@ -146,7 +152,9 @@ func (h *TaskHandler) Process(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新房间状态失败")
 		return
 	}
-	if err := tx.Model(&models.Task{}).Where("id = ?", task.ID).Update("status", "completed").Error; err != nil {
+	// 任务处理备注与状态一起落库（仅后台可见）
+	if err := tx.Model(&models.Task{}).Where("id = ?", task.ID).
+		Updates(map[string]interface{}{"status": "completed", "result_remark": remark}).Error; err != nil {
 		tx.Rollback()
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("更新任务状态失败")
 		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败")
@@ -227,39 +235,11 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	utils.SuccessWithMsg(c, "已删除", nil)
 }
 
-// handleDepositRefund 创建押金退还账单（可携带随单凭证截图）
-func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint, originalDeposit float64, evidences []services.EvidenceInput) error {
-	if refundedDeposit <= 0 {
-		return nil
-	}
-	evRows, err := services.NormalizeEvidences(buildingID, evidences)
-	if err != nil {
-		return err
-	}
-
-	now := utils.Now()
-	billNo := services.NextBillNo(tx, now.Format("20060102"))
-
-	deducted := originalDeposit - refundedDeposit
-	desc := fmt.Sprintf("押金退还：原押金%.2f元，已退款%.2f元", originalDeposit, refundedDeposit)
-	if deducted > 0 {
-		desc += fmt.Sprintf("（扣除%.2f元）", deducted)
-	}
-
-	billDate := now.Format("2006-01-02")
-	bill := models.Bill{
-		BuildingID:  buildingID,
-		BillNo:      billNo,
-		Type:        "expense",
-		Subtype:     "押金退还",
-		Amount:      refundedDeposit,
-		RoomID:      &room.ID,
-		Description: desc,
-		BillDate:    billDate,
-		CreatedBy:   userID,
-	}
-	if err := tx.Create(&bill).Error; err != nil {
-		return err
-	}
-	return services.CreateEvidences(tx, bill.ID, userID, evRows)
+// handleDepositRefund 创建押金退还账单（可携带随单凭证截图与扣款原因备注）。
+//
+// 直接复用 services.CreateDepositRefundBill：待办退租与「房间状态→退租」两条路径
+// 必须生成完全一致的账单（描述、备注、已付状态），否则同一笔退租在账单列表里
+// 会出现两种说法、两种付款状态。
+func handleDepositRefund(tx *gorm.DB, room models.Room, refundedDeposit float64, userID, buildingID uint, originalDeposit float64, evidences []services.EvidenceInput, remark string) error {
+	return services.CreateDepositRefundBill(tx, buildingID, room.ID, userID, originalDeposit, refundedDeposit, evidences, remark)
 }

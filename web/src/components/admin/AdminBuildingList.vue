@@ -59,6 +59,14 @@
                 <template v-for="(l, i) in b.landlords" :key="l.id">
                   {{ l.name }} {{ l.phone }}<span v-if="i < b.landlords.length - 1"> / </span>
                 </template>
+                <!-- 房东内部备注（仅后台可见） -->
+                <div v-for="l in b.landlords.filter(x => x.remark)" :key="'lr' + l.id" class="list-remark">
+                  房东备注（{{ l.name }}）：{{ l.remark }}
+                </div>
+              </div>
+              <div v-if="b.remark" class="list-remark">
+                <span style="color:#999;">📝</span>
+                公寓备注：{{ b.remark }}
               </div>
               <div>
                 <span style="color:#999;">🚪</span>
@@ -134,4 +142,6 @@ defineExpose({ getFilter })
 <style scoped>
 .skeleton-list { padding: 12px 0; }
 .skeleton-item { padding: 12px; margin-bottom: 12px; background: #fff; border-radius: 8px; border: 1px solid #eee; }
+/* 内部备注：小字换行，长文本不撑破卡片 */
+.list-remark { font-size: 12px; color: #8a6d3b; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
 </style>

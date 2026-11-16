@@ -96,9 +96,9 @@ type rateLimitEntry struct {
 
 // AuthHandler 认证处理器，依赖数据库连接、配置和认证服务
 type AuthHandler struct {
-	DB           *gorm.DB
-	Cfg          *config.Config
-	AuthService  *services.AuthService
+	DB          *gorm.DB
+	Cfg         *config.Config
+	AuthService *services.AuthService
 }
 
 // LoginReq 登录请求参数
@@ -351,7 +351,9 @@ func (h *AuthHandler) ListBuildingUsers(c *gin.Context) {
 		return
 	}
 	var users []models.User
-	if err := h.DB.Select("id, username, role, created_at").Where("building_id = ?", bid).Find(&users).Error; err != nil {
+	// 只返回展示所需字段：不含密码哈希与令牌相关列；备注/姓名/电话仅后台可见
+	if err := h.DB.Select("id, username, role, created_at, display_name, phone, remark").
+		Where("building_id = ?", bid).Find(&users).Error; err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("查询楼栋用户列表失败")
 		utils.Error(c, http.StatusInternalServerError, "查询用户列表失败")
 		return
@@ -362,8 +364,12 @@ func (h *AuthHandler) ListBuildingUsers(c *gin.Context) {
 
 // UpdateUserReq 更新用户信息请求参数
 type UpdateUserReq struct {
-	Role     string `json:"role"`
-	Password string `json:"password"`
+	Role        string  `json:"role"`
+	Password    string  `json:"password"`
+	DisplayName *string `json:"display_name"`
+	Phone       *string `json:"phone"`
+	// Remark 账号备注（仅后台可见）：岗位、负责范围等
+	Remark *string `json:"remark"`
 }
 
 // UpdateUser 更新指定用户的角色或密码
@@ -401,6 +407,16 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 		now := time.Now()
 		updates["token_not_before"] = &now
 	}
+	// 姓名/电话/备注（仅后台可见）：nil=不变，""=清空
+	if req.DisplayName != nil {
+		updates["display_name"] = utils.ClipText(*req.DisplayName, 50)
+	}
+	if req.Phone != nil {
+		updates["phone"] = utils.ClipText(*req.Phone, 20)
+	}
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
+	}
 	if err := h.AuthService.UpdateUser(user.ID, updates); err != nil {
 		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("更新用户失败")
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
@@ -417,6 +433,74 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 			changed = append(changed, "password")
 			continue
 		}
+		changed = append(changed, k)
+	}
+	sort.Strings(changed)
+	audit.Log(c, audit.ActionUpdate, audit.ResourceUser, audit.ID(user.ID),
+		"更新用户字段: "+strings.Join(changed, ","))
+	utils.SuccessWithMsg(c, "更新成功", nil)
+}
+
+// UpdateBuildingUserReq 楼栋管理员更新本公寓账号信息请求参数。
+// 只开放「后台备注类」字段；角色与密码不在此列，避免提权。
+type UpdateBuildingUserReq struct {
+	DisplayName *string `json:"display_name"`
+	Phone       *string `json:"phone"`
+	// Remark 账号备注（仅后台可见）：岗位、负责范围等
+	Remark *string `json:"remark"`
+}
+
+// UpdateBuildingUser 楼栋管理员更新本公寓账号的姓名/电话/备注。
+//
+// 越权校验：目标用户必须挂在当前公寓名下（building_id 匹配），
+// 超级管理员没有 building_id，因此不在本接口的管辖范围内。
+// 与超管的 UpdateUser 分开：超管接口在 SuperAdminMiddleware 后面，
+// 楼栋管理员调不动；本接口才是楼栋管理员该走的路（创建管理员本来就有公寓版接口）。
+func (h *AuthHandler) UpdateBuildingUser(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	id := c.Param("id")
+	userID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+		return
+	}
+	var user models.User
+	if err := h.DB.Where("id = ? AND building_id = ?", userID, bid).First(&user).Error; err != nil {
+		logger.Log.Warn().Str("user_id", id).Uint("building_id", bid).Msg("更新账号失败: 用户不存在或不属于本公寓")
+		utils.Error(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+	var req UpdateBuildingUserReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Log.Warn().Msg("更新账号请求参数错误")
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	updates := map[string]interface{}{}
+	if req.DisplayName != nil {
+		updates["display_name"] = utils.ClipText(*req.DisplayName, 50)
+	}
+	if req.Phone != nil {
+		updates["phone"] = utils.ClipText(*req.Phone, 20)
+	}
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
+	}
+	if len(updates) == 0 {
+		utils.SuccessWithMsg(c, "更新成功", nil)
+		return
+	}
+	if err := h.DB.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("更新账号失败")
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	changed := make([]string, 0, len(updates))
+	for k := range updates {
 		changed = append(changed, k)
 	}
 	sort.Strings(changed)
@@ -461,6 +545,56 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	}
 	audit.Log(c, audit.ActionDelete, audit.ResourceUser, audit.ID(user.ID),
 		"删除用户 username="+user.Username+" role="+user.Role)
+	utils.SuccessWithMsg(c, "删除成功", nil)
+}
+
+// DeleteBuildingUser 楼栋管理员删除本公寓的普通管理员。
+//
+// 越权与安全约束：
+//   - 目标用户必须挂在当前公寓名下（building_id 匹配）；
+//   - 只允许删 role=admin 的普通管理员：楼栋管理员本人与超管都不在本接口管辖内，
+//     避免把房东自己的账号删掉导致没人能管这套房；
+//   - 不允许删除自己。
+func (h *AuthHandler) DeleteBuildingUser(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	id := c.Param("id")
+	userID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+		return
+	}
+	if operatorID := c.GetUint("user_id"); operatorID != 0 && uint(operatorID) == uint(userID) {
+		utils.Error(c, http.StatusBadRequest, "不能删除自己")
+		return
+	}
+	var user models.User
+	if err := h.DB.Where("id = ? AND building_id = ?", userID, bid).First(&user).Error; err != nil {
+		logger.Log.Warn().Str("user_id", id).Uint("building_id", bid).Msg("删除账号失败: 用户不存在或不属于本公寓")
+		utils.Error(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+	if user.Role != "admin" {
+		logger.Log.Warn().Str("user_id", id).Str("role", user.Role).Msg("删除账号失败: 角色不允许删除")
+		utils.Error(c, http.StatusForbidden, "只能删除普通管理员")
+		return
+	}
+	now := time.Now()
+	if err := h.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("token_not_before", &now).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("删除账号失败: 设置令牌失效时间出错")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	if err := h.AuthService.DeleteUser(user.ID); err != nil {
+		logger.Log.Error().Err(err).Uint("user_id", user.ID).Msg("删除账号失败")
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	audit.Log(c, audit.ActionDelete, audit.ResourceUser, audit.ID(user.ID),
+		"删除本公寓账号 username="+user.Username+" role="+user.Role)
 	utils.SuccessWithMsg(c, "删除成功", nil)
 }
 

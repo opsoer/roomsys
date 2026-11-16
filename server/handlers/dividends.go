@@ -103,6 +103,8 @@ func (h *DividendHandler) Calculate(c *gin.Context) {
 // SettleDividendReq 分红结算请求参数
 type SettleDividendReq struct {
 	Month string `json:"month" binding:"required"`
+	// Remark 结算备注（选填，仅后台可见）：「本月含大额维修」等异常说明，写入当月每条分红记录
+	Remark string `json:"remark"`
 }
 
 // Settle 执行分红结算，将计算结果持久化到数据库
@@ -163,6 +165,7 @@ func (h *DividendHandler) Settle(c *gin.Context) {
 			ShareholderID:  s.ID,
 			DividendAmount: amount,
 			SettledBy:      userID,
+			Remark:         utils.ClipRemark(req.Remark),
 		}
 		if err := tx.Create(&dividend).Error; err != nil {
 			tx.Rollback()
@@ -219,6 +222,8 @@ func (h *DividendHandler) GetShareholders(c *gin.Context) {
 type CreateShareholderReq struct {
 	Name       string  `json:"name" binding:"required"`
 	ShareRatio float64 `json:"share_ratio" binding:"required"`
+	// Remark 股东备注（选填，仅后台可见）：联系方式、代持说明等
+	Remark string `json:"remark"`
 }
 
 // CreateShareholder 创建新股东
@@ -241,8 +246,9 @@ func (h *DividendHandler) CreateShareholder(c *gin.Context) {
 	}
 	sh := models.Shareholder{
 		BuildingID: bid,
-		Name:       req.Name,
+		Name:       utils.ClipText(req.Name, 50),
 		ShareRatio: req.ShareRatio,
+		Remark:     utils.ClipRemark(req.Remark),
 	}
 	if err := h.DividendService.CreateShareholder(&sh); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("创建股东失败")
@@ -277,6 +283,8 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 	var req struct {
 		Name       string  `json:"name"`
 		ShareRatio float64 `json:"share_ratio"`
+		// Remark 股东备注（仅后台可见）：nil=不变，""=清空
+		Remark *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
@@ -289,10 +297,14 @@ func (h *DividendHandler) UpdateShareholder(c *gin.Context) {
 	}
 	updates := map[string]interface{}{}
 	if req.Name != "" {
-		updates["name"] = req.Name
+		updates["name"] = utils.ClipText(req.Name, 50)
 	}
 	if req.ShareRatio > 0 {
 		updates["share_ratio"] = req.ShareRatio
+	}
+	// 股东备注（仅后台可见）：nil=不变，""=清空
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
 	}
 	if err := h.DividendService.UpdateShareholder(uint(shareholderID), updates); err != nil {
 		logger.Log.Error().Err(err).Uint("building_id", bid).Msg("更新股东失败")

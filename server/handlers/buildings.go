@@ -66,9 +66,11 @@ type CreateBuildingReq struct {
 	BuildingNo   string  `json:"building_no"`
 	Description  string  `json:"description"`
 	Directions   string  `json:"directions"`
+	Remark       string  `json:"remark"`
 	Landlords    []struct {
-		Name  string `json:"name"`
-		Phone string `json:"phone"`
+		Name   string `json:"name"`
+		Phone  string `json:"phone"`
+		Remark string `json:"remark"`
 	} `json:"landlords"`
 }
 
@@ -86,9 +88,14 @@ type UpdateBuildingReq struct {
 	Description  string `json:"description"`
 	Directions   string `json:"directions"`
 	Status       string `json:"status"`
-	Landlords    []struct {
+	// Remark 公寓内部备注（仅后台可见）；指针语义：nil=不变，""=清空
+	Remark    *string `json:"remark"`
+	Landlords []struct {
 		Name  string `json:"name"`
 		Phone string `json:"phone"`
+		// Remark 房东内部备注；指针语义：nil=保留原有备注（调用方不管理备注时不会误清空），
+		// ""=清空，非空=覆盖。
+		Remark *string `json:"remark"`
 	} `json:"landlords"`
 }
 
@@ -131,6 +138,7 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 		BuildingNo:   req.BuildingNo,
 		Description:  req.Description,
 		Directions:   req.Directions,
+		Remark:       utils.ClipRemark(req.Remark),
 		Status:       "active",
 		CreatedBy:    uid,
 	}
@@ -182,8 +190,9 @@ func (h *BuildingHandler) Create(c *gin.Context) {
 	for _, l := range req.Landlords {
 		ll := models.BuildingLandlord{
 			BuildingID: building.ID,
-			Name:       l.Name,
-			Phone:      l.Phone,
+			Name:       utils.ClipText(l.Name, 50),
+			Phone:      utils.ClipText(l.Phone, 20),
+			Remark:     utils.ClipRemark(l.Remark),
 		}
 		if err := h.BuildingService.CreateLandlord(&ll); err != nil {
 			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("创建房东信息失败")
@@ -255,6 +264,10 @@ func (h *BuildingHandler) buildBuildingUpdates(req *UpdateBuildingReq, building 
 	if req.Directions != "" {
 		updates["directions"] = req.Directions
 	}
+	// 内部备注（仅后台可见）：指针语义，nil=不变、""=清空
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
+	}
 	if req.Status != "" {
 		updates["status"] = req.Status
 	}
@@ -323,7 +336,7 @@ func (h *BuildingHandler) Update(c *gin.Context) {
 	if len(req.Landlords) > 0 {
 		landlords := make([]services.LandlordInput, 0, len(req.Landlords))
 		for _, l := range req.Landlords {
-			landlords = append(landlords, services.LandlordInput{Name: l.Name, Phone: l.Phone})
+			landlords = append(landlords, services.LandlordInput{Name: l.Name, Phone: l.Phone, Remark: l.Remark})
 		}
 		if err := h.BuildingService.ReplaceLandlords(building.ID, landlords); err != nil {
 			logger.Log.Error().Err(err).Uint("building_id", building.ID).Msg("更新房东信息失败")
@@ -477,26 +490,27 @@ func (h *BuildingHandler) ListPublic(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	maskLandlordPhones(buildings)
-	hideDeposit(buildings)
+	sanitizePublicBuildings(buildings)
 	go utils.RecordPageView(h.DB, "building_list", 0, 0, utils.GetRealIP(c))
 	utils.Success(c, gin.H{"buildings": buildings, "total": total, "page": page, "size": size})
 }
 
-// maskLandlordPhones 对公寓数据中的房东号码统一打码。
-// 公开端永远不返回完整号码，完整号码的唯一出口是 RevealPhone 接口。
-func maskLandlordPhones(buildings []services.BuildingWithStats) {
-	for i := range buildings {
-		for j := range buildings[i].Landlords {
-			buildings[i].Landlords[j].Phone = utils.MaskPhone(buildings[i].Landlords[j].Phone)
-		}
+// sanitizePublicBuilding 公开端统一清洗（唯一出口，务必只增不减）：
+//   - 押金隐藏：押金是平台与房东之间的履约保障，与租客无关；
+//   - 房东号码打码：完整号码的唯一出口是 RevealPhone 接口；
+//   - 内部备注清空：公寓备注与房东备注都是后台信息，绝不能出现在公开页。
+func sanitizePublicBuilding(b *services.BuildingWithStats) {
+	b.Deposit = 0
+	b.Remark = ""
+	for j := range b.Landlords {
+		b.Landlords[j].Phone = utils.MaskPhone(b.Landlords[j].Phone)
+		b.Landlords[j].Remark = ""
 	}
 }
 
-// hideDeposit 公开端不返回押金：押金是平台与房东之间的履约保障，与租客无关
-func hideDeposit(buildings []services.BuildingWithStats) {
+func sanitizePublicBuildings(buildings []services.BuildingWithStats) {
 	for i := range buildings {
-		buildings[i].Deposit = 0
+		sanitizePublicBuilding(&buildings[i])
 	}
 }
 
@@ -586,8 +600,7 @@ func (h *BuildingHandler) GetPublic(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "公寓不存在")
 		return
 	}
-	maskLandlordPhones([]services.BuildingWithStats{*building})
-	building.Deposit = 0
+	sanitizePublicBuilding(building)
 	go utils.RecordPageView(h.DB, "building_detail", uint(buildingID), uint(buildingID), utils.GetRealIP(c))
 	utils.Success(c, gin.H{"building": building})
 }
@@ -829,6 +842,7 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 		Description string  `json:"description"`
 		Directions  string  `json:"directions"`
 		CoverImage  *string `json:"cover_image"`
+		Remark      *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
@@ -848,6 +862,10 @@ func (h *BuildingHandler) UpdateMyBuilding(c *gin.Context) {
 	// 历史实现用 string + != "" 判断，导致前端「删除封面」按钮点了没反应。
 	if req.CoverImage != nil {
 		updates["cover_image"] = *req.CoverImage
+	}
+	// 内部备注（仅后台可见）：nil=不变，""=清空
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
 	}
 	// 旧封面在更新前先取出，用于更新后回收旧文件
 	var oldCover string
@@ -874,6 +892,8 @@ func (h *BuildingHandler) Renew(c *gin.Context) {
 	}
 	var req struct {
 		ExpiredAt string `json:"expired_at"`
+		// Remark 续约备注（选填，仅后台可见）
+		Remark string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "参数错误")
@@ -885,7 +905,7 @@ func (h *BuildingHandler) Renew(c *gin.Context) {
 			operator = fmt.Sprintf("uid:%d", uid)
 		}
 	}
-	if err := h.BuildingService.Renew(uint(buildingID), req.ExpiredAt, operator); err != nil {
+	if err := h.BuildingService.Renew(uint(buildingID), req.ExpiredAt, operator, req.Remark); err != nil {
 		utils.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}

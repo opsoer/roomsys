@@ -179,6 +179,7 @@ const actionTagTypeMap = { create: 'success', delete: 'danger', update: 'warning
 const resourceMap = {
   building: '公寓',
   landlord: '房东',
+  tenant: '租客',
   room: '房间',
   media: '房源图片',
   contract: '租约',

@@ -23,6 +23,11 @@ type RentControlItem struct {
 	RentPrice     *float64 `json:"rent_price"`
 	ManagementFee *float64 `json:"management_fee"`
 	Remark        string   `json:"remark"`
+	// RoomRemark 房间内部备注（仅后台可见）：钥匙存放、门禁卡号等。
+	RoomRemark string `json:"room_remark,omitempty"`
+	// ContractRemark 在住合同备注（仅后台可见）：租客车牌号、特殊约定等。
+	// 空房没有在住合同，该字段为空。
+	ContractRemark string `json:"contract_remark,omitempty"`
 	// 以下两项仅用于前端生成「收费标准」默认文案，不展示在表格列中
 	ElectricityUnitPrice *float64 `json:"electricity_unit_price,omitempty"`
 	WaterUnitPrice       *float64 `json:"water_unit_price,omitempty"`
@@ -75,10 +80,12 @@ func (s *RoomService) RentControlData(buildingID uint) (*RentControlData, error)
 		return nil, err
 	}
 	endDateMap := make(map[uint]string, len(contracts))
+	contractRemarkMap := make(map[uint]string, len(contracts))
 	contractRoomIDs := make([]uint, 0, len(contracts))
 	for _, ct := range contracts {
 		contractRoomIDs = append(contractRoomIDs, ct.RoomID)
 		endDateMap[ct.RoomID] = ct.EndDate
+		contractRemarkMap[ct.RoomID] = ct.Remark
 	}
 
 	// 仅取状态仍为 rented 的房间，避免退租/其他异常状态下合同残留导致误导出
@@ -98,6 +105,7 @@ func (s *RoomService) RentControlData(buildingID uint) (*RentControlData, error)
 			Layout:               r.Layout,
 			RentPrice:            r.RentPrice,
 			ManagementFee:        r.ManagementFee,
+			RoomRemark:           r.Remark,
 			ElectricityUnitPrice: r.ElectricityUnitPrice,
 			WaterUnitPrice:       r.WaterUnitPrice,
 		})
@@ -112,6 +120,8 @@ func (s *RoomService) RentControlData(buildingID uint) (*RentControlData, error)
 			RentPrice:            r.RentPrice,
 			ManagementFee:        r.ManagementFee,
 			Remark:               "到期时间：" + endDateMap[r.ID],
+			RoomRemark:           r.Remark,
+			ContractRemark:       contractRemarkMap[r.ID],
 			ElectricityUnitPrice: r.ElectricityUnitPrice,
 			WaterUnitPrice:       r.WaterUnitPrice,
 		})

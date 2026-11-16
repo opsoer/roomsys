@@ -182,6 +182,10 @@
         <el-form-item label="描述" prop="description">
           <el-input v-model="addForm.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
+        <el-form-item label="内部备注" prop="remark">
+          <el-input v-model="addForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：钥匙存放、门禁卡号、设备使用说明…（仅后台可见，租客看不到）" />
+        </el-form-item>
         <el-form-item label="复用媒体">
           <el-checkbox v-if="addMode === 'copy'" v-model="copyCreateCopyMedia">
             复用房间 {{ copySourceRoomNumber }} 的照片和视频
@@ -432,6 +436,11 @@
             <el-link v-if="row.end_date && importRows.length > 1" class="apply-all-link" type="primary" :underline="false" @click="applyDateToAll(row, 'end_date')">应用到全部</el-link>
           </template>
         </el-table-column>
+        <el-table-column label="合同备注" min-width="160">
+          <template #default="{ row }">
+            <el-input v-model="row.remark" maxlength="500" placeholder="选填，仅后台可见" />
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="60" fixed="right">
           <template #default="{ $index }">
             <el-button link type="danger" @click="importRows.splice($index, 1)">删除</el-button>
@@ -679,6 +688,8 @@ function blankImportRow(roomNumber, base) {
     deposit: 0,
     start_date: '',
     end_date: '',
+    // 每行一个合同备注（仅后台可见）：接管存量房源时信息最杂
+    remark: '',
     _deposit_edited: false,
   }
   row.deposit = rowDefaultDeposit(row, base)
@@ -733,7 +744,7 @@ function applyDateToAll(row, field) {
 }
 
 function blankForm() {
-  return { room_number: '', floor: '', layout: '', description: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
+  return { room_number: '', floor: '', layout: '', description: '', remark: '', rent_price: null, deposit_months: null, management_fee: null, electricity_unit_price: null, water_unit_price: null }
 }
 
 // 解析批量房间号：换行/逗号/顿号/分号/空格均可分隔，自动去重
@@ -1016,6 +1027,7 @@ async function handleImportRented() {
       start_date: row.start_date,
       end_date: row.end_date,
       record_deposit_bill: importRecordDepositBill.value,
+      remark: row.remark || '',
     }))
     const res = await buildingImportRentedRooms({ rooms }, { silent: true })
     const data = res?.data || {}

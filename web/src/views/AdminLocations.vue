@@ -28,7 +28,9 @@
               </div>
               <div class="loc-row-sub">
                 <el-button size="small" text type="primary" @click.stop="openRename(1, { displayName: d.label })">改名</el-button>
+                <el-button size="small" text @click.stop="openRemark(1, d.label)">备注</el-button>
               </div>
+              <div v-if="customEntry(1, d.label)?.remark" class="loc-remark">{{ customEntry(1, d.label).remark }}</div>
             </div>
             <span v-else class="loc-name">
               <span class="loc-text">{{ d.label }}</span>
@@ -57,7 +59,9 @@
               </div>
               <div class="loc-row-sub">
                 <el-button size="small" text type="primary" @click.stop="openRename(2, { displayName: s.label })">改名</el-button>
+                <el-button size="small" text @click.stop="openRemark(2, s.label)">备注</el-button>
               </div>
+              <div v-if="customEntry(2, s.label)?.remark" class="loc-remark">{{ customEntry(2, s.label).remark }}</div>
             </div>
             <span v-else class="loc-name">
               <span class="loc-text">{{ s.label }}</span>
@@ -83,7 +87,9 @@
               </div>
               <div class="loc-row-sub">
                 <el-button size="small" text type="primary" @click.stop="openRename(3, { displayName: v })">改名</el-button>
+                <el-button size="small" text @click.stop="openRemark(3, v)">备注</el-button>
               </div>
+              <div v-if="customEntry(3, v)?.remark" class="loc-remark">{{ customEntry(3, v).remark }}</div>
             </div>
             <span v-else class="loc-name">
               <span class="loc-text">{{ v }}</span>
@@ -102,7 +108,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLocationStore } from '../stores/locations'
-import { adminAddLocationCustom, adminDeleteLocationCustom, adminRenameLocation } from '../api'
+import { adminAddLocationCustom, adminDeleteLocationCustom, adminRenameLocation, adminUpdateLocationRemark } from '../api'
 
 const locationStore = useLocationStore()
 
@@ -172,6 +178,21 @@ async function openAdd(level) {
   if (level === 1) { payload.district = payload.name }
   await adminAddLocationCustom(payload)
   ElMessage.success('已新增')
+  await reload()
+}
+
+// 自定义条目备注（仅后台可见）：「该村含X小区」等
+async function openRemark(level, displayName) {
+  const entry = customEntry(level, displayName)
+  if (!entry) return
+  const { value } = await ElMessageBox.prompt(`「${displayName}」的位置备注（仅后台可见）：`, '编辑备注', {
+    inputValue: entry.remark || '',
+    inputType: 'textarea',
+    inputValidator: (v) => ((v || '').length > 500 ? '最多 500 个字符' : true),
+  }).catch(() => ({ value: undefined }))
+  if (value === undefined) return // 用户取消
+  await adminUpdateLocationRemark(entry.id, { remark: value || '' })
+  ElMessage.success('备注已保存')
   await reload()
 }
 
@@ -280,6 +301,8 @@ async function removeCustom(level, name) {
 .loc-row-top .el-tag { flex-shrink: 0; }
 .loc-del { flex-shrink: 0; }
 .loc-row-sub { display: flex; justify-content: flex-end; } /* 改名右对齐，与删除上下对齐 */
+/* 位置备注：仅后台可见，小字换行展示 */
+.loc-remark { font-size: 12px; color: #8a6d3b; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
 .loc-rename { margin-left: auto; flex-shrink: 0; } /* 改名推到名字行最右 */
 .loc-empty { padding: 24px 0; text-align: center; color: #999; font-size: 13px; }
 </style>

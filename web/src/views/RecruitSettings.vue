@@ -14,6 +14,9 @@
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="phone" label="联系电话" width="140" />
         <el-table-column prop="address" label="公寓地址" min-width="200" />
+        <el-table-column label="补充说明" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.remark || '—' }}</template>
+        </el-table-column>
         <el-table-column prop="created_at" label="提交时间" width="180">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
@@ -54,6 +57,10 @@
           <div class="card-field card-addr">
             <span class="field-icon">📍</span>
             <span class="field-value">{{ item.address }}</span>
+          </div>
+          <div v-if="item.remark" class="card-field card-addr">
+            <span class="field-icon">📝</span>
+            <span class="field-value">{{ item.remark }}</span>
           </div>
           <div class="card-foot">
             <span class="card-time">🕐 {{ formatTime(item.created_at) }}</span>

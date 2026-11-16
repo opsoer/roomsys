@@ -331,7 +331,7 @@ func TestBill_ExportCSV(t *testing.T) {
 	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(r.Raw), "\ufeff")))
 	rows, err := reader.ReadAll()
 	require.NoError(t, err)
-	require.Equal(t, []string{"账单编号", "日期", "类型", "子类型", "金额", "关联房间", "备注"}, rows[0])
+	require.Equal(t, []string{"账单编号", "日期", "类型", "子类型", "金额", "关联房间", "备注", "内部备注"}, rows[0])
 	require.Greater(t, len(rows), 1)
 
 	// 筛选上月：2 条数据 + 表头

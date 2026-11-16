@@ -24,7 +24,14 @@
             <el-tag :type="typeTag(row.type)" size="small">{{ typeText(row.type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="内容" min-width="220" />
+        <el-table-column prop="title" label="内容" min-width="220">
+          <template #default="{ row }">
+            <div>{{ row.title }}</div>
+            <div v-if="row.result_remark" style="font-size: 12px; color: #606266; margin-top: 4px">
+              处理备注：{{ row.result_remark }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="关联公寓" min-width="200">
           <template #default="{ row }">
             <template v-if="row.building">
@@ -61,7 +68,7 @@
             <el-button v-if="row.status === 'pending' && isExpiryTask(row)" size="small" type="warning" @click="openRenew(row)">
               续约
             </el-button>
-            <el-button v-else-if="row.status === 'pending'" size="small" type="primary" @click="handleProcess(row.id)">
+            <el-button v-else-if="row.status === 'pending'" size="small" type="primary" @click="openProcess(row)">
               处理
             </el-button>
             <span v-else style="color:#999;font-size:13px;">已完成</span>
@@ -91,6 +98,10 @@
             </el-tag>
           </div>
           <div class="card-title">{{ item.title }}</div>
+          <div v-if="item.result_remark" class="card-field">
+            <span class="field-icon">📝</span>
+            <span class="field-value">处理备注：{{ item.result_remark }}</span>
+          </div>
           <div v-if="item.building" class="card-field">
             <span class="field-icon">🏢</span>
             <span class="field-value">{{ item.building.name }}</span>
@@ -112,7 +123,7 @@
             <el-button v-if="item.status === 'pending' && isExpiryTask(item)" size="small" type="warning" round @click="openRenew(item)">
               续约
             </el-button>
-            <el-button v-else-if="item.status === 'pending'" size="small" type="primary" round @click="handleProcess(item.id)">
+            <el-button v-else-if="item.status === 'pending'" size="small" type="primary" round @click="openProcess(item)">
               处理
             </el-button>
             <el-tag v-else type="success" size="small" effect="plain" round>已完成</el-tag>
@@ -140,6 +151,10 @@
             <el-date-picker v-model="renewForm.expired_at" type="date" value-format="YYYY-MM-DD"
               :disabled-date="disablePastDate" placeholder="选择新的到期日期" style="width: 100%" />
           </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="renewForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+              placeholder="选填：本次续约的补充说明（仅后台可见）" />
+          </el-form-item>
         </el-form>
         <div style="font-size: 12px; color: #999">
           续约后公寓立即恢复展示；新到期日超过10天，相关待办将自动变为已完成
@@ -148,6 +163,23 @@
       <template #footer>
         <el-button @click="handleDismissRenew">仅标记已处理</el-button>
         <el-button type="primary" :loading="renewSubmitting" @click="handleRenewSubmit">确认续约</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 处理待办：可补一句处理备注（仅后台可见） -->
+    <el-dialog v-model="processVisible" title="处理待办" width="420px" align-center>
+      <el-form label-width="80px">
+        <el-form-item label="待办">
+          <span>{{ processTask?.title || '-' }}</span>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="processForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit
+            placeholder="选填：处理情况、跟进事项等（仅后台可见）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="processVisible = false">取消</el-button>
+        <el-button type="primary" :loading="processSubmitting" @click="handleProcessSubmit">确认处理</el-button>
       </template>
     </el-dialog>
   </div>
@@ -170,8 +202,14 @@ const total = ref(0)
 const renewVisible = ref(false)
 const renewTask = ref(null)
 const renewFormRef = ref(null)
-const renewForm = ref({ expired_at: '' })
+const renewForm = ref({ expired_at: '', remark: '' })
 const renewSubmitting = ref(false)
+
+// 处理待办弹窗（可填处理备注）
+const processVisible = ref(false)
+const processTask = ref(null)
+const processForm = ref({ remark: '' })
+const processSubmitting = ref(false)
 
 function typeText(type) {
   return { recruit: '招商申请', building_expiring: '公寓即将到期', building_expired: '公寓已到期' }[type] || type
@@ -202,7 +240,7 @@ function disablePastDate(d) {
 
 function openRenew(task) {
   renewTask.value = task
-  renewForm.value = { expired_at: task.due_date || '' }
+  renewForm.value = { expired_at: task.due_date || '', remark: '' }
   renewVisible.value = true
 }
 
@@ -235,9 +273,9 @@ function handlePage(p) {
   fetchTasks()
 }
 
-async function handleProcess(id) {
+async function handleProcess(id, remark = '') {
   try {
-    await adminProcessPlatformTask(id)
+    await adminProcessPlatformTask(id, { remark })
     ElMessage.success('已处理')
     window.dispatchEvent(new CustomEvent('tasks-changed'))
     await fetchTasks()
@@ -246,12 +284,35 @@ async function handleProcess(id) {
   }
 }
 
+// 处理待办时可补一句备注（仅后台可见，随待办一起存档）
+function openProcess(row) {
+  processTask.value = row
+  processForm.value = { remark: '' }
+  processVisible.value = true
+}
+
+async function handleProcessSubmit() {
+  if (!processTask.value) return
+  processSubmitting.value = true
+  try {
+    await adminProcessPlatformTask(processTask.value.id, { remark: processForm.value.remark })
+    ElMessage.success('已处理')
+    processVisible.value = false
+    window.dispatchEvent(new CustomEvent('tasks-changed'))
+    await fetchTasks()
+  } catch {
+    ElMessage.error('操作失败')
+  } finally {
+    processSubmitting.value = false
+  }
+}
+
 async function handleRenewSubmit() {
   const valid = await renewFormRef.value.validate().catch(() => false)
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   renewSubmitting.value = true
   try {
-    await adminRenewBuilding(renewTask.value.building_id, { expired_at: renewForm.value.expired_at })
+    await adminRenewBuilding(renewTask.value.building_id, { expired_at: renewForm.value.expired_at, remark: renewForm.value.remark })
     ElMessage.success('续约成功，公寓已恢复展示')
     renewVisible.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))

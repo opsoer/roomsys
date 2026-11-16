@@ -50,6 +50,7 @@ const (
 	ResourceUser        = "user"
 	ResourceBuilding    = "building"
 	ResourceLandlord    = "landlord"
+	ResourceTenant      = "tenant"
 	ResourceRoom        = "room"
 	ResourceMedia       = "media"
 	ResourceContract    = "contract"

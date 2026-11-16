@@ -17,6 +17,14 @@
         </div>
         <el-icon class="ev-remove" @click="removeAt(i)"><Close /></el-icon>
         <div class="ev-name" :title="ev.file_name">{{ ev.file_name }}</div>
+        <el-input
+          :model-value="ev.remark"
+          size="small"
+          maxlength="500"
+          placeholder="说明（选填，仅后台可见）"
+          class="ev-remark"
+          @update:model-value="v => setRemark(i, v)"
+        />
       </div>
 
       <div v-if="modelValue.length < max" class="ev-add" :class="{ uploading }" @click="pick">
@@ -87,6 +95,12 @@ function removeAt(i) {
   emit('update:modelValue', next)
 }
 
+// 每张凭证的说明（仅后台可见）：对账时能直接看出这笔钱是哪张图
+function setRemark(i, v) {
+  const next = props.modelValue.map((item, idx) => (idx === i ? { ...item, remark: v } : item))
+  emit('update:modelValue', next)
+}
+
 async function onPick(e) {
   const files = Array.from(e.target.files || [])
   e.target.value = ''
@@ -114,6 +128,7 @@ async function onPick(e) {
         file_key: res.data.file_key,
         file_name: res.data.file_name || f.name,
         file_size: res.data.file_size ?? f.size,
+        remark: '',
       }])
     } catch {
       // 失败提示由 axios 拦截器统一弹出
@@ -132,8 +147,14 @@ async function onPick(e) {
 }
 .ev-item {
   position: relative;
-  width: 72px;
+  width: 132px;
 }
+/* 凭证说明输入（仅后台可见） */
+.ev-remark {
+  margin-top: 4px;
+  width: 100%;
+}
+.ev-remark :deep(.el-input__inner) { font-size: 12px; }
 .ev-thumb {
   width: 72px;
   height: 72px;

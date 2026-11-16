@@ -41,6 +41,9 @@
                 {{ task.description }}
                 <span v-if="task.room" style="margin-left: 4px">（房间 {{ task.room.room_number }}）</span>
               </div>
+              <div v-if="task.result_remark" style="font-size: 13px; color: #606266; margin-top: 4px">
+                处理备注：{{ task.result_remark }}
+              </div>
               <div style="font-size: 12px; color: #bbb; margin-top: 4px">创建于 {{ task.created_at }}</div>
             </div>
             <div style="display: flex; gap: 8px; flex-shrink: 0">
@@ -86,6 +89,10 @@
           <el-form-item label="凭证截图">
             <EvidenceUploader v-model="processEvidences" />
           </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="processForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+              placeholder="选填：扣款原因等，仅后台可见，会拼进押金退还账单描述" />
+          </el-form-item>
         </el-form>
         <div v-if="processForm.refunded_deposit > 0" style="background: #fef0f0; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #f56c6c">
           将自动创建 <strong>{{ Number(processForm.refunded_deposit).toFixed(2) }}</strong> 元的押金支出账单
@@ -129,14 +136,14 @@ const showProcessDialog = ref(false)
 const processingTask = ref(null)
 const processSubmitting = ref(false)
 const processFormRef = ref(null)
-const processForm = ref({ refunded_deposit: 0 })
+const processForm = ref({ refunded_deposit: 0, remark: '' })
 const processEvidences = ref([])
 const originalDeposit = ref(0)
 
 function openProcessDialog(task) {
   processingTask.value = task
   originalDeposit.value = task.deposit || 0
-  processForm.value = { refunded_deposit: originalDeposit.value }
+  processForm.value = { refunded_deposit: originalDeposit.value, remark: '' }
   processEvidences.value = []
   showProcessDialog.value = true
 }
@@ -146,7 +153,7 @@ async function handleProcessSubmit() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   processSubmitting.value = true
   try {
-    await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit, evidences: processEvidences.value })
+    await buildingProcessTask(processingTask.value.id, { refunded_deposit: processForm.value.refunded_deposit, remark: processForm.value.remark, evidences: processEvidences.value })
     ElMessage.success('退租处理完成')
     showProcessDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))

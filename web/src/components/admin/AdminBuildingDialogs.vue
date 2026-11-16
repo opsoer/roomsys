@@ -64,6 +64,10 @@
         <el-form-item label="详细地址" prop="directions" required :rules="[{ required: true, message: '请填写详细地址（路引），每行一条', whitespace: true }]">
           <el-input v-model="activeForm.directions" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="路引每行一条，如：地铁3号线横岗站C口，步行300米" />
         </el-form-item>
+        <el-form-item label="内部备注" prop="remark">
+          <el-input v-model="activeForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：押金走账方式、房东收款习惯等（仅后台可见，租客看不到）" />
+        </el-form-item>
         <el-divider>{{ isEdit ? '房东信息' : '房东信息（必填）' }}</el-divider>
         <el-form-item label="房东姓名" prop="landlord_name" :rules="rulesFor('landlord_name')">
           <el-input v-model="activeForm.landlord_name" placeholder="房东姓名" />
@@ -73,6 +77,11 @@
           <el-button v-if="activeForm.landlord_phones.length > 1" type="danger" :icon="Delete" circle @click="activeForm.landlord_phones.splice(i,1)" />
         </div>
         <el-button size="small" style="margin-left:100px" @click="activeForm.landlord_phones.push('')">+ 添加电话</el-button>
+        <el-form-item label="房东备注" style="margin-top:8px">
+          <el-input v-model="activeForm.landlord_remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            @input="landlordRemarkDirty = true"
+            placeholder="选填：收款账户、是否代持、只收现金…（仅后台可见；不改动则保留各房东原有备注）" />
+        </el-form-item>
         <template v-if="!isEdit">
           <el-divider />
           <el-form-item label="管理员账号" prop="admin_username" :rules="rulesFor('admin_username')">
@@ -120,6 +129,10 @@
           <el-date-picker v-model="renewForm.expired_at" type="date" placeholder="选择新的到期日期"
             :disabled-date="disablePastDate" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="renewForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：本次续约的补充说明（仅后台可见）" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showRenew = false">取消</el-button>
@@ -150,6 +163,9 @@
             <template #default="{ row }">{{ row.to_date || '—' }}</template>
           </el-table-column>
           <el-table-column prop="note" label="备注" min-width="150" />
+          <el-table-column label="续约说明" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '—' }}</template>
+          </el-table-column>
           <el-table-column label="操作人" width="100">
             <template #default="{ row }">{{ row.operator || '系统' }}</template>
           </el-table-column>
@@ -174,6 +190,9 @@
           </div>
           <div class="history-card-row">
             <span class="hc-label">备注</span><span class="hc-value">{{ r.note || '—' }}</span>
+          </div>
+          <div v-if="r.remark" class="history-card-row">
+            <span class="hc-label">续约说明</span><span class="hc-value">{{ r.remark }}</span>
           </div>
           <div class="history-card-row">
             <span class="hc-label">操作人</span><span class="hc-value">{{ r.operator || '系统' }}</span>
@@ -284,7 +303,7 @@ const renewBuildingName = ref('')
 const renewBuildingId = ref(0)
 const renewOldExpiredAt = ref('')
 const renewOldStatus = ref('')
-const renewForm = ref({ expired_at: '' })
+const renewForm = ref({ expired_at: '', remark: '' })
 const renewSubmitting = ref(false)
 const showHistory = ref(false)
 const historyBuildingName = ref('')
@@ -306,11 +325,11 @@ const adminSubmitting = ref(false)
 const formRef = ref(null)
 
 const createForm = ref({
-  name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '',
-  landlord_name: '', landlord_phones: [''],
+  name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', remark: '',
+  landlord_name: '', landlord_phones: [''], landlord_remark: '',
   admin_username: '', admin_password: '', admin_password_confirm: '',
 })
-const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', landlord_name: '', landlord_phones: [''], status: 'active' })
+const editForm = ref({ name: '', package: 'basic', contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', remark: '', landlord_name: '', landlord_phones: [''], landlord_remark: '', status: 'active' })
 const adminForm = ref({ username: '', password: '', confirmPassword: '' })
 
 // 建/编合一弹窗的当前绑定对象：创建用 createForm、编辑用 editForm（两者提交接口不同，保持独立）
@@ -336,12 +355,23 @@ function onPhoneInput() {
   }
 }
 
-function buildLandlords(name, phones) {
-  return phones.filter(p => p.trim()).map(p => ({ name, phone: p.trim() }))
+// buildLandlords 组装房东列表。
+// includeRemark=false 时不带 remark 字段：后端会保留每条房东行原有的备注，
+// 避免「改一次公寓就把别的房东备注冲掉」。
+function buildLandlords(name, phones, remark, includeRemark = true) {
+  return phones.filter(p => p.trim()).map(p => ({
+    name,
+    phone: p.trim(),
+    ...(includeRemark ? { remark: remark || '' } : {}),
+  }))
 }
 
+// 房东备注是否被用户改动过：改过才下发 remark，没改就让后端保留原值
+const landlordRemarkDirty = ref(false)
+
 function openCreate() {
-  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', landlord_name: '', landlord_phones: [''], admin_username: '', admin_password: '', admin_password_confirm: '' }
+  createForm.value = { name: '', package: '', deposit: undefined, contract_date: '', expired_at: '', district: '', street: '', village: '', building_no: '', description: '', directions: '', remark: '', landlord_name: '', landlord_phones: [''], landlord_remark: '', admin_username: '', admin_password: '', admin_password_confirm: '' }
+  landlordRemarkDirty.value = true
   isEdit.value = false
   showForm.value = true
   clearFormValidate()
@@ -356,10 +386,14 @@ function openEdit(row) {
     expired_at: row.expired_at || '',
     district: row.district, street: row.street,
     village: row.village, building_no: row.building_no, description: row.description, directions: row.directions || '',
+    remark: row.remark || '',
     status: row.status,
     landlord_name: name,
     landlord_phones: phones.length > 0 ? phones : [''],
+    landlord_remark: landlords.length > 0 ? (landlords[0].remark || '') : '',
   }
+  // 编辑时不主动下发备注：用户没动这个输入框就保留各房东行原有的备注
+  landlordRemarkDirty.value = false
   isEdit.value = true
   showForm.value = true
   clearFormValidate()
@@ -524,6 +558,7 @@ function openRenew(row) {
   renewOldStatus.value = row.status === 'hidden' ? '不可见' : row.status === 'expired' ? '已到期' : '正常'
   renewForm.value = {
     expired_at: dayjs().add(1, 'year').format('YYYY-MM-DD'),
+    remark: '',
   }
   showRenew.value = true
 }
@@ -542,9 +577,10 @@ async function handleCreate() {
   submitting.value = true
   try {
     const data = { ...createForm.value }
-    data.landlords = buildLandlords(data.landlord_name, data.landlord_phones)
+    data.landlords = buildLandlords(data.landlord_name, data.landlord_phones, data.landlord_remark, true)
     delete data.landlord_name
     delete data.landlord_phones
+    delete data.landlord_remark
     delete data.admin_username
     delete data.admin_password
     const createRes = await adminCreateBuilding(data)
@@ -595,10 +631,11 @@ async function handleEdit() {
   submitting.value = true
   try {
     const data = { ...editForm.value }
-    data.landlords = buildLandlords(data.landlord_name, data.landlord_phones)
+    data.landlords = buildLandlords(data.landlord_name, data.landlord_phones, data.landlord_remark, landlordRemarkDirty.value)
     delete data.id
     delete data.landlord_name
     delete data.landlord_phones
+    delete data.landlord_remark
     await adminUpdateBuilding(editForm.value.id, data)
     ElMessage.success('更新成功')
     showForm.value = false
@@ -629,7 +666,7 @@ async function handleRenew() {
   }
   renewSubmitting.value = true
   try {
-    await adminRenewBuilding(renewBuildingId.value, { expired_at: renewForm.value.expired_at })
+    await adminRenewBuilding(renewBuildingId.value, { expired_at: renewForm.value.expired_at, remark: renewForm.value.remark })
     ElMessage.success('续约成功，公寓已恢复展示')
     showRenew.value = false
     emit('save-success')

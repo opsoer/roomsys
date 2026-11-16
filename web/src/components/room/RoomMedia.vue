@@ -19,6 +19,8 @@
             @click.stop="$emit('delete-media', img.id)">
             <el-icon><Close /></el-icon>
           </el-button>
+          <el-button v-if="isAdmin" size="small" class="caption-btn" @click.stop="openRemark(img)">备注</el-button>
+          <div v-if="isAdmin && img.remark" class="media-caption">{{ img.remark }}</div>
         </div>
       </div>
     </div>
@@ -39,6 +41,8 @@
             @click.stop="$emit('delete-media', v.id)">
             <el-icon><Close /></el-icon>
           </el-button>
+          <el-button v-if="isAdmin" size="small" class="caption-btn" @click.stop="openRemark(v)">备注</el-button>
+          <div v-if="isAdmin && v.remark" class="media-caption media-caption-video">{{ v.remark }}</div>
         </div>
       </div>
     </div>
@@ -47,20 +51,55 @@
     <div v-if="!room.description && galleryImages.length === 0 && videos.length === 0" class="detail-card empty-section">
       <el-empty description="暂无房间介绍" :image-size="80" />
     </div>
+
+    <!-- 媒体说明（仅后台可见） -->
+    <el-dialog v-model="remarkVisible" title="编辑图片/视频说明" width="420px" align-center>
+      <el-input v-model="remarkForm.text" type="textarea" :rows="3" maxlength="500" show-word-limit
+        placeholder="选填：这张图拍的是哪里、有什么特点（仅后台可见，租客看不到）" />
+      <template #footer>
+        <el-button @click="remarkVisible = false">取消</el-button>
+        <el-button type="primary" :loading="remarkSaving" @click="saveRemark">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { mediaUrl } from '../../utils/format'
+import { buildingUpdateMediaRemark } from '../../api'
 
-defineProps({
+const props = defineProps({
   room: { type: Object, required: true },
   galleryImages: { type: Array, default: () => [] },
   videos: { type: Array, default: () => [] },
   isAdmin: { type: Boolean, default: false },
 })
 
-defineEmits(['fullscreen', 'delete-media'])
+const emit = defineEmits(['fullscreen', 'delete-media', 'refresh'])
+
+// 媒体说明（仅后台可见）：模型层是 json:"-"，公开接口根本拿不到这个字段
+const remarkVisible = ref(false)
+const remarkSaving = ref(false)
+const remarkForm = ref({ id: 0, text: '' })
+
+function openRemark(media) {
+  remarkForm.value = { id: media.id, text: media.remark || '' }
+  remarkVisible.value = true
+}
+
+async function saveRemark() {
+  remarkSaving.value = true
+  try {
+    await buildingUpdateMediaRemark(props.room.id, remarkForm.value.id, { remark: remarkForm.value.text })
+    ElMessage.success('说明已保存')
+    remarkVisible.value = false
+    emit('refresh')
+  } catch { /* handled by interceptor */ } finally {
+    remarkSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -128,6 +167,37 @@ defineEmits(['fullscreen', 'delete-media'])
 }
 .gallery-item.admin-mode:hover .delete-btn,
 .video-item.admin-mode:hover .delete-btn { opacity: 1; }
+
+/* 媒体说明：后台可见的角标与文字 */
+.gallery-item .caption-btn,
+.video-item .caption-btn {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+.gallery-item.admin-mode:hover .caption-btn,
+.video-item.admin-mode:hover .caption-btn { opacity: 1; }
+.media-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  z-index: 2;
+}
+.media-caption-video { position: static; background: #303133; }
 
 .video-list {
   display: grid;

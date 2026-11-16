@@ -2,6 +2,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -80,6 +82,15 @@ func (h *PlatformTaskHandler) Process(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "任务已处理")
 		return
 	}
+	// 处理备注（选填，仅后台可见）：与公寓级待办的处理备注同一套字段。
+	// 允许空 body（旧客户端只发一个 POST 不带内容），因此忽略 EOF。
+	var req struct {
+		Remark *string `json:"remark"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil && err != io.EOF {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
 
 	if task.Type == "recruit" && task.RefID != nil {
 		if err := h.RecruitService.Process(*task.RefID); err != nil {
@@ -89,7 +100,12 @@ func (h *PlatformTaskHandler) Process(c *gin.Context) {
 		}
 	}
 
-	if err := h.TaskService.Complete(task.ID); err != nil {
+	// 备注与状态一起落库
+	updates := map[string]interface{}{"status": "completed"}
+	if req.Remark != nil {
+		updates["result_remark"] = utils.ClipRemark(*req.Remark)
+	}
+	if err := h.DB.Model(&models.Task{}).Where("id = ?", task.ID).Updates(updates).Error; err != nil {
 		logger.Log.Error().Err(err).Uint("task_id", task.ID).Msg("更新平台待办状态失败")
 		utils.Error(c, http.StatusInternalServerError, "处理失败")
 		return

@@ -30,14 +30,24 @@ func NewBuildingService(db *gorm.DB) *BuildingService {
 	return &BuildingService{DB: db}
 }
 
+// BuildingLandlordView 房东后台视图：在模型基础上透出内部备注。
+// 模型的 Remark 是 json:"-"，只有这个后台视图会把它序列化出去；
+// 公开端（公寓列表/详情）由 sanitizePublicBuildings 统一清空。
+type BuildingLandlordView struct {
+	models.BuildingLandlord
+	Remark string `json:"remark,omitempty"`
+}
+
 // BuildingWithStats 楼栋及统计数据
 type BuildingWithStats struct {
 	models.Building
-	Landlords     []models.BuildingLandlord `json:"landlords"`
-	RoomCount     int64                     `json:"room_count"`
-	VacantCount   int64                     `json:"vacant_count"`
-	RentedCount   int64                     `json:"rented_count"`
-	ExpiringCount int64                     `json:"expiring_count"`
+	// Remark 公寓内部备注（仅后台可见）；公开端会被 sanitizePublicBuildings 清空
+	Remark        string                 `json:"remark,omitempty"`
+	Landlords     []BuildingLandlordView `json:"landlords"`
+	RoomCount     int64                  `json:"room_count"`
+	VacantCount   int64                  `json:"vacant_count"`
+	RentedCount   int64                  `json:"rented_count"`
+	ExpiringCount int64                  `json:"expiring_count"`
 }
 
 // GetByID 根据ID获取楼栋
@@ -72,12 +82,13 @@ func (s *BuildingService) IsVisible(id uint) (bool, error) {
 }
 
 // Renew 公寓续约：更新到期日期并写入一条续约记录；新的到期日期不得早于今天。
+// remark 为用户填写的续约备注（选填，仅后台可见）。
 // 注意：无论原状态如何一律恢复 status=active —— 也会把被超管隐藏(hidden)的公寓重新公开。
 // operator 为操作人（用户名为空表示系统）。
 // 到期类待办（房东端 + 平台端）：新到期日严格晚于 today+10 天 → 两类到期类待办
 // 全部自动完成；≤10 天内（恰好10天整也落入此分支）→ 完成已到期待办，
 // 保留/刷新（不存在则对 building 与 platform 两个 scope 各补建一条）即将到期待办。
-func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) error {
+func (s *BuildingService) Renew(id uint, newExpiredAt string, operator, remark string) error {
 	if newExpiredAt == "" {
 		return fmt.Errorf("到期日期不能为空")
 	}
@@ -111,6 +122,7 @@ func (s *BuildingService) Renew(id uint, newExpiredAt string, operator string) e
 			ToDate:     newExpiredAt,
 			Operator:   operator,
 			Note:       "续约" + newExpiredAt,
+			Remark:     utils.ClipRemark(remark),
 		}
 		if err := tx.Create(&renewal).Error; err != nil {
 			return err
@@ -316,12 +328,22 @@ func (s *BuildingService) GetWithStats(id uint) (*BuildingWithStats, error) {
 
 	return &BuildingWithStats{
 		Building:      building,
-		Landlords:     landlords,
+		Remark:        building.Remark,
+		Landlords:     landlordViews(landlords),
 		RoomCount:     int64(len(rooms)),
 		VacantCount:   stats["vacant"],
 		RentedCount:   stats["rented"],
 		ExpiringCount: stats["expiring"],
 	}, nil
+}
+
+// landlordViews 把房东模型转成带内部备注的后台视图。
+func landlordViews(landlords []models.BuildingLandlord) []BuildingLandlordView {
+	out := make([]BuildingLandlordView, len(landlords))
+	for i, l := range landlords {
+		out[i] = BuildingLandlordView{BuildingLandlord: l, Remark: l.Remark}
+	}
+	return out
 }
 
 // BuildingListFilter 公寓列表筛选条件。
@@ -487,7 +509,8 @@ func (s *BuildingService) List(f BuildingListFilter, page, lastID, size int, inc
 		ds := dynStatusMap[b.ID]
 		result[i] = BuildingWithStats{
 			Building:      b,
-			Landlords:     landlordMap[b.ID],
+			Remark:        b.Remark,
+			Landlords:     landlordViews(landlordMap[b.ID]),
 			RoomCount:     ds["vacant"] + ds["rented"] + ds["expiring"] + ds["expired"],
 			VacantCount:   ds["vacant"],
 			RentedCount:   ds["rented"],
@@ -681,20 +704,52 @@ type LandlordInput struct {
 	Name string
 	// Phone 联系电话。
 	Phone string
+	// Remark 房东内部备注（仅后台可见）：收款账户、代持说明等。
+	// 指针语义：nil=保留原有备注（调用方不管理备注时不会把已有备注冲掉），
+	// ""=清空，非空=覆盖。
+	Remark *string
 }
 
 // ReplaceLandlords 覆盖式更新房东列表（先清空再按新列表写入，事务内完成）。
 // 用于公寓信息更新时的房东信息同步，避免中途失败留下「清空但没写回」的中间态。
+//
+// 备注保留规则：入参 Remark 为 nil（调用方没带 remark 字段）时，沿用该房东
+// 「姓名+电话」在库里的旧备注；显式传 "" 才清空。这样「只改了电话、没管备注」
+// 的调用方不会把备注冲掉，而「一个公寓挂多个房东行」时每行的备注也能各保各的。
 func (s *BuildingService) ReplaceLandlords(buildingID uint, landlords []LandlordInput) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
+		var olds []models.BuildingLandlord
+		if err := tx.Where("building_id = ?", buildingID).Find(&olds).Error; err != nil {
+			return err
+		}
+		oldRemarks := make(map[string]string, len(olds))
+		oldRemarksByPhone := make(map[string]string, len(olds))
+		for _, o := range olds {
+			oldRemarks[landlordKey(o.Name, o.Phone)] = o.Remark
+			oldRemarksByPhone[strings.TrimSpace(o.Phone)] = o.Remark
+		}
+
 		if err := tx.Where("building_id = ?", buildingID).Delete(&models.BuildingLandlord{}).Error; err != nil {
 			return err
 		}
 		for _, l := range landlords {
+			remark := ""
+			switch {
+			case l.Remark != nil:
+				remark = utils.ClipRemark(*l.Remark)
+			default:
+				// 先按「姓名+电话」找回；姓名被改过时退化为按电话找回（电话是房东行的实际标识）
+				if r, ok := oldRemarks[landlordKey(l.Name, l.Phone)]; ok {
+					remark = r
+				} else {
+					remark = oldRemarksByPhone[strings.TrimSpace(l.Phone)]
+				}
+			}
 			ll := models.BuildingLandlord{
 				BuildingID: buildingID,
-				Name:       l.Name,
-				Phone:      l.Phone,
+				Name:       utils.ClipText(l.Name, 50),
+				Phone:      utils.ClipText(l.Phone, 20),
+				Remark:     remark,
 			}
 			if err := tx.Create(&ll).Error; err != nil {
 				return err
@@ -702,6 +757,11 @@ func (s *BuildingService) ReplaceLandlords(buildingID uint, landlords []Landlord
 		}
 		return nil
 	})
+}
+
+// landlordKey 房东行的匹配键（姓名+电话）：用于在覆盖式更新时找回旧备注。
+func landlordKey(name, phone string) string {
+	return strings.TrimSpace(name) + "|" + strings.TrimSpace(phone)
 }
 
 // DeleteLandlords 删除楼栋下的所有房东信息

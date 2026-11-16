@@ -40,6 +40,10 @@
         <el-form-item label="凭证截图">
           <EvidenceUploader v-model="cancelEvidences" />
         </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="cancelForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：违约原因等（仅后台可见，会拼进生成的账单描述）" />
+        </el-form-item>
       </el-form>
       <div v-if="earnestMoney - cancelForm.refunded_deposit > 0" class="vacate-deduction-note">
         租客违约/不租，扣留定金 <strong>{{ (earnestMoney - cancelForm.refunded_deposit).toFixed(2) }}</strong> 元，将创建定金违约收入账单
@@ -60,6 +64,10 @@
         </el-form-item>
         <el-form-item label="退租租金" prop="rent_price" :rules="[{ required: true, message: '请输入退租租金' }]">
           <el-input :model-value="endDateForm.rent_price" @update:model-value="v => endDateForm.rent_price = v === '' ? null : Number(v)" type="number" step="0.01" min="0" placeholder="退租租金" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="endDateForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：本次续租的补充说明（仅后台可见）" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -84,6 +92,10 @@
           </el-form-item>
           <el-form-item label="凭证截图">
             <EvidenceUploader v-model="vacateEvidences" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="vacateForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+              placeholder="选填：扣款原因（卫生/损坏/欠费等），仅后台可见，会拼进押金退还账单描述" />
           </el-form-item>
         </el-form>
         <div v-if="vacateForm.refunded_deposit > 0" class="vacate-deduction-note">
@@ -140,6 +152,10 @@
         <el-form-item label="描述" prop="description">
           <el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
+        <el-form-item label="内部备注" prop="remark">
+          <el-input v-model="editForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit
+            placeholder="选填：钥匙存放、门禁卡号、设备使用说明…（仅后台可见，租客看不到）" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
@@ -184,17 +200,17 @@ const isHistoricalStart = computed(() => {
 
 const showReserveDialog = ref(false)
 const reserveSubmitting = ref(false)
-const reserveForm = ref({ tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
+const reserveForm = ref({ tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', remark: '' })
 const reserveFormRef = ref(null)
 
 const showConfirmSignDialog = ref(false)
 const signSubmitting = ref(false)
-const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' })
+const signForm = ref({ tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', remark: '' })
 const signFormRef = ref(null)
 
 const showCancelReserveDialog = ref(false)
 const cancelSubmitting = ref(false)
-const cancelForm = ref({ refunded_deposit: null })
+const cancelForm = ref({ refunded_deposit: null, remark: '' })
 const cancelEvidences = ref([])
 const cancelFormRef = ref(null)
 
@@ -204,12 +220,12 @@ const isFutureReserve = computed(() => props.roomStatus === 'rented' || props.ro
 
 const showEndDateDialog = ref(false)
 const endDateSubmitting = ref(false)
-const endDateForm = ref({ end_date: '', rent_price: 0 })
+const endDateForm = ref({ end_date: '', rent_price: 0, remark: '' })
 const endDateFormRef = ref(null)
 
 const showVacateDialog = ref(false)
 const vacateSubmitting = ref(false)
-const vacateForm = ref({ refunded_deposit: null })
+const vacateForm = ref({ refunded_deposit: null, remark: '' })
 const vacateEvidences = ref([])
 const vacateFormRef = ref(null)
 
@@ -228,17 +244,21 @@ const editForm = ref({})
 const editFormRef = ref(null)
 
 function openRent() {
-  rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', record_deposit_bill: false }
+  rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', remark: '', record_deposit_bill: false }
   showRentDialog.value = true
 }
 
 function openRenew() {
-  endDateForm.value = { end_date: '', rent_price: props.currentContract?.rent_price || 0 }
+  endDateForm.value = {
+    end_date: '',
+    rent_price: props.currentContract?.rent_price || 0,
+    remark: props.currentContract?.remark || '',
+  }
   showEndDateDialog.value = true
 }
 
 function openVacant() {
-  vacateForm.value = { refunded_deposit: null }
+  vacateForm.value = { refunded_deposit: null, remark: '' }
   vacateEvidences.value = []
   showVacateDialog.value = true
 }
@@ -249,7 +269,7 @@ function openEdit() {
 }
 
 function openReserve() {
-  reserveForm.value = { tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '' }
+  reserveForm.value = { tenant_name: '', tenant_phone: '', earnest_money: null, rent_price: null, management_fee: null, deposit: null, start_date: '', end_date: '', remark: '' }
   showReserveDialog.value = true
 }
 
@@ -263,12 +283,14 @@ function openConfirmSign() {
     deposit: ct.deposit || null,
     start_date: ct.start_date || '',
     end_date: ct.end_date || '',
+    // 预订时填的备注带到签约，仍可修改
+    remark: ct.remark || '',
   }
   showConfirmSignDialog.value = true
 }
 
 function openCancelReserve() {
-  cancelForm.value = { refunded_deposit: 0 }
+  cancelForm.value = { refunded_deposit: 0, remark: '' }
   cancelEvidences.value = []
   showCancelReserveDialog.value = true
 }
@@ -315,7 +337,7 @@ async function handleCancelReserve() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   cancelSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit, evidences: cancelEvidences.value })
+    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: cancelForm.value.refunded_deposit, remark: cancelForm.value.remark, evidences: cancelEvidences.value })
     ElMessage.success('已取消预订')
     showCancelReserveDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))
@@ -340,7 +362,7 @@ async function handleRent() {
     await buildingUpdateRoomStatus(props.roomId, payload)
     ElMessage.success('出租成功')
     showRentDialog.value = false
-    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '', record_deposit_bill: false }
+    rentForm.value = { tenant_name: '', tenant_phone: '', rent_price: 0, management_fee: 0, deposit: 0, start_date: '', end_date: '', remark: '', record_deposit_bill: false }
     window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
@@ -353,10 +375,10 @@ async function handleUpdateEndDate() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   endDateSubmitting.value = true
   try {
-    await buildingRenewContract(props.roomId, { end_date: endDateForm.value.end_date, rent_price: endDateForm.value.rent_price })
+    await buildingRenewContract(props.roomId, { end_date: endDateForm.value.end_date, rent_price: endDateForm.value.rent_price, remark: endDateForm.value.remark })
     ElMessage.success('续租成功')
     showEndDateDialog.value = false
-    endDateForm.value = { end_date: '', rent_price: 0 }
+    endDateForm.value = { end_date: '', rent_price: 0, remark: '' }
     window.dispatchEvent(new CustomEvent('tasks-changed'))
     emit('save-success')
   } finally {
@@ -369,7 +391,7 @@ async function confirmVacate() {
   if (!valid) { ElMessage.warning('请先完善表单中标红的内容'); return }
   vacateSubmitting.value = true
   try {
-    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit, evidences: vacateEvidences.value })
+    await buildingUpdateRoomStatus(props.roomId, { status: 'vacant', refunded_deposit: vacateForm.value.refunded_deposit, remark: vacateForm.value.remark, evidences: vacateEvidences.value })
     ElMessage.success('已设为未出租')
     showVacateDialog.value = false
     window.dispatchEvent(new CustomEvent('tasks-changed'))

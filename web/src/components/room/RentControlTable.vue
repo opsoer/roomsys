@@ -48,10 +48,11 @@
                 </div>
                 <table class="poster-table table-vacant">
                   <colgroup>
+                    <col style="width: 16%">
+                    <col style="width: 24%">
                     <col style="width: 20%">
-                    <col style="width: 30%">
-                    <col style="width: 25%">
-                    <col style="width: 25%">
+                    <col style="width: 18%">
+                    <col style="width: 22%">
                   </colgroup>
                   <thead>
                     <tr>
@@ -59,6 +60,7 @@
                       <th>格局</th>
                       <th>租金</th>
                       <th>管理费</th>
+                      <th>备注</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -67,6 +69,7 @@
                       <td>{{ row.layout }}</td>
                       <td>{{ formatMoney(row.rent_price) }}</td>
                       <td>{{ formatMoney(row.management_fee) }}</td>
+                      <td class="cell-remark">{{ cellRemark(row) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -101,7 +104,7 @@
                       <td>{{ row.layout }}</td>
                       <td>{{ formatMoney(row.rent_price) }}</td>
                       <td>{{ formatMoney(row.management_fee) }}</td>
-                      <td class="cell-remark">{{ row.remark }}</td>
+                      <td class="cell-remark">{{ cellRemark(row) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -200,6 +203,16 @@ function defaultContent(b, rows = []) {
     commissionContact: '',
     priceSupport: '',
   }
+}
+
+// 备注单元格内容（仅后台可见的内部备注）：
+// 到期行 = 到期时间 + 房间备注 + 在住合同备注；空房行 = 房间备注。
+function cellRemark(row) {
+  const parts = []
+  if (row.remark) parts.push(row.remark)
+  if (row.room_remark) parts.push(row.room_remark)
+  if (row.contract_remark) parts.push(row.contract_remark)
+  return parts.filter(Boolean).join('\n')
 }
 
 function deriveFeeStandard(rows) {
@@ -416,6 +429,8 @@ async function handleDownload() {
 
 .poster-table .cell-remark {
   text-align: left;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* 空房表 / 到期表：同一张图片里的两个独立表格 */

@@ -5,6 +5,15 @@
       <el-form-item v-else :label="f.label" :prop="f.prop" :rules="rules[f.prop]">
         <el-input v-if="f.type === 'text'" v-model="form[f.prop]" :maxlength="f.maxlength" />
         <el-input v-else-if="f.type === 'number'" :model-value="form[f.prop]" type="number" step="0.01" min="0" :placeholder="f.label" style="width:100%" @update:model-value="v => form[f.prop] = toNumber(v)" />
+        <el-input
+          v-else-if="f.type === 'textarea'"
+          v-model="form[f.prop]"
+          type="textarea"
+          :rows="2"
+          :maxlength="f.maxlength"
+          show-word-limit
+          :placeholder="f.placeholder || ''"
+        />
         <el-date-picker v-else v-model="form[f.prop]" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
       </el-form-item>
     </template>
@@ -67,6 +76,15 @@ const fields = computed(() => {
     { prop: 'start_date', label: isReserve ? '预计起租' : '起租日期', type: 'date' },
     { prop: 'end_date', label: isReserve ? '预计结束' : '结束日期', type: 'date' },
   )
+  // 合同备注：有车+车牌、工作单位、免租期、特殊约定等，只有后台可见
+  list.push({ divider: '备注（仅后台可见，租客看不到）' })
+  list.push({
+    prop: 'remark',
+    label: '备注',
+    type: 'textarea',
+    maxlength: 500,
+    placeholder: '选填：有车/车牌号、工作单位、免租期、付款方式、特殊约定…',
+  })
   return list
 })
 

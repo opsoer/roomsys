@@ -58,6 +58,19 @@
         <span class="sidebar-label">定金</span>
         <span class="sidebar-val price-warn">{{ currentContract.earnest_money?.toFixed(2) }} 元</span>
       </div>
+      <div v-if="currentContract.remark" class="sidebar-row">
+        <span class="sidebar-label">备注</span>
+        <span class="sidebar-val sidebar-remark">{{ currentContract.remark }}</span>
+      </div>
+      <div class="sidebar-row">
+        <el-button text type="primary" size="small" @click="openTenantDialog">编辑租客信息</el-button>
+      </div>
+    </div>
+
+    <!-- 房间内部备注（仅后台可见） -->
+    <div v-if="isAdmin && room.remark" class="sidebar-card">
+      <h4 class="sidebar-title">房间备注</h4>
+      <p class="sidebar-remark">{{ room.remark }}</p>
     </div>
 
     <div v-if="futureReservation && isAdmin && room.status !== 'reserved'" class="sidebar-card" style="border-color: #409eff">
@@ -95,6 +108,10 @@
       <div class="sidebar-row">
         <span class="sidebar-label">定金</span>
         <span class="sidebar-val price-warn">{{ futureReservation.earnest_money?.toFixed(2) }} 元</span>
+      </div>
+      <div v-if="futureReservation.remark" class="sidebar-row">
+        <span class="sidebar-label">备注</span>
+        <span class="sidebar-val sidebar-remark">{{ futureReservation.remark }}</span>
       </div>
     </div>
 
@@ -226,13 +243,36 @@
       </template>
     </el-dialog>
   </div>
+
+  <!-- 编辑租客（仅后台）：姓名/电话/紧急联系人/备注 -->
+  <el-dialog v-model="tenantVisible" title="编辑租客信息" width="420px" align-center>
+    <el-form label-width="90px">
+      <el-form-item label="姓名">
+        <el-input v-model="tenantForm.name" maxlength="50" />
+      </el-form-item>
+      <el-form-item label="电话">
+        <el-input v-model="tenantForm.phone" maxlength="11" placeholder="11位手机号" />
+      </el-form-item>
+      <el-form-item label="紧急联系人">
+        <el-input v-model="tenantForm.emergency_contact" maxlength="200" placeholder="选填：姓名 电话" />
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="tenantForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit
+          placeholder="选填：车牌号、工作单位、宠物、沟通偏好…（仅后台可见，租客看不到）" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="tenantVisible = false">取消</el-button>
+      <el-button type="primary" :loading="tenantSubmitting" @click="saveTenant">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Picture, VideoCamera, CopyDocument, Loading } from '@element-plus/icons-vue'
-import { buildingUploadMedia, getUploadToken, confirmMediaUpload, buildingCopyMedia, buildingGetRooms } from '../../api'
+import { buildingUploadMedia, getUploadToken, confirmMediaUpload, buildingCopyMedia, buildingGetRooms, buildingUpdateTenant } from '../../api'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -247,7 +287,49 @@ function mgmtFeeLabel(fee) {
   return '无管理费'
 }
 
-const emit = defineEmits(['renew', 'rent', 'vacant', 'reserve', 'confirm-sign', 'cancel-reserve', 'upload-success'])
+const emit = defineEmits(['renew', 'rent', 'vacant', 'reserve', 'confirm-sign', 'cancel-reserve', 'upload-success', 'refresh'])
+
+// 编辑租客（仅后台）：租客备注里常放车牌号、工作单位等，租客端不展示
+const tenantVisible = ref(false)
+const tenantSubmitting = ref(false)
+const tenantForm = ref({ id: 0, name: '', phone: '', emergency_contact: '', remark: '' })
+
+function openTenantDialog() {
+  const t = props.currentContract?.tenant || props.futureReservation?.tenant
+  if (!t || !t.id) {
+    ElMessage.warning('当前没有可编辑的租客信息')
+    return
+  }
+  tenantForm.value = {
+    id: t.id,
+    name: t.name || '',
+    phone: t.phone || '',
+    emergency_contact: t.emergency_contact || '',
+    remark: t.remark || '',
+  }
+  tenantVisible.value = true
+}
+
+async function saveTenant() {
+  if (!String(tenantForm.value.name || '').trim()) {
+    ElMessage.warning('租客姓名不能为空')
+    return
+  }
+  tenantSubmitting.value = true
+  try {
+    await buildingUpdateTenant(tenantForm.value.id, {
+      name: tenantForm.value.name,
+      phone: tenantForm.value.phone,
+      emergency_contact: tenantForm.value.emergency_contact,
+      remark: tenantForm.value.remark,
+    })
+    ElMessage.success('租客信息已保存')
+    tenantVisible.value = false
+    emit('refresh')
+  } catch { /* handled by interceptor */ } finally {
+    tenantSubmitting.value = false
+  }
+}
 
 const copyMediaVisible = ref(false)
 const copyConfirmVisible = ref(false)
@@ -535,6 +617,9 @@ function beforeUploadVideo(file) {
 }
 .sidebar-label { color: #999; font-size: 14px; }
 .sidebar-val { font-weight: 500; color: #333; font-size: 14px; }
+/* 内部备注：保留换行、弱化颜色，避免长文本撑破侧栏 */
+.sidebar-remark { white-space: pre-wrap; word-break: break-all; color: #606266; font-size: 13px; }
+.sidebar-card .sidebar-remark { margin: 0; line-height: 1.6; }
 .price-primary { color: #67c23a; font-weight: 600; }
 .price-warn { color: #e6a23c; font-weight: 600; }
 .sidebar-actions { display: flex; flex-direction: column; gap: 8px; }

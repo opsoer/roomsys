@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// mobilePhoneRe 中国大陆手机号（11 位，1[3-9] 开头），与前端校验口径一致。
+var mobilePhoneRe = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
 // RoomHandler 房间处理器
 type RoomHandler struct {
@@ -51,6 +55,8 @@ type CreateRoomReq struct {
 	ElectricityUnitPrice *float64 `json:"electricity_unit_price" binding:"required"`
 	WaterUnitPrice       *float64 `json:"water_unit_price" binding:"required"`
 	CopyFromRoomID       *uint    `json:"copy_from_room_id"`
+	// Remark 房间内部备注（仅后台可见）：钥匙存放、门禁卡号等
+	Remark string `json:"remark"`
 }
 
 // UpdateRoomReq 更新房间请求参数
@@ -64,6 +70,8 @@ type UpdateRoomReq struct {
 	ManagementFee        *float64 `json:"management_fee"`
 	ElectricityUnitPrice *float64 `json:"electricity_unit_price"`
 	WaterUnitPrice       *float64 `json:"water_unit_price"`
+	// Remark 房间内部备注（仅后台可见）；指针语义：nil=不变，""=清空
+	Remark *string `json:"remark"`
 }
 
 // BatchUpdatePricingReq 批量调整房间价格请求参数（价格字段均为填写才生效）：
@@ -91,8 +99,30 @@ type UpdateRoomStatusReq struct {
 	EndDate           string   `json:"end_date"`
 	RefundedDeposit   *float64 `json:"refunded_deposit"`
 	RecordDepositBill *bool    `json:"record_deposit_bill"` // 是否补记押金收入账单（历史租约押金是以前收的，可不记）
+	// Remark 备注（仅后台可见）：出租/预订/确认签约 → 合同备注；
+	// 退租/取消预订 → 选填的扣款原因（拼进自动生成的账单描述）。
+	Remark *string `json:"remark"`
 	// Evidences 随单凭证截图（可选，仅图片）：出租挂租金账单，退租挂押金退还账单，取消预订挂定金违约账单。
 	Evidences []services.EvidenceInput `json:"evidences"`
+}
+
+// roomMediaView 房间媒体后台视图：透出图片说明。
+// 模型的 Remark 是 json:"-"，公开房间接口不会带出来，只有后台详情用这个视图。
+type roomMediaView struct {
+	models.RoomMedia
+	Remark string `json:"remark,omitempty"`
+}
+
+// mediaViews 构造带备注的媒体后台视图。
+func mediaViews(media []models.RoomMedia) []roomMediaView {
+	if len(media) == 0 {
+		return nil
+	}
+	out := make([]roomMediaView, len(media))
+	for i, m := range media {
+		out[i] = roomMediaView{RoomMedia: m, Remark: m.Remark}
+	}
+	return out
 }
 
 // createRentedBills 在事务内创建出租相关账单（收入、已收款）：
@@ -105,6 +135,8 @@ type UpdateRoomStatusReq struct {
 type UpdateContractReq struct {
 	EndDate   string  `json:"end_date" binding:"required"`
 	RentPrice float64 `json:"rent_price"`
+	// Remark 合同备注（仅后台可见）：续租时可一并修改；nil=不变，""=清空
+	Remark *string `json:"remark"`
 }
 
 // roomOwnedByBuilding 校验房间属于当前管理员的楼栋，防止跨公寓越权访问（IDOR）。
@@ -178,9 +210,10 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 
 	type RoomDetail struct {
 		models.Room
-		CurrentContract *models.RentalContract `json:"current_contract,omitempty"`
-		EndDate         string                 `json:"end_date"`
-		Thumbnail       string                 `json:"thumbnail"`
+		// CurrentContract 合同视图（透出合同/租客备注；模型层是 json:"-"）
+		CurrentContract *models.ContractView `json:"current_contract,omitempty"`
+		EndDate         string               `json:"end_date"`
+		Thumbnail       string               `json:"thumbnail"`
 	}
 	detail := RoomDetail{Room: *room, Thumbnail: pickThumbnail(room.Media)}
 	if contract != nil {
@@ -191,7 +224,7 @@ func (h *RoomHandler) GetPublic(c *gin.Context) {
 		tokenStr := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 		claims, err := utils.ParseToken(tokenStr, h.Cfg.Server.JWTSecret)
 		if err == nil && claims.BuildingID > 0 && claims.BuildingID == room.BuildingID {
-			detail.CurrentContract = contract
+			detail.CurrentContract = models.NewContractView(contract)
 		}
 	}
 	go utils.RecordPageView(h.DB, "room_detail", uint(rid), uint(bid), utils.GetRealIP(c))
@@ -237,6 +270,8 @@ func (h *RoomHandler) List(c *gin.Context) {
 
 	type RoomWithThumbnail struct {
 		models.Room
+		// Remark 房间内部备注（仅后台可见；模型里是 json:"-"）
+		Remark                string   `json:"remark,omitempty"`
 		Thumbnail             string   `json:"thumbnail"`
 		EndDate               string   `json:"end_date"`
 		ContractManagementFee *float64 `json:"contract_management_fee,omitempty"`
@@ -251,7 +286,10 @@ func (h *RoomHandler) List(c *gin.Context) {
 			contractMgmtFee = &fee
 		}
 		r.Status = utils.DynamicRoomStatus(r.Status, contractMap[r.ID].EndDate)
-		result = append(result, RoomWithThumbnail{Room: r, Thumbnail: thumb, EndDate: contractMap[r.ID].EndDate, ContractManagementFee: contractMgmtFee})
+		result = append(result, RoomWithThumbnail{
+			Room: r, Remark: r.Remark, Thumbnail: thumb,
+			EndDate: contractMap[r.ID].EndDate, ContractManagementFee: contractMgmtFee,
+		})
 	}
 
 	// 状态筛选已在 SQL 层完成，此处仅作动态状态兜底校验（如过期等未映射到 SQL 的状态），
@@ -311,17 +349,26 @@ func (h *RoomHandler) Get(c *gin.Context) {
 
 	type RoomDetail struct {
 		models.Room
-		CurrentContract   *models.RentalContract `json:"current_contract,omitempty"`
-		FutureReservation *models.RentalContract `json:"future_reservation,omitempty"`
-		EndDate           string                 `json:"end_date"`
-		Thumbnail         string                 `json:"thumbnail"`
+		// Remark 房间内部备注（仅后台可见；模型里是 json:"-"）
+		Remark string `json:"remark,omitempty"`
+		// Media 覆盖内嵌 Room.Media，带上每张图的说明（公开接口不返回说明）
+		Media []roomMediaView `json:"media,omitempty"`
+		// CurrentContract / FutureReservation 合同视图（透出合同/租客备注；模型层是 json:"-"）
+		CurrentContract   *models.ContractView `json:"current_contract,omitempty"`
+		FutureReservation *models.ContractView `json:"future_reservation,omitempty"`
+		EndDate           string               `json:"end_date"`
+		Thumbnail         string               `json:"thumbnail"`
 	}
-	var futureReservation *models.RentalContract
+	var futureReservation *models.ContractView
 	if rc, err := h.RoomService.GetFutureReservation(uint(rid)); err == nil {
-		futureReservation = rc
+		futureReservation = models.NewContractView(rc)
 	}
 
-	detail := RoomDetail{Room: *room, CurrentContract: contract, FutureReservation: futureReservation, Thumbnail: pickThumbnail(room.Media)}
+	detail := RoomDetail{
+		Room: *room, Remark: room.Remark, Media: mediaViews(room.Media),
+		CurrentContract: models.NewContractView(contract), FutureReservation: futureReservation,
+		Thumbnail: pickThumbnail(room.Media),
+	}
 	if contract != nil {
 		detail.EndDate = contract.EndDate
 		detail.Room.Status = utils.DynamicRoomStatus(detail.Room.Status, detail.EndDate)
@@ -368,6 +415,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		Floor:                req.Floor,
 		Layout:               req.Layout,
 		Description:          req.Description,
+		Remark:               utils.ClipRemark(req.Remark),
 		Status:               "vacant",
 		RentPrice:            req.RentPrice,
 		DepositMonths:        req.DepositMonths,
@@ -463,6 +511,10 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	}
 	if req.WaterUnitPrice != nil {
 		updates["water_unit_price"] = *req.WaterUnitPrice
+	}
+	// 内部备注（仅后台可见）：nil=不变，""=清空
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
 	}
 
 	if req.RoomNumber != "" && req.RoomNumber != room.RoomNumber {
@@ -726,6 +778,9 @@ func (h *RoomHandler) UpdateStatus(c *gin.Context) {
 		RecordDepositBill: req.RecordDepositBill,
 		Evidences:         req.Evidences,
 	}
+	// 备注指针直传：nil=本次不涉及备注（确认签约时保留预订时已填的内容），
+	// 非 nil=写入（""=清空）。service 层统一裁剪长度。
+	params.Remark = req.Remark
 	if req.ManagementFee != nil {
 		params.ManagementFee = *req.ManagementFee
 	}
@@ -802,7 +857,7 @@ func (h *RoomHandler) GetActiveContract(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "无有效合同")
 		return
 	}
-	utils.Success(c, gin.H{"contract": contract})
+	utils.Success(c, gin.H{"contract": models.NewContractView(contract)})
 }
 
 // ListBuildingContracts 获取当前公寓的全部合同列表（分页/筛选/关键词搜索）
@@ -829,10 +884,93 @@ func (h *RoomHandler) ListBuildingContracts(c *gin.Context) {
 	if contracts == nil {
 		contracts = []models.RentalContract{}
 	}
-	utils.Success(c, gin.H{"contracts": contracts, "total": total})
+	// 合同视图：透出合同/租客备注（模型层是 json:"-"，公开接口不会带出）
+	utils.Success(c, gin.H{"contracts": models.NewContractViews(contracts), "total": total})
 }
 
 // RenewContract 续租合同（延长租期或调整租金）
+// UpdateTenantReq 更新租客信息请求参数（仅后台）。
+// 全部字段可选：nil=不变，""=清空（姓名不允许清空；电话允许清空，非空时必须是 11 位手机号）。
+type UpdateTenantReq struct {
+	Name             *string `json:"name"`
+	Phone            *string `json:"phone"`
+	EmergencyContact *string `json:"emergency_contact"`
+	// Remark 租客备注（仅后台可见）：车牌号、工作单位、宠物等
+	Remark *string `json:"remark"`
+}
+
+// UpdateTenant 更新租客信息（仅后台，租客端无任何入口）。
+// 越权校验：该租客必须至少有一份合同属于本公寓（任意状态）。
+func (h *RoomHandler) UpdateTenant(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的租客ID")
+		return
+	}
+	var cnt int64
+	if err := h.DB.Model(&models.RentalContract{}).
+		Where("tenant_id = ? AND building_id = ?", id, bid).
+		Count(&cnt).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	if cnt == 0 {
+		utils.Error(c, http.StatusNotFound, "租客不存在")
+		return
+	}
+
+	var req UpdateTenantReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	updates := map[string]interface{}{}
+	if req.Name != nil {
+		name := utils.ClipText(*req.Name, 50)
+		if name == "" {
+			utils.Error(c, http.StatusBadRequest, "租客姓名不能为空")
+			return
+		}
+		updates["name"] = name
+	}
+	if req.Phone != nil {
+		phone := utils.ClipText(*req.Phone, 20)
+		if phone != "" && !mobilePhoneRe.MatchString(phone) {
+			utils.Error(c, http.StatusBadRequest, "联系电话格式不正确（11位手机号）")
+			return
+		}
+		updates["phone"] = phone
+	}
+	if req.EmergencyContact != nil {
+		updates["emergency_contact"] = utils.ClipText(*req.EmergencyContact, 200)
+	}
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
+	}
+	if len(updates) == 0 {
+		utils.SuccessWithMsg(c, "更新成功", nil)
+		return
+	}
+	if err := h.DB.Model(&models.Tenant{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("tenant_id", uint(id)).Msg("更新租客信息失败")
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	changed := make([]string, 0, len(updates))
+	for k := range updates {
+		changed = append(changed, k)
+	}
+	sort.Strings(changed)
+	audit.Log(c, audit.ActionUpdate, audit.ResourceTenant, strconv.FormatUint(uint64(id), 10),
+		"修改租客信息 字段="+strings.Join(changed, ","))
+	utils.SuccessWithMsg(c, "更新成功", nil)
+}
+
 func (h *RoomHandler) RenewContract(c *gin.Context) {
 	roomID := c.Param("id")
 	rid, err := strconv.ParseUint(roomID, 10, 32)
@@ -873,6 +1011,9 @@ func (h *RoomHandler) RenewContract(c *gin.Context) {
 	}
 	if req.RentPrice > 0 {
 		updates["rent_price"] = req.RentPrice
+	}
+	if req.Remark != nil {
+		updates["remark"] = utils.ClipRemark(*req.Remark)
 	}
 
 	if err := h.RoomService.UpdateContract(contract.ID, updates); err != nil {

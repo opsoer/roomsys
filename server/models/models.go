@@ -25,14 +25,17 @@ import (
 
 // User 表示系统用户（管理员、超级管理员等）。
 type User struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	Username       string         `gorm:"uniqueIndex;size:50;not null" json:"username"`
-	PasswordHash   string         `gorm:"size:255;not null" json:"-"`
-	DisplayName    string         `gorm:"size:50" json:"display_name"`
-	Phone          string         `gorm:"size:20" json:"phone"`
-	Email          string         `gorm:"size:100" json:"email"`
-	Role           string         `gorm:"size:20;not null;default:'admin'" json:"role"`
-	BuildingID     *uint          `gorm:"index" json:"building_id"`
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Username     string `gorm:"uniqueIndex;size:50;not null" json:"username"`
+	PasswordHash string `gorm:"size:255;not null" json:"-"`
+	DisplayName  string `gorm:"size:50" json:"display_name"`
+	Phone        string `gorm:"size:20" json:"phone"`
+	Email        string `gorm:"size:100" json:"email"`
+	Role         string `gorm:"size:20;not null;default:'admin'" json:"role"`
+	BuildingID   *uint  `gorm:"index" json:"building_id"`
+	// Remark 账号备注（仅后台可见）：岗位、负责范围等。
+	// 可见范围：超管看全部账号；楼栋管理员只能看到本公寓账号（见 ListBuildingUsers）。
+	Remark         string         `gorm:"size:500" json:"remark,omitempty"`
 	IsActive       bool           `gorm:"default:true" json:"is_active"`
 	TokenNotBefore *time.Time     `json:"-"`
 	LastLoginAt    *time.Time     `json:"last_login_at"`
@@ -43,26 +46,29 @@ type User struct {
 
 // Building 表示公寓楼栋，包含基本信息、开放功能、地址等。
 type Building struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	Name         string         `gorm:"size:100;not null" json:"name"`
-	Package      string         `gorm:"size:20;not null;default:'basic'" json:"package"`
-	Deposit      float64        `gorm:"type:decimal(12,2);default:0" json:"deposit"`
-	ContractDate string         `gorm:"size:10" json:"contract_date"`
-	ExpiredAt    string         `gorm:"size:10" json:"expired_at"`
-	District     string         `gorm:"size:50" json:"district"`
-	Street       string         `gorm:"size:100" json:"street"`
-	Village      string         `gorm:"size:100" json:"village"`
-	BuildingNo   string         `gorm:"size:50" json:"building_no"`
-	TotalFloors  uint           `gorm:"default:1" json:"total_floors"`
-	BankAccount  string         `gorm:"size:50" json:"bank_account"`
-	CoverImage   string         `gorm:"size:500" json:"cover_image"`
-	Description  string         `gorm:"type:text" json:"description"`
-	Directions   string         `gorm:"type:text" json:"directions"`
-	Status       string         `gorm:"size:20;not null;default:'active'" json:"status"`
-	CreatedBy    uint           `json:"created_by"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID           uint    `gorm:"primaryKey" json:"id"`
+	Name         string  `gorm:"size:100;not null" json:"name"`
+	Package      string  `gorm:"size:20;not null;default:'basic'" json:"package"`
+	Deposit      float64 `gorm:"type:decimal(12,2);default:0" json:"deposit"`
+	ContractDate string  `gorm:"size:10" json:"contract_date"`
+	ExpiredAt    string  `gorm:"size:10" json:"expired_at"`
+	District     string  `gorm:"size:50" json:"district"`
+	Street       string  `gorm:"size:100" json:"street"`
+	Village      string  `gorm:"size:100" json:"village"`
+	BuildingNo   string  `gorm:"size:50" json:"building_no"`
+	TotalFloors  uint    `gorm:"default:1" json:"total_floors"`
+	BankAccount  string  `gorm:"size:50" json:"bank_account"`
+	CoverImage   string  `gorm:"size:500" json:"cover_image"`
+	Description  string  `gorm:"type:text" json:"description"`
+	// Remark 公寓内部备注（仅后台可见）：押金走账方式、房东收款习惯等。
+	// json:"-" 防止随公开公寓接口一起序列化出去，后台通过 BuildingWithStats.Remark 透出。
+	Remark     string         `gorm:"size:500" json:"-"`
+	Directions string         `gorm:"type:text" json:"directions"`
+	Status     string         `gorm:"size:20;not null;default:'active'" json:"status"`
+	CreatedBy  uint           `json:"created_by"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 	// Landlords 房东列表，仅显式 Preload 时加载（BuildingWithStats 另有自己的 landlords 字段，序列化时同名外层优先）
 	// constraint 写在关联字段上才会生效（标量字段上的同名 tag 是死配置）。
 	Landlords []BuildingLandlord `gorm:"foreignKey:BuildingID;constraint:OnDelete:CASCADE" json:"landlords,omitempty"`
@@ -70,175 +76,244 @@ type Building struct {
 
 // BuildingLandlord 表示楼栋的房东信息。
 type BuildingLandlord struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	BuildingID uint      `gorm:"index;not null" json:"building_id"`
-	Name       string    `gorm:"size:50;not null" json:"name"`
-	Phone      string    `gorm:"size:20" json:"phone"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         uint   `gorm:"primaryKey" json:"id"`
+	BuildingID uint   `gorm:"index;not null" json:"building_id"`
+	Name       string `gorm:"size:50;not null" json:"name"`
+	Phone      string `gorm:"size:20" json:"phone"`
+	// Remark 房东备注（仅后台可见）：收款账户、是否代持、只收现金等。
+	// json:"-" 防止随公开公寓接口泄露，后台通过 BuildingLandlordView.Remark 透出。
+	Remark    string    `gorm:"size:500" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Room 表示公寓房间，包含布局、面积、租金定价等。
 type Room struct {
-	ID                   uint           `gorm:"primaryKey" json:"id"`
-	BuildingID           uint           `gorm:"index:idx_building_room;not null" json:"building_id"`
-	RoomNumber           string         `gorm:"index:idx_building_room;size:20;not null" json:"room_number"`
-	Floor                string         `gorm:"size:10;not null" json:"floor"`
-	Layout               string         `gorm:"size:20;not null" json:"layout"`
-	Area                 float64        `gorm:"type:decimal(8,2)" json:"area"`
-	Orientation          string         `gorm:"size:10" json:"orientation"`
-	RentPrice            *float64       `gorm:"type:decimal(10,2)" json:"rent_price"`
-	DepositMonths        *uint          `gorm:"default:0" json:"deposit_months"`
-	ManagementFee        *float64       `gorm:"type:decimal(10,2)" json:"management_fee"`
-	ElectricityUnitPrice *float64       `gorm:"type:decimal(10,4)" json:"electricity_unit_price"`
-	WaterUnitPrice       *float64       `gorm:"type:decimal(10,4)" json:"water_unit_price"`
-	Status               string         `gorm:"size:20;not null;default:'vacant'" json:"status"`
-	Description          string         `gorm:"type:text" json:"description"`
-	Media                []RoomMedia    `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"media,omitempty"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
-	DeletedAt            gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                   uint     `gorm:"primaryKey" json:"id"`
+	BuildingID           uint     `gorm:"index:idx_building_room;not null" json:"building_id"`
+	RoomNumber           string   `gorm:"index:idx_building_room;size:20;not null" json:"room_number"`
+	Floor                string   `gorm:"size:10;not null" json:"floor"`
+	Layout               string   `gorm:"size:20;not null" json:"layout"`
+	Area                 float64  `gorm:"type:decimal(8,2)" json:"area"`
+	Orientation          string   `gorm:"size:10" json:"orientation"`
+	RentPrice            *float64 `gorm:"type:decimal(10,2)" json:"rent_price"`
+	DepositMonths        *uint    `gorm:"default:0" json:"deposit_months"`
+	ManagementFee        *float64 `gorm:"type:decimal(10,2)" json:"management_fee"`
+	ElectricityUnitPrice *float64 `gorm:"type:decimal(10,4)" json:"electricity_unit_price"`
+	WaterUnitPrice       *float64 `gorm:"type:decimal(10,4)" json:"water_unit_price"`
+	Status               string   `gorm:"size:20;not null;default:'vacant'" json:"status"`
+	Description          string   `gorm:"type:text" json:"description"`
+	// Remark 房间内部备注（仅后台可见）：钥匙存放、门禁卡号、热水器需预热等。
+	// json:"-" 防止随公开房间接口泄露，后台通过 RoomDetail.Remark / 房间列表透出。
+	Remark    string         `gorm:"size:500" json:"-"`
+	Media     []RoomMedia    `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"media,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // RoomMedia 表示房间的媒体资源（图片、视频等）。
 type RoomMedia struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	RoomID        uint      `gorm:"index;not null" json:"room_id"`
-	Type          string    `gorm:"size:10;not null" json:"type"`
-	Category      string    `gorm:"size:20;not null;default:'gallery'" json:"category"`
-	FilePath      string    `gorm:"size:500;not null" json:"file_path"`
-	ThumbnailPath string    `gorm:"size:500" json:"thumbnail_path"`
-	FileName      string    `gorm:"size:255" json:"file_name"`
-	FileSize      int64     `json:"file_size"`
-	Status        string    `gorm:"size:20;default:'ready'" json:"status"`
-	TranscodeID   string    `gorm:"size:100" json:"-"`
-	SortOrder     int       `gorm:"default:0" json:"sort_order"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	RoomID        uint   `gorm:"index;not null" json:"room_id"`
+	Type          string `gorm:"size:10;not null" json:"type"`
+	Category      string `gorm:"size:20;not null;default:'gallery'" json:"category"`
+	FilePath      string `gorm:"size:500;not null" json:"file_path"`
+	ThumbnailPath string `gorm:"size:500" json:"thumbnail_path"`
+	FileName      string `gorm:"size:255" json:"file_name"`
+	FileSize      int64  `json:"file_size"`
+	Status        string `gorm:"size:20;default:'ready'" json:"status"`
+	TranscodeID   string `gorm:"size:100" json:"-"`
+	SortOrder     int    `gorm:"default:0" json:"sort_order"`
+	// Remark 图片/视频说明（仅后台可见）：「主卧带飘窗」「这张是样板间」等。
+	// json:"-" 防止随公开房间详情泄露，后台通过 RoomMediaView.Remark 透出。
+	Remark    string    `gorm:"size:500" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Tenant 表示租客信息。
 type Tenant struct {
-	ID               uint           `gorm:"primaryKey" json:"id"`
-	Name             string         `gorm:"size:50;not null" json:"name"`
-	Phone            string         `gorm:"size:20" json:"phone"`
-	IDCard           string         `gorm:"size:20" json:"id_card"`
-	Email            string         `gorm:"size:100" json:"email"`
-	EmergencyContact string         `gorm:"size:200" json:"emergency_contact"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
+	ID               uint   `gorm:"primaryKey" json:"id"`
+	Name             string `gorm:"size:50;not null" json:"name"`
+	Phone            string `gorm:"size:20" json:"phone"`
+	IDCard           string `gorm:"size:20" json:"id_card"`
+	Email            string `gorm:"size:100" json:"email"`
+	EmergencyContact string `gorm:"size:200" json:"emergency_contact"`
+	// Remark 租客备注（仅后台可见）：车牌号、工作单位、宠物、作息/沟通偏好等。
+	// json:"-" 保证备注永远不进任何裸模型序列化；后台一律走 TenantView 透出。
+	Remark    string         `gorm:"size:500" json:"-"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// TenantView 租客后台视图：在模型基础上透出内部备注。
+//
+// 模型的 Remark 是 json:"-"，公开接口不会带出来；后台接口统一用这个视图返回。
+type TenantView struct {
+	Tenant
+	// Remark 租客内部备注（仅后台可见）
+	Remark string `json:"remark,omitempty"`
 }
 
 // RentalContract 表示租赁合同，关联房间和租客。
 type RentalContract struct {
-	ID            uint           `gorm:"primaryKey" json:"id"`
-	RoomID        uint           `gorm:"index;not null" json:"room_id"`
-	BuildingID    uint           `gorm:"index;not null" json:"building_id"`
-	TenantID      uint           `gorm:"index;not null" json:"tenant_id"`
-	RentPrice     float64        `gorm:"type:decimal(10,2);not null" json:"rent_price"`
-	ManagementFee float64        `gorm:"type:decimal(10,2)" json:"management_fee"`
-	Deposit       float64        `gorm:"type:decimal(10,2)" json:"deposit"`
-	EarnestMoney  float64        `gorm:"type:decimal(10,2)" json:"earnest_money"`
-	Prepaid       bool           `gorm:"default:false" json:"prepaid"`
-	RentDay       uint           `gorm:"default:1" json:"rent_day"`
-	PaymentCycle  string         `gorm:"size:10;default:'monthly'" json:"payment_cycle"`
-	ContractFile  string         `gorm:"size:500" json:"contract_file"`
-	StartDate     string         `gorm:"size:10;not null" json:"start_date"`
-	EndDate       string         `gorm:"size:10" json:"end_date"`
-	Status        string         `gorm:"size:10;not null;default:'active'" json:"status"`
-	Room          Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"room,omitempty"`
-	Tenant        Tenant         `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE" json:"tenant,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	ID            uint    `gorm:"primaryKey" json:"id"`
+	RoomID        uint    `gorm:"index;not null" json:"room_id"`
+	BuildingID    uint    `gorm:"index;not null" json:"building_id"`
+	TenantID      uint    `gorm:"index;not null" json:"tenant_id"`
+	RentPrice     float64 `gorm:"type:decimal(10,2);not null" json:"rent_price"`
+	ManagementFee float64 `gorm:"type:decimal(10,2)" json:"management_fee"`
+	Deposit       float64 `gorm:"type:decimal(10,2)" json:"deposit"`
+	EarnestMoney  float64 `gorm:"type:decimal(10,2)" json:"earnest_money"`
+	Prepaid       bool    `gorm:"default:false" json:"prepaid"`
+	RentDay       uint    `gorm:"default:1" json:"rent_day"`
+	PaymentCycle  string  `gorm:"size:10;default:'monthly'" json:"payment_cycle"`
+	ContractFile  string  `gorm:"size:500" json:"contract_file"`
+	StartDate     string  `gorm:"size:10;not null" json:"start_date"`
+	EndDate       string  `gorm:"size:10" json:"end_date"`
+	Status        string  `gorm:"size:10;not null;default:'active'" json:"status"`
+	// Remark 合同/预订备注（仅后台可见）：有车+车牌号、工作单位、免租期、特殊约定等。
+	// json:"-" 保证备注永远不进任何裸模型序列化；后台一律走 ContractView 透出。
+	Remark    string         `gorm:"size:500" json:"-"`
+	Room      Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"room,omitempty"`
+	Tenant    Tenant         `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE" json:"tenant,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// ContractView 合同后台视图：透出合同备注与租客备注。
+//
+// 模型的 Remark 是 json:"-"，公开接口不会带出来；后台接口统一用这个视图返回。
+// Tenant 覆盖内嵌的 RentalContract.Tenant，一并带上租客备注。
+type ContractView struct {
+	RentalContract
+	// Remark 合同/预订内部备注（仅后台可见）
+	Remark string `json:"remark,omitempty"`
+	// Tenant 覆盖内嵌 RentalContract.Tenant（深度更浅，序列化时优先生效）
+	Tenant TenantView `json:"tenant,omitempty"`
+}
+
+// NewContractView 把合同模型转成后台视图（透出备注）。入参为 nil 时返回 nil。
+func NewContractView(ct *RentalContract) *ContractView {
+	if ct == nil {
+		return nil
+	}
+	return &ContractView{
+		RentalContract: *ct,
+		Remark:         ct.Remark,
+		Tenant:         TenantView{Tenant: ct.Tenant, Remark: ct.Tenant.Remark},
+	}
+}
+
+// NewContractViews 批量把合同模型转成后台视图。
+func NewContractViews(list []RentalContract) []ContractView {
+	out := make([]ContractView, 0, len(list))
+	for i := range list {
+		out = append(out, *NewContractView(&list[i]))
+	}
+	return out
 }
 
 // Bill 表示账单，支持租金、水电等多种类型的费用记录。
 type Bill struct {
-	ID            uint           `gorm:"primaryKey" json:"id"`
-	BillNo        string         `gorm:"uniqueIndex;size:50;not null" json:"bill_no"`
-	Type          string         `gorm:"size:10;not null" json:"type"`
-	Subtype       string         `gorm:"size:30" json:"subtype"`
-	Amount        float64        `gorm:"type:decimal(10,2);not null" json:"amount"`
-	PaidStatus    string         `gorm:"size:10;not null;default:'unpaid'" json:"paid_status"`
-	PaidAt        *time.Time     `json:"paid_at"`
-	PaymentMethod string         `gorm:"size:20" json:"payment_method"`
-	BuildingID    uint           `gorm:"index;not null" json:"building_id"`
-	RoomID        *uint          `gorm:"index" json:"room_id"`
-	Description   string         `gorm:"type:text" json:"description"`
-	BillDate      string         `gorm:"size:10;not null" json:"bill_date"`
-	CreatedBy     uint           `json:"created_by"`
-	Room          Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:SET NULL" json:"room,omitempty"`
-	Evidences     []BillEvidence `gorm:"foreignKey:BillID;constraint:OnDelete:CASCADE" json:"evidences,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	BillNo        string     `gorm:"uniqueIndex;size:50;not null" json:"bill_no"`
+	Type          string     `gorm:"size:10;not null" json:"type"`
+	Subtype       string     `gorm:"size:30" json:"subtype"`
+	Amount        float64    `gorm:"type:decimal(10,2);not null" json:"amount"`
+	PaidStatus    string     `gorm:"size:10;not null;default:'unpaid'" json:"paid_status"`
+	PaidAt        *time.Time `json:"paid_at"`
+	PaymentMethod string     `gorm:"size:20" json:"payment_method"`
+	BuildingID    uint       `gorm:"index;not null" json:"building_id"`
+	RoomID        *uint      `gorm:"index" json:"room_id"`
+	Description   string     `gorm:"type:text" json:"description"`
+	// Remark 账单内部备注（仅后台可见）：与 description 分开——description 是系统摘要
+	// 与修改记录的落点，会被自动覆盖/追加，用户备注单独存这里才不会被冲掉。
+	Remark    string         `gorm:"size:500" json:"remark,omitempty"`
+	BillDate  string         `gorm:"size:10;not null" json:"bill_date"`
+	CreatedBy uint           `json:"created_by"`
+	Room      Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:SET NULL" json:"room,omitempty"`
+	Evidences []BillEvidence `gorm:"foreignKey:BillID;constraint:OnDelete:CASCADE" json:"evidences,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // BillEvidence 账单凭证截图：file_key 为对象存储 key（七牛 bucket 或本地 UploadDir 相对路径）。
 // 删除语义：凭证行只随「管理员移除 / 更新账单时整单替换 / 账单被彻底删除」而删；
 // 存储里的物理文件不即时删除，由定时 GC 统一清理「未被任何凭证行引用且超过宽限期」的孤儿文件。
 type BillEvidence struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	BillID     uint      `gorm:"index;not null" json:"bill_id"`
-	BuildingID uint      `gorm:"index;not null" json:"building_id"`
-	FileKey    string    `gorm:"size:500;not null" json:"file_key"`
-	FileName   string    `gorm:"size:255" json:"file_name"`
-	FileSize   int64     `json:"file_size"`
-	CreatedBy  uint      `json:"created_by"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         uint   `gorm:"primaryKey" json:"id"`
+	BillID     uint   `gorm:"index;not null" json:"bill_id"`
+	BuildingID uint   `gorm:"index;not null" json:"building_id"`
+	FileKey    string `gorm:"size:500;not null" json:"file_key"`
+	FileName   string `gorm:"size:255" json:"file_name"`
+	FileSize   int64  `json:"file_size"`
+	// Remark 凭证说明（仅后台可见）：「11月房租转账」「押金收据」等，便于对账。
+	Remark    string    `gorm:"size:500" json:"remark,omitempty"`
+	CreatedBy uint      `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Shareholder 表示楼栋股东及其持股比例。
 type Shareholder struct {
-	ID         uint           `gorm:"primaryKey" json:"id"`
-	BuildingID uint           `gorm:"index;not null" json:"building_id"`
-	Name       string         `gorm:"size:50;not null" json:"name"`
-	ShareRatio float64        `gorm:"type:decimal(5,2);not null" json:"share_ratio"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	ID         uint    `gorm:"primaryKey" json:"id"`
+	BuildingID uint    `gorm:"index;not null" json:"building_id"`
+	Name       string  `gorm:"size:50;not null" json:"name"`
+	ShareRatio float64 `gorm:"type:decimal(5,2);not null" json:"share_ratio"`
+	// Remark 股东备注（仅后台可见）：联系方式、代持说明、分红收款账户等。
+	Remark    string         `gorm:"size:500" json:"remark,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Dividend 表示月度分红记录，按股东计算分红金额。
 type Dividend struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	BuildingID     uint           `gorm:"uniqueIndex:idx_dividend;not null" json:"building_id"`
-	SettleMonth    string         `gorm:"uniqueIndex:idx_dividend;size:7;not null" json:"settle_month"`
-	TotalIncome    float64        `gorm:"type:decimal(10,2)" json:"total_income"`
-	TotalExpense   float64        `gorm:"type:decimal(10,2)" json:"total_expense"`
-	NetProfit      float64        `gorm:"type:decimal(10,2)" json:"net_profit"`
-	ShareholderID  uint           `gorm:"uniqueIndex:idx_dividend;not null" json:"shareholder_id"`
-	DividendAmount float64        `gorm:"type:decimal(10,2)" json:"dividend_amount"`
-	SettledBy      uint           `json:"settled_by"`
-	PaidStatus     string         `gorm:"size:10;not null;default:'unpaid'" json:"paid_status"`
-	PaidAt         *time.Time     `json:"paid_at"`
-	Shareholder    Shareholder    `gorm:"foreignKey:ShareholderID;constraint:OnDelete:CASCADE" json:"shareholder,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	BuildingID     uint       `gorm:"uniqueIndex:idx_dividend;not null" json:"building_id"`
+	SettleMonth    string     `gorm:"uniqueIndex:idx_dividend;size:7;not null" json:"settle_month"`
+	TotalIncome    float64    `gorm:"type:decimal(10,2)" json:"total_income"`
+	TotalExpense   float64    `gorm:"type:decimal(10,2)" json:"total_expense"`
+	NetProfit      float64    `gorm:"type:decimal(10,2)" json:"net_profit"`
+	ShareholderID  uint       `gorm:"uniqueIndex:idx_dividend;not null" json:"shareholder_id"`
+	DividendAmount float64    `gorm:"type:decimal(10,2)" json:"dividend_amount"`
+	SettledBy      uint       `json:"settled_by"`
+	PaidStatus     string     `gorm:"size:10;not null;default:'unpaid'" json:"paid_status"`
+	PaidAt         *time.Time `json:"paid_at"`
+	// Remark 结算备注（仅后台可见）：「本月含大额维修」等异常说明。
+	Remark      string         `gorm:"size:500" json:"remark,omitempty"`
+	Shareholder Shareholder    `gorm:"foreignKey:ShareholderID;constraint:OnDelete:CASCADE" json:"shareholder,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Task 表示待办任务（维修、退租、公寓到期提醒、招商申请等）。
 // Scope 区分公寓级（building，房东后台可见）与平台级（platform，超级管理员可见）。
 type Task struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	BuildingID  *uint          `gorm:"index" json:"building_id"`
-	Title       string         `gorm:"size:200;not null" json:"title"`
-	Type        string         `gorm:"size:50;not null" json:"type"`
-	Priority    string         `gorm:"size:10;not null;default:'medium'" json:"priority"`
-	Status      string         `gorm:"size:20;not null;default:'pending'" json:"status"`
-	AssignedTo  string         `gorm:"size:50" json:"assigned_to"`
-	DueDate     string         `gorm:"size:10" json:"due_date"`
-	RoomID      *uint          `gorm:"index" json:"room_id"`
-	Scope       string         `gorm:"size:20;not null;default:'building'" json:"scope"`
-	RefID       *uint          `gorm:"index" json:"ref_id"`
-	Deposit     float64        `gorm:"type:decimal(10,2)" json:"deposit"`
-	Description string         `gorm:"type:text" json:"description"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	Room        Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:SET NULL" json:"room,omitempty"`
-	Building    Building       `gorm:"foreignKey:BuildingID;constraint:OnDelete:CASCADE" json:"building,omitempty"`
+	ID          uint    `gorm:"primaryKey" json:"id"`
+	BuildingID  *uint   `gorm:"index" json:"building_id"`
+	Title       string  `gorm:"size:200;not null" json:"title"`
+	Type        string  `gorm:"size:50;not null" json:"type"`
+	Priority    string  `gorm:"size:10;not null;default:'medium'" json:"priority"`
+	Status      string  `gorm:"size:20;not null;default:'pending'" json:"status"`
+	AssignedTo  string  `gorm:"size:50" json:"assigned_to"`
+	DueDate     string  `gorm:"size:10" json:"due_date"`
+	RoomID      *uint   `gorm:"index" json:"room_id"`
+	Scope       string  `gorm:"size:20;not null;default:'building'" json:"scope"`
+	RefID       *uint   `gorm:"index" json:"ref_id"`
+	Deposit     float64 `gorm:"type:decimal(10,2)" json:"deposit"`
+	Description string  `gorm:"type:text" json:"description"`
+	// ResultRemark 处理备注（仅后台可见）：维修情况、费用、下次跟进等。
+	// 与 Description 分开——Description 是系统生成的待办描述，会被系统改写。
+	ResultRemark string         `gorm:"size:500" json:"result_remark,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	Room         Room           `gorm:"foreignKey:RoomID;constraint:OnDelete:SET NULL" json:"room,omitempty"`
+	Building     Building       `gorm:"foreignKey:BuildingID;constraint:OnDelete:CASCADE" json:"building,omitempty"`
 }
 
 // Setting 表示系统配置项（键值对）。
@@ -250,9 +325,11 @@ type Setting struct {
 
 // RecruitSubmission 表示招商提交的申请信息。
 type RecruitSubmission struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Phone     string    `gorm:"size:20;not null" json:"phone"`
-	Address   string    `gorm:"type:text;not null" json:"address"`
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Phone   string `gorm:"size:20;not null" json:"phone"`
+	Address string `gorm:"type:text;not null" json:"address"`
+	// Remark 申请备注（由申请人填写，仅后台可见）：房源情况/预算/来源等。
+	Remark    string    `gorm:"size:500" json:"remark,omitempty"`
 	Status    string    `gorm:"size:20;not null;default:'pending'" json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -342,16 +419,18 @@ func (StatDaily) TableName() string { return "stat_daily" }
 // BuildingRenewal 公寓入驻/续约记录，类似租约历史：
 // join=入驻（记录签约日期与首次到期日），renew=续约（记录原到期日与新到期日）。
 type BuildingRenewal struct {
-	ID         uint           `gorm:"primaryKey" json:"id"`
-	BuildingID uint           `gorm:"index;not null" json:"building_id"`
-	Action     string         `gorm:"size:20;not null" json:"action"`
-	FromDate   string         `gorm:"size:10" json:"from_date"`
-	ToDate     string         `gorm:"size:10" json:"to_date"`
-	Operator   string         `gorm:"size:50" json:"operator"`
-	Note       string         `gorm:"size:200" json:"note"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	ID         uint   `gorm:"primaryKey" json:"id"`
+	BuildingID uint   `gorm:"index;not null" json:"building_id"`
+	Action     string `gorm:"size:20;not null" json:"action"`
+	FromDate   string `gorm:"size:10" json:"from_date"`
+	ToDate     string `gorm:"size:10" json:"to_date"`
+	Operator   string `gorm:"size:50" json:"operator"`
+	Note       string `gorm:"size:200" json:"note"`
+	// Remark 续约备注（仅后台可见，用户填写）：本次续约的补充说明。
+	Remark    string         `gorm:"size:500" json:"remark,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // BuildingDepositLog 公寓押金变动流水，每条记录自成链上一环：
@@ -375,13 +454,41 @@ type BuildingDepositLog struct {
 // LocationCustom 超级管理员在静态官方区划之外自定义的位置条目。
 // Level: 1=区域(District 生效) 2=街道(District+Street) 3=村/小区(District+Street+Name)。
 // Street 仅在 Level=2/3 时有意义；Level=1 时 District==Name。
+// 公开接口 ListOptions 用的是显式最小字段 DTO；备注本身是 json:"-"，
+// 裸模型永远不带出来，后台一律走 LocationCustomView 透出。
 type LocationCustom struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Level     int       `gorm:"not null;index:idx_loc_custom" json:"level"`
-	District  string    `gorm:"size:50;not null;index:idx_loc_custom" json:"district"`
-	Street    string    `gorm:"size:100;not null;default:'';index:idx_loc_custom" json:"street"`
-	Name      string    `gorm:"size:100;not null" json:"name"`
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Level    int    `gorm:"not null;index:idx_loc_custom" json:"level"`
+	District string `gorm:"size:50;not null;index:idx_loc_custom" json:"district"`
+	Street   string `gorm:"size:100;not null;default:'';index:idx_loc_custom" json:"street"`
+	Name     string `gorm:"size:100;not null" json:"name"`
+	// Remark 位置备注（仅后台可见）：「该村含X小区」「含几条巷子」等。
+	Remark    string    `gorm:"size:500" json:"-"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// LocationCustomView 自定义位置条目后台视图：在模型基础上透出内部备注。
+type LocationCustomView struct {
+	LocationCustom
+	// Remark 位置内部备注（仅后台可见）
+	Remark string `json:"remark,omitempty"`
+}
+
+// NewLocationCustomView 把自定义位置条目转成后台视图（透出备注）。
+func NewLocationCustomView(e *LocationCustom) LocationCustomView {
+	if e == nil {
+		return LocationCustomView{}
+	}
+	return LocationCustomView{LocationCustom: *e, Remark: e.Remark}
+}
+
+// NewLocationCustomViews 批量把自定义位置条目转成后台视图。
+func NewLocationCustomViews(list []LocationCustom) []LocationCustomView {
+	out := make([]LocationCustomView, 0, len(list))
+	for i := range list {
+		out = append(out, NewLocationCustomView(&list[i]))
+	}
+	return out
 }
 
 // LocationRename 对静态官方区划条目的改名映射（自定义条目改名直接改自身记录，无需映射）。

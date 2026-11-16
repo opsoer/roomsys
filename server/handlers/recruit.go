@@ -28,14 +28,17 @@ func (h *RecruitHandler) Submit(c *gin.Context) {
 	var req struct {
 		Phone   string `json:"phone"`
 		Address string `json:"address"`
+		// Remark 申请备注（选填）：房源情况/预算/来源等，仅后台可见
+		Remark string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Phone == "" || req.Address == "" {
 		utils.Error(c, http.StatusBadRequest, "请填写电话和地址信息")
 		return
 	}
 	sub := &models.RecruitSubmission{
-		Phone:   req.Phone,
+		Phone:   utils.ClipText(req.Phone, 20),
 		Address: req.Address,
+		Remark:  utils.ClipRemark(req.Remark),
 		Status:  "pending",
 	}
 	if err := h.RecruitService.Submit(sub); err != nil {

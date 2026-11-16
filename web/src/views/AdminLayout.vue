@@ -9,6 +9,7 @@
           <el-menu-item index="/admin/locations" class="menu-item-light">位置管理</el-menu-item>
           <el-menu-item index="/admin/stats" class="menu-item-light">数据看板</el-menu-item>
           <el-menu-item index="/admin/audit-logs" class="menu-item-light">操作审计</el-menu-item>
+          <el-menu-item index="/admin/users" class="menu-item-light">账号管理</el-menu-item>
           <el-menu-item index="/admin/test" class="menu-item-light">测试</el-menu-item>
           <el-menu-item index="/admin/tasks" class="menu-item-light">
             <span>代办事项</span>

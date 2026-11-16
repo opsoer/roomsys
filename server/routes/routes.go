@@ -177,6 +177,7 @@ func setupPlatformRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 
 		platform.GET("/locations/manage", h.location.List)
 		platform.POST("/locations/custom", h.location.AddCustom)
+		platform.PUT("/locations/custom/:id/remark", h.location.UpdateCustomRemark)
 		platform.DELETE("/locations/custom/:id", h.location.DeleteCustom)
 		platform.POST("/locations/rename", h.location.Rename)
 	}
@@ -206,12 +207,15 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		building.GET("/contracts", h.room.ListBuildingContracts)
 		building.GET("/rooms/:id/contract", h.room.GetActiveContract)
 		building.PUT("/rooms/:id/contract", h.room.RenewContract)
+		// 租客信息（姓名/电话/紧急联系人/备注）：仅后台，租客端无入口
+		building.PUT("/tenants/:id", h.room.UpdateTenant)
 		// 租控表导出数据：只读聚合，未出租 + 即将到期房间
 		building.GET("/rent-control", h.room.RentControl)
 
 		// 媒体管理
 		building.POST("/rooms/:id/media", h.media.Upload)
 		building.DELETE("/rooms/:id/media/:mediaId", h.media.Delete)
+		building.PUT("/rooms/:id/media/:mediaId", h.media.UpdateMediaRemark)
 		building.POST("/rooms/:id/media/copy", h.media.CopyMedia)
 		building.POST("/cover", h.media.UploadCover)
 		building.GET("/media/upload-token", h.media.GetUploadToken)
@@ -221,6 +225,8 @@ func setupBuildingRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, h *rout
 		// 管理员管理（building_admin 可创建普通 admin）
 		building.POST("/auth/create-admin", h.auth.CreateRegularAdmin)
 		building.GET("/auth/users", h.auth.ListBuildingUsers)
+		building.PUT("/auth/users/:id", h.auth.UpdateBuildingUser)
+		building.DELETE("/auth/users/:id", h.auth.DeleteBuildingUser)
 
 		// 待办任务（不限制开放功能：到期提醒/预订超时等待办由系统对所有公寓生成，基础功能也需可见可处理）
 		building.GET("/tasks", h.task.List)

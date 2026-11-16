@@ -1161,6 +1161,60 @@ func (h *MediaHandler) CopyMedia(c *gin.Context) {
 	utils.SuccessWithMsg(c, fmt.Sprintf("已复用 %d 个媒体文件", len(sourceMedia)), nil)
 }
 
+// UpdateMediaRemarkReq 更新媒体说明请求参数
+type UpdateMediaRemarkReq struct {
+	// Remark 图片/视频说明（仅后台可见）：nil=不变，""=清空
+	Remark *string `json:"remark"`
+}
+
+// UpdateMediaRemark 更新媒体说明（仅后台可见）。
+// 越权校验：媒体必须属于路径里的房间，房间必须属于当前公寓。
+func (h *MediaHandler) UpdateMediaRemark(c *gin.Context) {
+	bid, err := utils.GetBuildingID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "未授权")
+		return
+	}
+	rid, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的房间ID")
+		return
+	}
+	mid, err := strconv.ParseUint(c.Param("mediaId"), 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "无效的媒体ID")
+		return
+	}
+	if _, err := h.MediaService.GetRoomByID(uint(rid), bid); err != nil {
+		utils.Error(c, http.StatusNotFound, "房间不存在")
+		return
+	}
+	var media models.RoomMedia
+	if err := h.DB.Where("id = ? AND room_id = ?", mid, rid).First(&media).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "媒体文件不存在")
+		return
+	}
+	var req UpdateMediaRemarkReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if req.Remark == nil {
+		utils.SuccessWithMsg(c, "更新成功", nil)
+		return
+	}
+	remark := utils.ClipRemark(*req.Remark)
+	if err := h.DB.Model(&models.RoomMedia{}).Where("id = ?", media.ID).
+		Update("remark", remark).Error; err != nil {
+		logger.Log.Error().Err(err).Uint("media_id", media.ID).Msg("更新媒体说明失败")
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	audit.Log(c, audit.ActionUpdate, audit.ResourceMedia, audit.ID(media.ID),
+		"修改媒体说明 房间id="+audit.ID(uint(rid)))
+	utils.SuccessWithMsg(c, "更新成功", nil)
+}
+
 // Serve 提供媒体文件服务（支持本地和七牛云重定向）
 func (h *MediaHandler) Serve(c *gin.Context) {
 	filePath := c.Param("filepath")
